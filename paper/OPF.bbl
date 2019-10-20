@@ -1,0 +1,669 @@
+% $ biblatex auxiliary file $
+% $ biblatex bbl format version 3.1 $
+% Do not modify the above lines!
+%
+% This is an auxiliary file used by the 'biblatex' package.
+% This file may safely be deleted. It will be recreated by
+% biber as required.
+%
+\begingroup
+\makeatletter
+\@ifundefined{ver@biblatex.sty}
+  {\@latex@error
+     {Missing 'biblatex' package}
+     {The bibliography requires the 'biblatex' package.}
+      \aftergroup\endinput}
+  {}
+\endgroup
+
+
+\refsection{0}
+  \datalist[entry]{none/global//global/global}
+    \entry{nonconvex}{article}{}
+      \name{author}{2}{}{%
+        {{hash=45fe128c2f85c7cd50075eb448d2fd30}{%
+           family={{Lesieutre}},
+           familyi={L\bibinitperiod},
+           given={B.\bibnamedelimi C.},
+           giveni={B\bibinitperiod\bibinitdelim C\bibinitperiod}}}%
+        {{hash=cefa2948555541e40f27848acb68a5bd}{%
+           family={{Hiskens}},
+           familyi={H\bibinitperiod},
+           given={I.\bibnamedelimi A.},
+           giveni={I\bibinitperiod\bibinitdelim A\bibinitperiod}}}%
+      }
+      \strng{namehash}{542c19aaf4a5bac6d8a02d054f4215c2}
+      \strng{fullhash}{542c19aaf4a5bac6d8a02d054f4215c2}
+      \strng{bibnamehash}{542c19aaf4a5bac6d8a02d054f4215c2}
+      \strng{authorbibnamehash}{542c19aaf4a5bac6d8a02d054f4215c2}
+      \strng{authornamehash}{542c19aaf4a5bac6d8a02d054f4215c2}
+      \strng{authorfullhash}{542c19aaf4a5bac6d8a02d054f4215c2}
+      \field{sortinit}{1}
+      \field{sortinithash}{50c6687d7fc80f50136d75228e3c59ba}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{IEEE Transactions on Power Systems}
+      \field{month}{11}
+      \field{number}{4}
+      \field{title}{Convexity of the set of feasible injections and revenue adequacy in FTR markets}
+      \field{volume}{20}
+      \field{year}{2005}
+      \field{pages}{1790\bibrangedash 1798}
+      \range{pages}{9}
+      \verb{doi}
+      \verb 10.1109/TPWRS.2005.857268
+      \endverb
+      \keyw{power system economics;load flow;optimisation;revenue adequacy;FTR market;power injection;constrained power flow equation;transmission capacity;bus voltage limit;financial transmission right;convexity;optimization method;power system economics;Load flow;Equations;Voltage;Cost function;Reactive power;Power system economics;Electricity supply industry;Optimization methods;Load flow analysis;Convexity;financial transmission rights (FTRs);optimization methods;power flow analysis;power system economics}
+    \endentry
+    \entry{molzahn}{article}{}
+      \name{author}{2}{}{%
+        {{hash=b14feae52037347c98fb1914d6932082}{%
+           family={{Molzahn}},
+           familyi={M\bibinitperiod},
+           given={D.\bibnamedelimi K.},
+           giveni={D\bibinitperiod\bibinitdelim K\bibinitperiod}}}%
+        {{hash=cefa2948555541e40f27848acb68a5bd}{%
+           family={{Hiskens}},
+           familyi={H\bibinitperiod},
+           given={I.\bibnamedelimi A.},
+           giveni={I\bibinitperiod\bibinitdelim A\bibinitperiod}}}%
+      }
+      \strng{namehash}{de06edcd9ed495029001066dd0cd674d}
+      \strng{fullhash}{de06edcd9ed495029001066dd0cd674d}
+      \strng{bibnamehash}{de06edcd9ed495029001066dd0cd674d}
+      \strng{authorbibnamehash}{de06edcd9ed495029001066dd0cd674d}
+      \strng{authornamehash}{de06edcd9ed495029001066dd0cd674d}
+      \strng{authorfullhash}{de06edcd9ed495029001066dd0cd674d}
+      \field{sortinit}{1}
+      \field{sortinithash}{50c6687d7fc80f50136d75228e3c59ba}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{IEEE Transactions on Circuits and Systems I: Regular Papers}
+      \field{month}{5}
+      \field{number}{5}
+      \field{title}{Convex Relaxations of Optimal Power Flow Problems: An Illustrative Example}
+      \field{volume}{63}
+      \field{year}{2016}
+      \field{pages}{650\bibrangedash 660}
+      \range{pages}{11}
+      \verb{doi}
+      \verb 10.1109/TCSI.2016.2529281
+      \endverb
+      \keyw{convex programming;load flow;mathematical programming;optimal power flow problems;OPF problem;convex relaxations;semidefinite programming;SDP relaxation;polynomial optimization theory;Lasserre hierarchy;mixed semidefinite;second order cone programming;Optimization;Programming;Generators;5G mobile communication;Load flow;Physics;Mathematical model;Convex relaxation;global solution;optimal power flow;power system optimization;Convex relaxation;global solution;optimal power flow;power system optimization}
+    \endentry
+    \entry{bienstock}{misc}{}
+      \name{author}{2}{}{%
+        {{hash=ef9ca700c806f2b9ba320b842d4788f6}{%
+           family={Bienstock},
+           familyi={B\bibinitperiod},
+           given={Daniel},
+           giveni={D\bibinitperiod}}}%
+        {{hash=f0e266bdd976adbb5396b4b6569fb8d5}{%
+           family={Verma},
+           familyi={V\bibinitperiod},
+           given={Abhinav},
+           giveni={A\bibinitperiod}}}%
+      }
+      \strng{namehash}{a9a53d1c8066c02fe0e48f87e20ccea0}
+      \strng{fullhash}{a9a53d1c8066c02fe0e48f87e20ccea0}
+      \strng{bibnamehash}{a9a53d1c8066c02fe0e48f87e20ccea0}
+      \strng{authorbibnamehash}{a9a53d1c8066c02fe0e48f87e20ccea0}
+      \strng{authornamehash}{a9a53d1c8066c02fe0e48f87e20ccea0}
+      \strng{authorfullhash}{a9a53d1c8066c02fe0e48f87e20ccea0}
+      \field{sortinit}{2}
+      \field{sortinithash}{ed39bb39cf854d5250e95b1c1f94f4ed}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{eprintclass}{math.OC}
+      \field{eprinttype}{arXiv}
+      \field{title}{Strong NP-hardness of AC power flows feasibility}
+      \field{year}{2015}
+      \verb{eprint}
+      \verb 1512.07315
+      \endverb
+    \endentry
+    \entry{acopf}{article}{}
+      \name{author}{3}{}{%
+        {{hash=b4288cbf2a703576aacb855d1053cf42}{%
+           family={Cain},
+           familyi={C\bibinitperiod},
+           given={Mary\bibnamedelima B.},
+           giveni={M\bibinitperiod\bibinitdelim B\bibinitperiod}}}%
+        {{hash=717d7c19f06ec2fdad189bbcd6026427}{%
+           family={O'Neil},
+           familyi={O\bibinitperiod},
+           given={Richard\bibnamedelima P.},
+           giveni={R\bibinitperiod\bibinitdelim P\bibinitperiod}}}%
+        {{hash=dce13cc5cf1108ad905b0f6ee7e25fbf}{%
+           family={Anya},
+           familyi={A\bibinitperiod},
+           given={Castillo},
+           giveni={C\bibinitperiod}}}%
+      }
+      \strng{namehash}{ac87eb44370c47f6c89e6e1160162536}
+      \strng{fullhash}{ac87eb44370c47f6c89e6e1160162536}
+      \strng{bibnamehash}{ac87eb44370c47f6c89e6e1160162536}
+      \strng{authorbibnamehash}{ac87eb44370c47f6c89e6e1160162536}
+      \strng{authornamehash}{ac87eb44370c47f6c89e6e1160162536}
+      \strng{authorfullhash}{ac87eb44370c47f6c89e6e1160162536}
+      \field{sortinit}{3}
+      \field{sortinithash}{a37a8ef248a93c322189792c34fc68c9}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{abstract}{The purpose of this paper is to present a literature review of the AC Optimal Power Flow (ACOPF) problem and propose areas where the ACOPF could be improved. The ACOPF is at the heart of Independent System Operator (ISO) power markets, and is solved in some form every year for system planning, every day for day-ahead markets, every hour, and even every 5 minutes. It was first formulated in 1962, and formulations have changed little over the years. With advances in computing power and solution algorithms, we can model more of the constraints and remove unnecessary limits and approximations that were previously required to find a solution in reasonable time. One example is nonlinear voltage magnitude constraints that are modeled as linear thermal proxy constraints. In this paper, we refer to the full ACOPF as an ACOPF that simultaneously optimizes real and reactive power. Today, 50 years after the problem was formulated, we still do not have a fast, robust solution technique for the full ACOPF. Finding a good solution technique for the full ACOPF could potentially save tens of billions of dollars annually. Based on our literature review, we find that the ACOPF research community lacks a common understanding of the problem, its formulation, and objective functions. However, we do not claim that this literature review is a complete review—our intent was simply to capture the major formulations of the ACOPF. Instead, in this paper, we seek to clearly present the ACOPF problem through clear formulations of the problem and its parameters. This paper defines and discusses the polar power-voltage, rectangular power-voltage, and rectangular current-voltage formulations of the ACOPF. Additionally, it discusses the different types of constraints and objective functions. T his paper lays the groundwork for further research on the convexapproximation of the ACOPF solution space, a survey of solution techniques, and computational performance of different formulations.}
+      \field{title}{History of Optimal Power Flow and Formulations}
+      \field{year}{2012}
+      \field{pages}{1\bibrangedash 31}
+      \range{pages}{31}
+      \verb{urlraw}
+      \verb https://www.ferc.gov/industries/electric/indus-act/market-planning/opf-papers/acopf-1-history-formulation-testing.pdf
+      \endverb
+      \verb{url}
+      \verb https://www.ferc.gov/industries/electric/indus-act/market-planning/opf-papers/acopf-1-history-formulation-testing.pdf
+      \endverb
+    \endentry
+    \entry{guha}{inproceedings}{}
+      \name{author}{3}{}{%
+        {{hash=5c5188998b64714185b6cc228eb9a4fd}{%
+           family={Guha},
+           familyi={G\bibinitperiod},
+           given={Neel},
+           giveni={N\bibinitperiod}}}%
+        {{hash=ecfd0dd6efa07f973f2b972c58cf7f69}{%
+           family={Wang},
+           familyi={W\bibinitperiod},
+           given={Zhecheng},
+           giveni={Z\bibinitperiod}}}%
+        {{hash=0d0cf2969b1e91c77a82d0fb90651dca}{%
+           family={Majumdar},
+           familyi={M\bibinitperiod},
+           given={Arun},
+           giveni={A\bibinitperiod}}}%
+      }
+      \strng{namehash}{43596742580e85a492d2ce3fce917fbb}
+      \strng{fullhash}{43596742580e85a492d2ce3fce917fbb}
+      \strng{bibnamehash}{43596742580e85a492d2ce3fce917fbb}
+      \strng{authorbibnamehash}{43596742580e85a492d2ce3fce917fbb}
+      \strng{authornamehash}{43596742580e85a492d2ce3fce917fbb}
+      \strng{authorfullhash}{43596742580e85a492d2ce3fce917fbb}
+      \field{sortinit}{6}
+      \field{sortinithash}{7851c86048328b027313775d8fbd2131}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{abstract}{We explore machine learning methods for AC Optimal Powerflow (ACOPF) the task of optimizing power generation in a transmission network according while respecting physical and engineering constraints. We present two formulations of ACOPF as a machine learning problem: 1) an endto-end prediction task where we directly predict the optimal generator settings, and 2) a constraint prediction task where we predict the set of active constraints in the optimal solution. We validate these approaches on two benchmark grids.}
+      \field{booktitle}{ICML 2019}
+      \field{title}{Machine Learning for AC Optimal Power Flow}
+      \field{year}{2019}
+    \endentry
+    \entry{frank}{article}{}
+      \name{author}{2}{}{%
+        {{hash=e1366e3cdc9ac7be386db2b038a49983}{%
+           family={Frank},
+           familyi={F\bibinitperiod},
+           given={Stephen},
+           giveni={S\bibinitperiod}}}%
+        {{hash=dfa4f8a824d0dcd9cdf8d71c4f5757c1}{%
+           family={Rebennack},
+           familyi={R\bibinitperiod},
+           given={Steffen},
+           giveni={S\bibinitperiod}}}%
+      }
+      \list{publisher}{1}{%
+        {Taylor & Francis}%
+      }
+      \strng{namehash}{3dfc3e899eae162e4df7c07145e29941}
+      \strng{fullhash}{3dfc3e899eae162e4df7c07145e29941}
+      \strng{bibnamehash}{3dfc3e899eae162e4df7c07145e29941}
+      \strng{authorbibnamehash}{3dfc3e899eae162e4df7c07145e29941}
+      \strng{authornamehash}{3dfc3e899eae162e4df7c07145e29941}
+      \strng{authorfullhash}{3dfc3e899eae162e4df7c07145e29941}
+      \field{sortinit}{6}
+      \field{sortinithash}{7851c86048328b027313775d8fbd2131}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{IIE Transactions}
+      \field{number}{12}
+      \field{title}{An introduction to optimal power flow: Theory, formulation, and examples}
+      \field{volume}{48}
+      \field{year}{2016}
+      \field{pages}{1172\bibrangedash 1197}
+      \range{pages}{26}
+      \verb{doi}
+      \verb 10.1080/0740817X.2016.1189626
+      \endverb
+      \verb{eprint}
+      \verb https://doi.org/10.1080/0740817X.2016.1189626
+      \endverb
+      \verb{urlraw}
+      \verb https://doi.org/10.1080/0740817X.2016.1189626
+      \endverb
+      \verb{url}
+      \verb https://doi.org/10.1080/0740817X.2016.1189626
+      \endverb
+    \endentry
+    \entry{intelligence}{misc}{}
+      \name{author}{2}{}{%
+        {{hash=58b55f789cfc4def3bb12a7efe29bab9}{%
+           family={AlRashidi},
+           familyi={A\bibinitperiod},
+           given={M.\bibnamedelimi R.},
+           giveni={M\bibinitperiod\bibinitdelim R\bibinitperiod}}}%
+        {{hash=db6674ad3bbe2a8640041c7df727999d}{%
+           family={El-Hawary},
+           familyi={E\bibinithyphendelim H\bibinitperiod},
+           given={M.\bibnamedelimi E.},
+           giveni={M\bibinitperiod\bibinitdelim E\bibinitperiod}}}%
+      }
+      \strng{namehash}{44653e803b8becfe373d80707512b942}
+      \strng{fullhash}{44653e803b8becfe373d80707512b942}
+      \strng{bibnamehash}{44653e803b8becfe373d80707512b942}
+      \strng{authorbibnamehash}{44653e803b8becfe373d80707512b942}
+      \strng{authornamehash}{44653e803b8becfe373d80707512b942}
+      \strng{authorfullhash}{44653e803b8becfe373d80707512b942}
+      \field{extraname}{1}
+      \field{sortinit}{7}
+      \field{sortinithash}{f615fb9c6fba11c6f962fb3fd599810e}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{abstract}{Computational intelligence tools are attracting added attention in different research areas and research in power systems is not different. This paper provides an overview of major computational issues with regard to the optimal power flow (OPF). Then, it offers a brief summary of major computational intelligence tools. A detailed coverage of most OPF related research work that make use of modern computational intelligence techniques is presented next. "}
+      \field{isbn}{0378-7796}
+      \field{journaltitle}{Electric Power Systems Research}
+      \field{note}{ID: 271091}
+      \field{number}{4}
+      \field{title}{Applications of computational intelligence techniques for solving the revived optimal power flow problem}
+      \field{volume}{79}
+      \field{year}{2009}
+      \field{pages}{694\bibrangedash 702}
+      \range{pages}{9}
+      \verb{doi}
+      \verb //doi.org/10.1016/j.epsr.2008.10.004
+      \endverb
+      \verb{urlraw}
+      \verb http://www.sciencedirect.com/science/article/pii/S0378779608002757
+      \endverb
+      \verb{url}
+      \verb http://www.sciencedirect.com/science/article/pii/S0378779608002757
+      \endverb
+    \endentry
+    \entry{bakirtzis}{article}{}
+      \name{author}{4}{}{%
+        {{hash=34ffc81c0a6baec5177495e04170f4fb}{%
+           family={{Bakirtzis}},
+           familyi={B\bibinitperiod},
+           given={A.\bibnamedelimi G.},
+           giveni={A\bibinitperiod\bibinitdelim G\bibinitperiod}}}%
+        {{hash=78ea5cb0b9841578882b51db284a7767}{%
+           family={{Biskas}},
+           familyi={B\bibinitperiod},
+           given={P.\bibnamedelimi N.},
+           giveni={P\bibinitperiod\bibinitdelim N\bibinitperiod}}}%
+        {{hash=b4b6a79720e2edc95b9b317b5fb0b767}{%
+           family={{Zoumas}},
+           familyi={Z\bibinitperiod},
+           given={C.\bibnamedelimi E.},
+           giveni={C\bibinitperiod\bibinitdelim E\bibinitperiod}}}%
+        {{hash=64e0691595bcf9294c13530a0417d799}{%
+           family={{Petridis}},
+           familyi={P\bibinitperiod},
+           given={V.},
+           giveni={V\bibinitperiod}}}%
+      }
+      \strng{namehash}{68c4ce1c299e670b9435059a28d8a550}
+      \strng{fullhash}{b20bdcf0ab20573707de372adbf2dc13}
+      \strng{bibnamehash}{b20bdcf0ab20573707de372adbf2dc13}
+      \strng{authorbibnamehash}{b20bdcf0ab20573707de372adbf2dc13}
+      \strng{authornamehash}{68c4ce1c299e670b9435059a28d8a550}
+      \strng{authorfullhash}{b20bdcf0ab20573707de372adbf2dc13}
+      \field{sortinit}{8}
+      \field{sortinithash}{1b24cab5087933ef0826a7cd3b99e994}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{abstract}{This paper presents an enhanced genetic algorithm (EGA) for the solution of the optimal power flow (OPF) with both continuous and discrete control variables. The continuous control variables modeled are unit active power outputs and generator-bus voltage magnitudes, while the discrete ones are transformer-tap settings and switchable shunt devices. A number of functional operating constraints, such as branch flow limits, load bus voltage magnitude limits, and generator reactive capabilities, are included as penalties in the GA fitness function (FF). Advanced and problem-specific operators are introduced in order to enhance the algorithm's efficiency and accuracy. Numerical results on two test systems are presented and compared with results of other approaches.}
+      \field{journaltitle}{IEEE Transactions on Power Systems}
+      \field{month}{5}
+      \field{number}{2}
+      \field{title}{Optimal power flow by enhanced genetic algorithm}
+      \field{volume}{17}
+      \field{year}{2002}
+      \field{pages}{229\bibrangedash 236}
+      \range{pages}{8}
+      \verb{doi}
+      \verb 10.1109/TPWRS.2002.1007886
+      \endverb
+      \keyw{power system control;load flow control;optimal control;control system synthesis;genetic algorithms;power systems;optimal power flow;enhanced genetic algorithm;control design;continuous control variables;discrete control variables;unit active power outputs;generator-bus voltage magnitudes;transformer-tap settings;switchable shunt devices;functional operating constraints;branch flow limits;load bus voltage magnitude limits;generator reactive capabilities;fitness function;Load flow;Genetic algorithms;Power system planning;Mathematical programming;Quadratic programming;Cost function;Electric variables control;Linear programming;Nonlinear equations;Optimal control}
+    \endentry
+    \entry{todorovski}{inproceedings}{}
+      \name{author}{2}{}{%
+        {{hash=af34e1d736572a24e495cc7776d84eb8}{%
+           family={{Todorovski}},
+           familyi={T\bibinitperiod},
+           given={M.},
+           giveni={M\bibinitperiod}}}%
+        {{hash=bdbbc35afed7aa4b92d32d83d9c24f3d}{%
+           family={{Rajicic}},
+           familyi={R\bibinitperiod},
+           given={D.},
+           giveni={D\bibinitperiod}}}%
+      }
+      \strng{namehash}{75efdd31bc6fb5b8e04bc678d6ec09a1}
+      \strng{fullhash}{75efdd31bc6fb5b8e04bc678d6ec09a1}
+      \strng{bibnamehash}{75efdd31bc6fb5b8e04bc678d6ec09a1}
+      \strng{authorbibnamehash}{75efdd31bc6fb5b8e04bc678d6ec09a1}
+      \strng{authornamehash}{75efdd31bc6fb5b8e04bc678d6ec09a1}
+      \strng{authorfullhash}{75efdd31bc6fb5b8e04bc678d6ec09a1}
+      \field{sortinit}{9}
+      \field{sortinithash}{54047ffb55bdefa0694bbd554c1b11a0}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{abstract}{This paper presents a new power flow method tailored for genetic algorithms application in solving optimal power flow problems. Generating units, the only controllable elements for which four variables are associated, were given special attention, since they influence to great extent both speed and robustness of any power flow method. In this paper, the standard procedure in which one sets the generator-bus active power output and voltage magnitude has been replaced by an innovative approach where generator-bus voltage magnitude and voltage angle are scheduled. The method relies on the bus admittance matrix, which due to applied bus ordering in layers has block tridiagonal sparse structure. A new technique for Gaussian elimination and back-substitution for such matrices has been developed. The results from five test systems have shown superiority in both time and robustness of the proposed method over the well-known fast decoupled power flow method.}
+      \field{booktitle}{The IEEE Region 8 EUROCON 2003. Computer as a Tool.}
+      \field{month}{9}
+      \field{title}{A power flow method suitable for solving OPF problems using genetic algorithms}
+      \field{volume}{2}
+      \field{year}{2003}
+      \field{pages}{215\bibrangedash 219 vol.2}
+      \range{pages}{-1}
+      \verb{doi}
+      \verb 10.1109/EURCON.2003.1248186
+      \endverb
+      \keyw{power distribution;electric admittance;genetic algorithms;matrix algebra;mathematical programming;power flow method;genetic algorithms;genetic algorithms application;optimal power flow problems;speed;robustness;generator-bus active power output;voltage magnitude;generator-bus voltage magnitude;voltage angle;bus admittance matrix;bus ordering;block tridiagonal sparse structure;Gaussian elimination;back-substitution;generator-bus modeling;load flow analysis;network layers;sparce matrices;Load flow;Genetic algorithms;Power generation;Sparse matrices;Power system planning;Voltage;Power system management;Mathematical programming;Art;Admittance}
+    \endentry
+    \entry{particle}{inproceedings}{}
+      \name{author}{5}{}{%
+        {{hash=76cf38a55ebe5b0e06fffa757b6fa40e}{%
+           family={Wang},
+           familyi={W\bibinitperiod},
+           given={Cui-Ru},
+           giveni={C\bibinithyphendelim R\bibinitperiod}}}%
+        {{hash=92d1092b55dcde780dfffb2d8cf23a48}{%
+           family={Yuan},
+           familyi={Y\bibinitperiod},
+           given={He-Jin},
+           giveni={H\bibinithyphendelim J\bibinitperiod}}}%
+        {{hash=068391a091c28642fd87fb44ef2fb633}{%
+           family={Huang},
+           familyi={H\bibinitperiod},
+           given={Zhi-Qiang},
+           giveni={Z\bibinithyphendelim Q\bibinitperiod}}}%
+        {{hash=d94fde6f47a202c973972f28c4e9290e}{%
+           family={Zhang},
+           familyi={Z\bibinitperiod},
+           given={Jiang-Wei},
+           giveni={J\bibinithyphendelim W\bibinitperiod}}}%
+        {{hash=31cb15378c6acd73f2a0f6153ef8ac1d}{%
+           family={Sun},
+           familyi={S\bibinitperiod},
+           given={Chen-Jun},
+           giveni={C\bibinithyphendelim J\bibinitperiod}}}%
+      }
+      \strng{namehash}{e7f6c57c65fef8051ba5e0a29139aa9d}
+      \strng{fullhash}{6ce0f33f7d55c0bfbeb631ca9144a1e0}
+      \strng{bibnamehash}{6ce0f33f7d55c0bfbeb631ca9144a1e0}
+      \strng{authorbibnamehash}{6ce0f33f7d55c0bfbeb631ca9144a1e0}
+      \strng{authornamehash}{e7f6c57c65fef8051ba5e0a29139aa9d}
+      \strng{authorfullhash}{6ce0f33f7d55c0bfbeb631ca9144a1e0}
+      \field{sortinit}{1}
+      \field{sortinithash}{50c6687d7fc80f50136d75228e3c59ba}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{abstract}{A modified particle swarm optimization (MPSO) algorithm is presented. In the new algorithm, particles not only studies from itself and the best one but also from other individuals. By this enhanced study behavior, the opportunity to find the global optimum is increased and the influence of the initial position of the particles is decreased At last, the method adopting MPSO algorithm to solve the optimal power flow problem is given. The numeric simulation for a 5-bus system shows that this algorithm is feasible to solve optimal power flow problem.}
+      \field{title}{A modified particle swarm optimization algorithm and its application in optimal power flow problem}
+      \field{volume}{5}
+      \field{year}{2005}
+      \field{pages}{288\bibrangedash 2889 Vol. 5}
+      \range{pages}{-1}
+      \verb{doi}
+      \verb 10.1109/ICMLC.2005.1527435
+      \endverb
+    \endentry
+    \entry{hybrid}{article}{}
+      \name{author}{2}{}{%
+        {{hash=58b55f789cfc4def3bb12a7efe29bab9}{%
+           family={{AlRashidi}},
+           familyi={A\bibinitperiod},
+           given={M.\bibnamedelimi R.},
+           giveni={M\bibinitperiod\bibinitdelim R\bibinitperiod}}}%
+        {{hash=db6674ad3bbe2a8640041c7df727999d}{%
+           family={{El-Hawary}},
+           familyi={E\bibinitperiod},
+           given={M.\bibnamedelimi E.},
+           giveni={M\bibinitperiod\bibinitdelim E\bibinitperiod}}}%
+      }
+      \strng{namehash}{44653e803b8becfe373d80707512b942}
+      \strng{fullhash}{44653e803b8becfe373d80707512b942}
+      \strng{bibnamehash}{44653e803b8becfe373d80707512b942}
+      \strng{authorbibnamehash}{44653e803b8becfe373d80707512b942}
+      \strng{authornamehash}{44653e803b8becfe373d80707512b942}
+      \strng{authorfullhash}{44653e803b8becfe373d80707512b942}
+      \field{extraname}{2}
+      \field{sortinit}{1}
+      \field{sortinithash}{50c6687d7fc80f50136d75228e3c59ba}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{abstract}{This paper presents a hybrid particle swarm optimization algorithm (HPSO) as a modern optimization tool to solve the discrete optimal power flow (OPF) problem that has both discrete and continuous optimization variables. The problem is classified as constrained mixed integer nonlinear programming with multimodal characteristics. The objective functions considered are the system real power losses, fuel cost, and the gaseous emissions of the generating units. Two different types of fuel cost functions are considered in this study, namely the conventional quadratic function and the augmented quadratic function to introduce more accurate modeling that incorporates the valve loading effects. The latter model presents nondifferentiable and nonconvex regions that challenge most gradient-based optimization algorithms. The proposed algorithm makes use of the PSO, known for its global searching capabilities, to allocate the optimal control settings while Newton-Raphson algorithm minimizes the mismatch of the power flow equations. A hybrid inequality constraint handling mechanism that preserves only feasible solutions without the need to augment the original objective function is incorporated in the proposed approach. To demonstrate its robustness, the proposed algorithm was tested on the IEEE 30-bus system with six generating units. Several cases were investigated to test and validate the consistency of detecting optimal or near optimal solution for each objective. Results are compared to solutions obtained of MATPOWER software outcomes that employs sequential quadratic programming algorithm to solve the OPF. The impact of the proposed inequality constraint handling method in improving the HPSO performance is illustrated. Furthermore, a study of HPSO parameters tuning with regard to the OPF problem is presented and analyzed.}
+      \field{journaltitle}{IEEE Transactions on Power Systems}
+      \field{month}{11}
+      \field{number}{4}
+      \field{title}{Hybrid Particle Swarm Optimization Approach for Solving the Discrete OPF Problem Considering the Valve Loading Effects}
+      \field{volume}{22}
+      \field{year}{2007}
+      \field{pages}{2030\bibrangedash 2038}
+      \range{pages}{9}
+      \verb{doi}
+      \verb 10.1109/TPWRS.2007.907375
+      \endverb
+      \keyw{gradient methods;integer programming;load flow;load regulation;Newton-Raphson method;optimal control;particle swarm optimisation;quadratic programming;hybrid particle swarm optimization approach;HPSO;discrete optimal power flow problem;OPF;valve loading effects;constrained mixed integer nonlinear programming;multimodal characteristics;power losses;fuel cost functions;gaseous emissions;generating units;gradient-based optimization algorithm;global searching capabilities;optimal control settings;Newton-Raphson algorithm;hybrid inequality constraint handling mechanism;IEEE 30-bus system;MATPOWER software;sequential quadratic programming algorithm;inequality constraint handling method;Particle swarm optimization;Valves;Load flow;Fuels;Cost function;Power system modeling;Power generation;Optimal control;Equations;Robustness;Emission;optimal power flow (OPF);particle swarm optimization;power system operation}
+    \endentry
+    \entry{dobbe}{article}{}
+      \name{author}{6}{}{%
+        {{hash=7375d6b5bf11f7ba6f17878cd398dbb6}{%
+           family={Dobbe},
+           familyi={D\bibinitperiod},
+           given={Roel},
+           giveni={R\bibinitperiod}}}%
+        {{hash=60381298571ddf19391c6400310068bf}{%
+           family={Sondermeijer},
+           familyi={S\bibinitperiod},
+           given={Oscar},
+           giveni={O\bibinitperiod}}}%
+        {{hash=56ebe8db4552eeddec6e242a9f07620a}{%
+           family={Fridovich{-}Keil},
+           familyi={F\bibinitperiod},
+           given={David},
+           giveni={D\bibinitperiod}}}%
+        {{hash=8ceea43b2f3ce18df647c54ef3a53cf9}{%
+           family={Arnold},
+           familyi={A\bibinitperiod},
+           given={Daniel},
+           giveni={D\bibinitperiod}}}%
+        {{hash=1796ad56795f214b3497eb9062c86faa}{%
+           family={Callaway},
+           familyi={C\bibinitperiod},
+           given={Duncan},
+           giveni={D\bibinitperiod}}}%
+        {{hash=709855948ec649409743a85b23989879}{%
+           family={Tomlin},
+           familyi={T\bibinitperiod},
+           given={Claire},
+           giveni={C\bibinitperiod}}}%
+      }
+      \strng{namehash}{90bc4e9551d84d968e56e1a393809654}
+      \strng{fullhash}{dd3c383ea52ec6fd8dedc1e48946a42e}
+      \strng{bibnamehash}{dd3c383ea52ec6fd8dedc1e48946a42e}
+      \strng{authorbibnamehash}{dd3c383ea52ec6fd8dedc1e48946a42e}
+      \strng{authornamehash}{90bc4e9551d84d968e56e1a393809654}
+      \strng{authorfullhash}{dd3c383ea52ec6fd8dedc1e48946a42e}
+      \field{sortinit}{1}
+      \field{sortinithash}{50c6687d7fc80f50136d75228e3c59ba}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{eprinttype}{arXiv}
+      \field{journaltitle}{CoRR}
+      \field{title}{Data-Driven Decentralized Optimal Power Flow}
+      \field{volume}{abs/1806.06790}
+      \field{year}{2018}
+      \verb{eprint}
+      \verb 1806.06790
+      \endverb
+      \verb{urlraw}
+      \verb http://arxiv.org/abs/1806.06790
+      \endverb
+      \verb{url}
+      \verb http://arxiv.org/abs/1806.06790
+      \endverb
+    \endentry
+    \entry{sondermeijer}{article}{}
+      \name{author}{5}{}{%
+        {{hash=60381298571ddf19391c6400310068bf}{%
+           family={Sondermeijer},
+           familyi={S\bibinitperiod},
+           given={Oscar},
+           giveni={O\bibinitperiod}}}%
+        {{hash=7375d6b5bf11f7ba6f17878cd398dbb6}{%
+           family={Dobbe},
+           familyi={D\bibinitperiod},
+           given={Roel},
+           giveni={R\bibinitperiod}}}%
+        {{hash=8ceea43b2f3ce18df647c54ef3a53cf9}{%
+           family={Arnold},
+           familyi={A\bibinitperiod},
+           given={Daniel},
+           giveni={D\bibinitperiod}}}%
+        {{hash=709855948ec649409743a85b23989879}{%
+           family={Tomlin},
+           familyi={T\bibinitperiod},
+           given={Claire},
+           giveni={C\bibinitperiod}}}%
+        {{hash=87eb808f7f69750b5cd8fcf0618f818d}{%
+           family={Keviczky},
+           familyi={K\bibinitperiod},
+           given={Tam{á}s},
+           giveni={T\bibinitperiod}}}%
+      }
+      \strng{namehash}{9a07fa6b14ba78551c470151d5cf7f4b}
+      \strng{fullhash}{f178e164b62efaf73483a97fe73ebb79}
+      \strng{bibnamehash}{f178e164b62efaf73483a97fe73ebb79}
+      \strng{authorbibnamehash}{f178e164b62efaf73483a97fe73ebb79}
+      \strng{authornamehash}{9a07fa6b14ba78551c470151d5cf7f4b}
+      \strng{authorfullhash}{f178e164b62efaf73483a97fe73ebb79}
+      \field{sortinit}{1}
+      \field{sortinithash}{50c6687d7fc80f50136d75228e3c59ba}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{eprinttype}{arXiv}
+      \field{journaltitle}{CoRR}
+      \field{title}{Regression-based Inverter Control for Decentralized Optimal Power Flow and Voltage Regulation}
+      \field{volume}{abs/1902.08594}
+      \field{year}{2019}
+      \verb{eprint}
+      \verb 1902.08594
+      \endverb
+      \verb{urlraw}
+      \verb http://arxiv.org/abs/1902.08594
+      \endverb
+      \verb{url}
+      \verb http://arxiv.org/abs/1902.08594
+      \endverb
+    \endentry
+    \entry{pandapower}{article}{}
+      \name{author}{8}{}{%
+        {{hash=21c3cb188199830f0fd5f4f4b05fb505}{%
+           family={{Thurner}},
+           familyi={T\bibinitperiod},
+           given={L.},
+           giveni={L\bibinitperiod}}}%
+        {{hash=e623644c7a12fddbb7a468ece3e76f78}{%
+           family={{Scheidler}},
+           familyi={S\bibinitperiod},
+           given={A.},
+           giveni={A\bibinitperiod}}}%
+        {{hash=5e7ef53e073d1dbb61d069de40fb022b}{%
+           family={{Schäfer}},
+           familyi={S\bibinitperiod},
+           given={F.},
+           giveni={F\bibinitperiod}}}%
+        {{hash=e5eb95b7e6959a96a629bbc4efef6255}{%
+           family={{Menke}},
+           familyi={M\bibinitperiod},
+           given={J.},
+           giveni={J\bibinitperiod}}}%
+        {{hash=fe0647655af2943133bfdff7d45af557}{%
+           family={{Dollichon}},
+           familyi={D\bibinitperiod},
+           given={J.},
+           giveni={J\bibinitperiod}}}%
+        {{hash=93f9d5b14a95e447a0d1e0e4f1f5240e}{%
+           family={{Meier}},
+           familyi={M\bibinitperiod},
+           given={F.},
+           giveni={F\bibinitperiod}}}%
+        {{hash=123a83b5dc97c749dd674b3ae7867f7f}{%
+           family={{Meinecke}},
+           familyi={M\bibinitperiod},
+           given={S.},
+           giveni={S\bibinitperiod}}}%
+        {{hash=0b14831114ca1c3e0875fd46e7ee4978}{%
+           family={{Braun}},
+           familyi={B\bibinitperiod},
+           given={M.},
+           giveni={M\bibinitperiod}}}%
+      }
+      \strng{namehash}{589854dba3d1d4209d36d387e665e957}
+      \strng{fullhash}{ff8d22b3f73879f63babf85cdbf019d5}
+      \strng{bibnamehash}{ff8d22b3f73879f63babf85cdbf019d5}
+      \strng{authorbibnamehash}{ff8d22b3f73879f63babf85cdbf019d5}
+      \strng{authornamehash}{589854dba3d1d4209d36d387e665e957}
+      \strng{authorfullhash}{ff8d22b3f73879f63babf85cdbf019d5}
+      \field{sortinit}{1}
+      \field{sortinithash}{50c6687d7fc80f50136d75228e3c59ba}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{IEEE Transactions on Power Systems}
+      \field{month}{11}
+      \field{number}{6}
+      \field{title}{Pandapower—An Open-Source Python Tool for Convenient Modeling, Analysis, and Optimization of Electric Power Systems}
+      \field{volume}{33}
+      \field{year}{2018}
+      \field{pages}{6510\bibrangedash 6521}
+      \range{pages}{12}
+      \verb{doi}
+      \verb 10.1109/TPWRS.2018.2829021
+      \endverb
+      \keyw{data structures;equivalent circuits;load flow;Newton-Raphson method;optimisation;power engineering computing;power grids;power system reliability;power system security;program diagnostics;public domain software;software tools;Pandapower;open-source Python tool;balanced power system optimization;state estimation;IEC 60909;electric power systems;convenient modeling;automated time-series calculation;Python library pandas;industry standard software tools;equivalent circuit models;electric elements;pandapower network model;model constant current loads;Newton-Raphson power flow solver;short-circuit calculations;topological graph searches;optimal power flow;quasistatic analysis;Python-based BSD-licensed power system analysis tool;Power system analysis computing;Power systems;Mathematical model;Python;Open source software;Load flow;Python;open source;power flow;optimal power flow;short circuit;IEC60909;automated network analysis;power system analysis;graph search}
+    \endentry
+    \entry{load}{misc}{}
+      \name{author}{1}{}{%
+        {{hash=a6a87f04ade88f381017c3750e85e473}{%
+           family={Wilson},
+           familyi={W\bibinitperiod},
+           given={Eric},
+           giveni={E\bibinitperiod}}}%
+      }
+      \list{language}{1}{%
+        {en}%
+      }
+      \strng{namehash}{a6a87f04ade88f381017c3750e85e473}
+      \strng{fullhash}{a6a87f04ade88f381017c3750e85e473}
+      \strng{bibnamehash}{a6a87f04ade88f381017c3750e85e473}
+      \strng{authorbibnamehash}{a6a87f04ade88f381017c3750e85e473}
+      \strng{authornamehash}{a6a87f04ade88f381017c3750e85e473}
+      \strng{authorfullhash}{a6a87f04ade88f381017c3750e85e473}
+      \field{sortinit}{1}
+      \field{sortinithash}{50c6687d7fc80f50136d75228e3c59ba}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{abstract}{This dataset contains hourly load profile data for 16 commercial building types (based off the DOE commercial reference building models) and residential buildings (based off the Building America House Simulation Protocols). This dataset also uses the Residential Energy Consumption Survey (RECS) for statistical references of building types by location. Hourly load profiles are available for over all TMY3 locations in the United States here. Browse files in this dataset, accessible as individual files and as commercial and residential downloadable ZIP files. This dataset is approximately 4.8GiB compressed or 19GiB uncompressed. July 2nd, 2013 update: Residential High and Low load files have been updated from 366 days in a year for leap years to the more general 365 days in a normal year.}
+      \field{journaltitle}{OpenEI DOE Open Data}
+      \field{title}{Commercial and Residential Hourly Load Profiles for all TMY3 Locations in the United States}
+      \field{year}{2015}
+      \verb{urlraw}
+      \verb https://openei.org/doe-opendata/dataset/commercial-and-residential-hourly-load-profiles-for-all-tmy3-locations-in-the-united-states
+      \endverb
+      \verb{url}
+      \verb https://openei.org/doe-opendata/dataset/commercial-and-residential-hourly-load-profiles-for-all-tmy3-locations-in-the-united-states
+      \endverb
+    \endentry
+  \enddatalist
+\endrefsection
+\endinput
+

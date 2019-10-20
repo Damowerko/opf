@@ -1,0 +1,280 @@
+ \documentclass[conference,9pt]{IEEEtran}
+%\documentclass[draft,onecolumn]{IEEEtran}
+%\addtolength{\textwidth}{0.1cm}
+%\addtolength{\textheight}{0.1cm}
+%\addtolength{\hoffset}{-0.05cm}
+%\addtolength{\voffset}{-0.05cm}
+%\renewcommand{\baselinestretch}{0.96}
+
+%\begin{figure}
+%  % Requires \usepackage{graphicx}
+%  \includegraphics[width=]{}\\
+%  \caption{}\label{}
+%\end{figure}
+
+
+\IEEEoverridecommandlockouts
+
+\usepackage{color}
+\usepackage{algpseudocode}
+\usepackage{algorithm}
+\usepackage{color}
+\usepackage{theorem}
+\usepackage{times,amsmath,epsfig}
+\usepackage{amssymb}
+%\usepackage{subfigure}
+\usepackage{url}
+%\usepackage{setspace}
+%\doublespacing 
+
+%\usepackage{jmlr2e}
+%\usepackage{amsmath}
+%\usepackage [TABBOTCAP]{subfigure}
+%\usepackage{psfrag}
+
+\usepackage{dsfont}
+\usepackage{array}
+\usepackage{rotating}
+
+%\usepackage{stackengine}
+%\usepackage[font=small,format=plain,up,up]{caption}
+%\usepackage{caption}
+%\usepackage{subcaption}
+\input{my_sections.tex}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows}
+\input{mysymbol.sty}
+\input{figures/tikz_styles}
+
+\usepackage{subcaption}
+\captionsetup[sub]{font=footnotesize}
+\captionsetup[figure]{font=small,labelsep=period,subrefformat=parens}
+
+%\renewcommand\floatpagefraction{.9}
+%\renewcommand\topfraction{.9}
+%\renewcommand\bottomfraction{.9}
+%\renewcommand\textfraction{.1}
+
+%% +1
+\addtolength{\textwidth}     {1mm}
+\addtolength{\evensidemargin}{-1mm}
+\addtolength{\oddsidemargin} {-1mm}
+\addtolength{\textheight}    {1mm}
+\addtolength{\topmargin}     {-1mm}
+
+%\def\interparagraph{-1mm}
+%\def\intersection{-0.965mm}
+%\def\intereq{-0.965mm}
+%\def\vspacea{-0.3cm}
+
+%\newcommand{\dataset}{{\cal D}}
+%\newcommand{\fracpartial}[2]{\frac{\partial #1}{\partial  #2}}
+%\renewcommand{\Re}{{\mathbb R}}
+%\newcommand{\EE}{{\mathbb E}}
+%\newcommand{\diag}{{\mathrm{diag}}}
+%\newcommand{\bo}{\mathbf{o}}
+\newcommand{\trace}{{\text{trace}}}
+\newcommand{\bbeps}{{\boldsymbol{\epsilon}}}
+\newcommand{\EE}{{\mathbb E}}
+\newcommand{\bo}{\mathbf{o}}
+\newcommand{\mymod}{\mathrm{mod}_N}
+\newcommand{\Ni}{\mathrm{ni}}
+\newcommand{\Nv}{\mathrm{nv}}
+\newcommand{\QED}{\hfill\ensuremath{\blacksquare}}
+
+% Definitions
+\definecolor{penndarkestblue}{cmyk}{1,0.74,0,0.77}
+% RGB = (0,15,58); #000f3a
+\definecolor{penndarkerblue}{cmyk}{1,0.74,0,0.70}
+% RGB = (0,20,77); #00144d
+\definecolor{pennblue}{cmyk}{0.99,0.66,0,0.57} 
+% RGB = (1,37,110) ; #01256e
+\definecolor{pennlighterblue}{cmyk}{0.98,0.44,0,0.35}
+% RGB = (4,94,167); #045ea7
+\definecolor{pennlightestblue}{cmyk}{0.38,0.17,0,0.17} 
+% RGB = (130,175,211); #82afd3
+
+\definecolor{penndarkestred}{cmyk}{0,1,0.89,0.66}
+% RGB = (87,0,10); #57000a
+\definecolor{penndarkerred}{cmyk}{0,1,0.88,0.55}
+% RGB = (116,0,14); #74000e
+\definecolor{pennred}{cmyk}{0,1,0.83,0.42} 
+% RGB = (149,0,26); #95001a
+\definecolor{pennlighterred}{cmyk}{0,1,0.6,0.24}
+% RGB = (194,0,77); #c2004d
+\definecolor{pennlightestred}{cmyk}{0,0.43,0.26,0.12} 
+% RGB = (225,128,166); #e180a6
+
+\definecolor{penndarkestgreen}{cmyk}{1,0,1,0.68}
+% RGB = (0,82,0); #005200
+\definecolor{penndarkergreen}{cmyk}{1,0,1,0.57}
+% RGB = (0,110,0); #006e00
+\definecolor{penngreen}{cmyk}{1,0,1,0.44} 
+% RGB = (0,142,0); #008e00
+\definecolor{pennlightergreen}{cmyk}{1,0,1,0.25}
+% RGB = (0,190,0); #00be00
+\definecolor{pennlightestgreen}{cmyk}{0.43,0,0.43,0.13}
+% RGB = (128,223,128); #80df80
+
+\definecolor{penndarkestorange}{cmyk}{0,0.65,1,0.49}
+% RGB = (129,45,0); #812d00
+\definecolor{penndarkerorange}{cmyk}{0,0.65,1,0.33}
+% RGB = (172,60,0); #ac3c00
+\definecolor{pennorange}{cmyk}{0,0.54,1,0.24} 
+% RGB = (195,90,0); #c35a00
+\definecolor{pennlighterorange}{cmyk}{0,0.32,1,0.13}
+% RGB = (223,151,0); #df9700
+\definecolor{pennlightestorange}{cmyk}{0,0.15,0.46,0.06}
+% RGB = (239,203,128); #efcb80
+
+\definecolor{penndarkestpurple}{cmyk}{0,1,0.11,0.86}
+% RGB = (35,0,31); #23001f
+\definecolor{penndarkerpurple}{cmyk}{0,1,0.13,0.82}
+% RGB = (47,0,41); #2f0029
+\definecolor{pennpurple}{cmyk}{0,1,0.11,0.71} 
+% RGB = (74,0,66); #4a0042
+\definecolor{pennlighterpurple}{cmyk}{0,1,0.05,0.46}
+% RGB= (137,0,130); #890082
+\definecolor{pennlightestpurple}{cmyk}{0,0.35,0.02,0.23}
+% RGB = (196,128,193); #c480c1
+
+\definecolor{pennyellow}{cmyk}{0,0.20,1,0.05} 
+% RGB = (242,193,0); #f2c100
+\definecolor{pennlightgray1}{cmyk}{0,0,0,0.05}
+% RGB = (242,242,243); #f2f2f3
+\definecolor{pennlightgray3}{cmyk}{0.01,0.01,0,0.18}
+% RGB = (207,208,210); #cfd0d2
+\definecolor{pennmediumgray1}{cmyk}{0.04,0.03,0,0.31}
+% RGB = (168,170,175); #a8aaaf
+\definecolor{pennmediumgray4}{cmyk}{0.08,0.06,0,0.54}
+% RGB = (108,111,118); #6c6f76
+\definecolor{penndarkgray2}{cmyk}{0.09,0.07,0,0.71}
+% RGB = (68,70,75); #44464b
+\definecolor{penndarkgray4}{cmyk}{0.1,0.1,0,0.92}
+% RGB = (19,19,21); #131315
+
+\def\Tr{\mathsf{T}}
+\def\Hr{\mathsf{Hr}}
+\def\nv{\textrm{nv}}
+\def\hv{\textrm{hv}}
+\def\dc{\text{dc}}
+
+\def\pcite{{\color{pennpurple}[X]}}
+
+%\newcommand\barbelow[1]{\stackunder[1.2pt]{$#1$}{\rule{.8ex}{.075ex}}}
+
+\newtheorem{mytheorem}{\bf Theorem}
+\newtheorem{mydefinition}{\bf Definition}
+\newtheorem{mycorollary}{\bf Corollary}
+\newtheorem{mylemma}{\bf Lemma}
+\newtheorem{myproposition}{\bf Proposition}
+\newtheorem{remark}{\bf Remark}
+\newtheorem{property}{\hspace{-11pt}\bf Property}
+
+\DeclareMathOperator{\hav}{hav}
+
+\newenvironment{myproofsketch}[1][$\!\!$]{{\noindent\bf Proof (sketch) #1: }}
+{\hfill\QED\medskip}
+
+\def\BIAS{\beta}
+
+\usepackage[style=ieee]{biblatex}
+\addbibresource{opf.bib}
+
+\begin{document}
+	\section{Optimal Power Flow}
+	
+	Optimal power flow (OPF) is one of the most important optimization problems for the energy industry. In its simplest form, it is the problem of finding the optimal power outputs for several generators on the grid with respect to some objective function - usually a second order polynomial, $\bbc(\bbp^G, \bbp^R)$, where $\bbp^G, \bbp^R$ is the generated active and reactive power.
+	
+	This problem is at the heart of daily electricity grid operation. However, it is a very difficult problem to solve. Since electrical systems are predominantly AC, this introduces several non-linearities in the form of trigonometric functions in the voltage angle constraint equations (\ref{eq:opf_angle}). Moreover, the problem is non-convex due to non-linearities in the power flow equations (\ref{eq:opf_active}, \ref{eq:opf_reactive}) \cite{nonconvex, molzahn} and has been proven to be NP hard \cite{bienstock}. This makes it one of the most difficult optimization problems \cite{acopf}. Therefore, in practice linear DC approximations are used to solve the problem, but which exhibit significant inaccuracy \cite{molzahn}. There is a lot of active research. Recently a lot of works attempt convex approximations using techniques like semi-definite programming \cite{molzahn}. In this paper we are concerned with applying recently developed \red{[x]} graph neural networks to approximate the AC OPF problem, which can be formulated as follows.
+	
+	\begin{align}
+		&\underset{\bbp_i^G}{\min} \sum_{i \in \ccalG} \bbc_i(\bbp_i^G), \text{ subject to}\\
+		&\bbp_i(\bbv,\bbdelta) = \bbp_i^G-\bbp_i^L &\forall  i \in \ccalN \label{eq:opf_active} \\
+		&\bbq_i(\bbv,\bbdelta) = \bbq^G_i - \bbq^L_i &\forall  i \in \ccalN \label{eq:opf_reactive}\\
+		&\bbp_i^{G,\text{min}} \le \bbp_i^G \le \bbp_i^{G,\text{max}} &\forall  i \in \ccalG \label{eq:opf_gen_active}\\
+		&\bbq_i^{G,\text{min}} \le \bbq_i^G \le \bbq_i^{G,\text{max}} &\forall  i \in \ccalG \label{eq:opf_gen_reactive}\\
+		&\bbv_i^{\text{min}} \le \bbv_i \le \bbv_i^{\text{max}} &\forall i \in \ccalN \label{eq:opf_line_constraints}\\
+		&\bbdelta_i^{\text{min}} \le \bbdelta_i \le \bbdelta_i^{\text{max}} &\forall  i \in \ccalN \label{eq:opf_angle}\\
+	\end{align}
+	
+	In the OPF equations, $\ccalN$ is the set of all nodes and $\ccalG$ is the set of all generators. $\bbp_i(\bbv,\bbdelta), \bbq_i(\bbv,\bbdelta)$ are the net active and reactive power flow into node $i$. They are non-linear functions of the voltages and voltage angles of all other nodes. $\bbp^G_i, \bbq^G_i$ is the net power generated and $\bbp^L, \bbq^L$ is the net load at node $i$. Therefore, (\ref{eq:opf_active}) and (\ref{eq:opf_reactive}) are the power flow constraints, which are derived from Kirchhoffs current law. Equations (\ref{eq:opf_gen_active}) and (\ref{eq:opf_gen_reactive}) represent the operational constrains on generator output, where $\bbp^G, \bbq^G$ are the active and reactive power generated. The voltage, $\bbv_i$ and voltage angle $\bbdelta_i$ at node $i$ are also constrained by equations (\ref{eq:opf_line_constraints}) and (\ref{eq:opf_angle}) respectively.
+	
+	
+	\section{Machine learning for OPF}
+	In the past there have been several works on applying evolutionary programming, evolutionary strategies, genetic algorithms, artificial neural networks, simulated annealing, fuzzy set theory, ant colony optimization and particle swarm optimization \cite{intelligence}. Genetic algorithms have been shown to effectively solve the OPF problem for small and medium networks \cite{bakirtzis}, but fail to converge to feasible solutions for networks with more than 100 nodes \cite{todorovski}. Similarly, particle swarm algorithms have been demonstrated to work for the IEEE 5 node case \cite{particle} and a hybrid between particle swarm and Newton-Rapson was demonstrated for a 30 node network \cite{hybrid}. 
+	
+	Nevertheless, there has been limited work on applying machine learning for optimal power flow. More specifically, few authors explore using machine learning to perform OPF end to end as we do. There are two notable exceptions to this. Dobbe et al. \cite{dobbe} propose a system that uses machine learning for decentralized OPF \cite{dobbe}. For each node in the network, they decide to which other node to communicate with using a greedy algorithm -- note that this node need not be adjacent. They use a multiple stepwise regression algorithm implemented in a previous paper \cite{sondermeijer} to estimate the output of an OPF -- the optimal power generated. Specifically, they use load and slack bus voltage angle as inputs. Their numerical experiments on a 129 node network demonstrate performance near optimum. The predicted solution deviates by 0.15\% on average as compared to the objective value achieved by the OPF. The authors also measure how many constraints are violated. Their solution also learned local constraints from the data itself, on average violating only 0.00025\% of them.
+	
+	Guha et al. \cite{guha} demonstrate using deep learning for end-to-end prediction of AC OPF and constraint prediction - i.e. predicting which constraints are bounding, which can speed up traditional solver performance.  They create synthetic data for the IEEE 30 and IEEE 118 test cases by randomly perturbing the load distribution provided by the cases. Their dataset for IEE30 and IEEE118 has 812888 and 95000 samples, respectively. They achieve an average cost deviation of 0.2\% and satisfy constraints for 51\% and 70\% of the 30 bus and 118 bus case. They find that the optimal model for the 30 bus case was a two layer NN with 512 hidden units and tanh activations, while the best model for the 118 bus case was a three layer NN with 512 hidden units and ReLU activation.
+	
+	
+	\section{Graph Neural Networks}
+	
+	\section{Numerical Experiments}
+	
+	\subsection{Problem Description}
+	We consider a graph $\ccalG$ which represents the electrical network of a test case with $|\ccalN|$ nodes. $\ccalG$ is represented by an adjacency matrix $A \in \mathbb{R}^{|\ccalN| \times |\ccalN|}$ as defined in equation (\ref{eq:A}).
+	\begin{align}
+		A_{ij} &= 
+			\begin{cases}
+				0 & w_{ij} < \omega\\
+				w_{ij} & \text{otherwise}
+			\end{cases} \label{eq:A}\\
+		w_{ij} &= \exp(-|z_{ij}| \sigma)
+	\end{align}
+	$|z_{ij}|$ is the magnitude of impedance in ohms between bus $i$ and $j$. It is defined as $|z_{ij}| = |r_{ij} + i x_{ij}|$ where $r_{ij}, x_{ij}$ is the resistance and reactance of the line between nodes $i$ and $j$. The lower the impedance the more coupled the two nodes are to each other. The values are obtained from the test case. $\sigma=0.001$ is a scaling parameter, and $\omega=0.01$ is a threshold parameter - these are chosen by trail and error such that $A$ has only one connected component but is maximally sparse. 
+	
+	$\bbp^G_i \in \mathbb{R}^{|\ccalG|}$ is the active power generated by each generator is the controlled parameter. Note that for generators there is no variable $Q^G$ for reactive power, generator output is fully defined by its active power and voltage. The latter is constant and specified by the test case. The uncontrolled parameters are the active and reactive components of the load at each node,$L \in \mathbb{R}^{|\ccalN| \times 2}$. We define L as,
+	\begin{equation}
+		L = [\bbp^L, \bbq^L].
+	\end{equation}
+	For any physically feasible $L$, and $\bbp^G$ we can run a power flow to find the voltage, voltage angle, net active power, and net reactive power for each node at the steady state of the system. These quantities are physically measurable at each node. We represent them by a matrix $S$.
+	\begin{equation}
+		S = [\bbv, \bbdelta, \bbp, \bbq] \in \mathbb{R}^{N \times 4}
+	\end{equation}
+	where $\bbv$ is the voltage, $\bbdelta$ is the voltage angle, $\bbp$ is the net active power, and $\bbq$ is the net reactive power at each node.
+	
+	Our goal is to imitate optimal power flow as follows. For each load $L$ there exists a $\bbp^G$ that can be calculated using an exact AC OPF algorithm - we use the interior point implementation provided by Pandapower \cite{pandapower}. There is also a suboptimal solution, $\bbp^G_{dc}$, obtained by running a DC approximation to the OPF problem. Using $\bbp^G_{dc}$ and $L$ we run a power flow to find $S$, the steady state of the system for the suboptimal generator output. We train a graph neural network to approximate $\bbp^G$ with $\hbp^G$ as a function of $S$.
+	
+	\begin{equation}
+		\hbp^G = H(S).
+	\end{equation}
+	
+	\subsection{Data Generation and Training}
+	We use Pandapower \cite{pandapower} to construct the case models and perform OPF calculations. Pandapower also provides a substantial set of electrical system test cases, with reference load distributions. For supervised learning we generate synthetic loads using the reference loads provided by the test case, $L_{ref}$. To generate each load we sample from a uniform distribution around the reference load. This is the same methodology as used in literature \cite{guha}.
+	\begin{equation}
+		L \sim \text{Uniform}(0.9L_{ref}, 1.1L_{ref})
+	\end{equation}
+	
+	For each test case we generate 10000 samples which are split 80/10/10 between the train, test and validation sets. For each sample of $L$ we also pre-compute the sub-optimal steady state $S$ and the optimal $\bbp^G$. We train the GNN using Adam optimizer and minimize the mean squared error between $\bbp^G$ and $\hbp^G$.
+	
+	\subsection{Results}
+	
+	\begin{figure}
+		\centering
+		\begin{tabular}{|c|c|c|}
+			\hline 
+			& GNN with MLP & Local GNN \\ 
+			\hline 
+			IEEE 39 & 0.0036 & 0.0138 \\ 
+			\hline 
+			Iceland (118 nodes) & 0.0030 & 0.0507 \\ 
+			\hline 
+		\end{tabular} 
+		\caption{Normalized RMSE for different architectures and test cases.}
+	\end{figure}
+	
+	\printbibliography
+\end{document}
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,14 @@
+\usepackage{needspace}
+
+% \nbsubsubsection{} provides a numbered subsection in bold without a line break. The section will contain at least three lines of text before a pagebreak
+\newcommand{\nbsubsubsection}[1]{\needspace{1\baselineskip}\color{white}\subsubsection{#1}\vspace{-3\baselineskip}\color{black}\medskip{\noindent \bf \thesubsubsection. #1.}}
+
+% \myparagraph provides a paragraph title in italics. 
+\newcommand{\myparagraph}[1]{\needspace{1\baselineskip}\medskip\noindent {\it #1.}}
+
+% \myindenetedparagraph provides an indented paragraph with title in italics.
+\newcommand{\myindentedparagraph}[1]{\needspace{1\baselineskip}\medskip \hangindent=11pt \hangafter=0 \noindent{\it #1.}}
+
+% \myparagraphtc provides a paragraph title in italics. It adds an enter to the table of contents
+\newcommand{\myparagraphtc}[1]{\needspace{1\baselineskip}\medskip\noindent {\it #1.}\addcontentsline{toc}{subsubsection}{\qquad\qquad\quad#1}}
+
