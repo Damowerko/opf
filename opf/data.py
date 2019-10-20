@@ -5,6 +5,7 @@ from functools import partial
 import torch
 import torch.nn
 import torch.nn.functional
+import tqdm
 
 from opf.power import NetworkManager, LoadGenerator, load_case, OPFNotConverged, adjacency_from_net
 from GNN.Utils.dataTools import _data
@@ -13,8 +14,8 @@ import pandapower as pp
 
 def f(manager, length, data):
     n, l = data
-    if n % 100 == 0:
-        print("[{0:.0f}]".format(n / length * 100))
+    #if n % 100 == 0:
+        #print("[{0:.0f}]".format(n / length * 100))
     try:
         _, gen_init = manager.optimal_dc()
         manager.set_load(l)
@@ -178,21 +179,22 @@ if __name__ == '__main__':
 
     load = manager.get_load(reactive=True) * load_scale
     p, q = np.split(load, 2, axis=1)
-    p = LoadGenerator.generate_load_from_random(p, 10, delta=0.1)
-    q = LoadGenerator.generate_load_from_random(q, 10, delta=0.1)
+    p = LoadGenerator.generate_load_from_random(p, 10000, delta=0.1)
+    q = LoadGenerator.generate_load_from_random(q, 10000, delta=0.1)
     load = np.stack((p, q), axis=2)
     manager = NetworkManager(net)
 
     results = None
     with Pool() as p:
         g = partial(f, manager, load.shape[0])
-        results = list(p.map(g, enumerate(load)))
+        results = list(tqdm.tqdm((p.imap(g, enumerate(load))), total=load.shape[0]))
 
-    #results = [f(row, manager, n, load.shape[0]) for n, row in enumerate(load)]
+    #results = [f(manager, load.shape[0], data) for data in enumerate(load)]
 
     load, bus, gen = zip(*results)
     isNotNone = lambda x: x is not None
     load = np.stack(list(filter(isNotNone, load)))
     bus = np.stack(list(filter(isNotNone, bus)))
     gen = np.stack(list(filter(isNotNone, gen)))
+    print(gen.shape)
     np.savez(os.path.join(case_dir, "data.npz"), load=load, bus=bus, gen=gen)
