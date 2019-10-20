@@ -145,10 +145,13 @@ class NetworkManager:
 
     def optimal_ac(self):
         try:
-            pp.runpm_ac_opf(self.net)
-        except RuntimeError:
-            reload(pandapower)
-            pp.runpm_ac_opf(self.net)
+            try:
+                pp.runpm_ac_opf(self.net)
+            except RuntimeError:
+                reload(pandapower)
+                pp.runpm_ac_opf(self.net)
+        except (RuntimeError, TypeError, NameError):
+            raise pp.OPFNotConverged
         if not self.opf_converged():
             raise pp.OPFNotConverged
         return self._results()
