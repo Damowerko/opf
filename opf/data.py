@@ -172,14 +172,14 @@ if __name__ == '__main__':
 
     net = load_case(case_name, data_dir, reindex=True)
 
-    LoadGenerator.parse_data(profile_dir, state)
-    generator = LoadGenerator(profile_dir)
+    #LoadGenerator.parse_data(profile_dir, state)
+    #generator = LoadGenerator(profile_dir)
     manager = NetworkManager(net)
 
     load = manager.get_load(reactive=True) * load_scale
     p, q = np.split(load, 2, axis=1)
-    p = generator.generate_load_from_random(p, 10000, delta=0.1)
-    q = generator.generate_load_from_random(q, 10000, delta=0.1)
+    p = LoadGenerator.generate_load_from_random(p, 10, delta=0.1)
+    q = LoadGenerator.generate_load_from_random(q, 10, delta=0.1)
     load = np.stack((p, q), axis=2)
     manager = NetworkManager(net)
 

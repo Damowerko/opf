@@ -177,7 +177,8 @@ class LoadGenerator:
         """
         return len(self.commercial_data.columns), len(self.residential_data.columns)
 
-    def generate_load_from_random(self, average: np.ndarray, num_samples: int, delta: float = 0.1) -> pd.DataFrame:
+    @staticmethod
+    def generate_load_from_random(average: np.ndarray, num_samples: int, delta: float = 0.1) -> pd.DataFrame:
         """
         Generate loads by sampling from the uniform distribution on [average*(1-delta),average*(1+delta)].
         :param average: A vector with average load for each node.
