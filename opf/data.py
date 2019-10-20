@@ -172,7 +172,7 @@ if __name__ == '__main__':
 
     net = load_case(case_name, data_dir, reindex=True)
 
-    LoadGenerator.parse_data(profile_dir, state)
+    #LoadGenerator.parse_data(profile_dir, state)
     generator = LoadGenerator(profile_dir)
     manager = NetworkManager(net)
 
