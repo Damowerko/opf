@@ -9,6 +9,7 @@ import pandas as pd
 import pandapower.networks
 import os
 from importlib import reload
+from functools import lru_cache
 
 OPFNotConverged = pp.OPFNotConverged
 
@@ -26,7 +27,7 @@ def load_case(case_name, data_dir, reindex=True):
     if not os.path.exists(os.path.join(data_dir, case_name)):
         os.mkdir(os.path.join(data_dir, case_name))
     if reindex:
-        net = pp.create_continuous_bus_index(net, start=0)
+        pp.create_continuous_bus_index(net, start=0)
     return net
 
 
@@ -56,25 +57,42 @@ class NetworkManager:
         self.net = net
         self.A_scaling = A_scaling
         self.A_threshold = A_threshold
-        self._node_indices = None
-        self.gen_default = self.get_gen()
         self._adjacency, self._bus_indices = adjacency_from_net(self.net, self.A_scaling, self.A_threshold)
+        self.gen_indices = self._gen_indices()
+        self.sgen_indices = self._sgen_indices()
+        self.gen_default = self.get_gen()
+
+        assert len(set(self.gen_indices)) == len(self.gen_indices)
+        assert len(set(self.sgen_indices)) == len(self.sgen_indices)
+
+    def _gen_indices(self):
+        return self.net.gen.index.to_numpy()
+
+    def _sgen_indices(self):
+        return self.net.sgen.index.to_numpy()
 
     def get_adjacency(self):
         return np.copy(self._adjacency)
 
+    @property
+    def n_buses(self):
+        return self._adjacency.shape[0]
+
     def get_bus_index(self, i):
-        return self._node_indices[i]
+        return self._bus_indices[i]
 
     def set_gen(self, g: np.ndarray):
-        self.net["gen"]["p_mw"] = g[0:len(self.net["gen"])]
-        self.net["sgen"]["p_mw"] = g[len(self.net["gen"]):self.get_gen_len()]
+        self.net["gen"]["p_mw"] = g[self.gen_indices]
+        self.net["sgen"]["p_mw"] = g[self.sgen_indices]
 
     def reset_gen(self):
         self.set_gen(self.gen_default)
 
     def get_gen(self):
-        return np.concatenate((self.net["gen"]["p_mw"].to_numpy(), self.net["sgen"]["p_mw"].to_numpy()))
+        g = np.zeros((self.n_buses, 2))
+        g[:, 0].put(self.gen_indices, self.net["gen"]["p_mw"].to_numpy())
+        g[:, 1].put(self.sgen_indices, self.net["sgen"]["p_mw"].to_numpy())
+        return g
 
     def get_gen_index(self):
         gen_index = self.net['gen']['bus'].to_numpy()
@@ -109,12 +127,34 @@ class NetworkManager:
                     + row["cq0_eur"] + q * row["cq1_eur_per_mvar"] + q * q * row["cq2_eur_per_mvar2"]
         return cost
 
-    def check_violation(self):
+    def to_vector(self, element_type: str, constraint_type: str):
+        element: pd.DataFrame = self.net[element_type]
+        if constraint_type not in element:
+            return np.zeros((self.n_buses, 1))
+        series: pd.Series = element[constraint_type].reindex(pd.RangeIndex(self.n_buses)).fillna(0)
+        return series.to_numpy().reshape(self.n_buses, 1)
+
+    def get_constrains(self):
+        element_types = ['gen', 'sgen', 'ext_grid', 'load', 'storage']
+        constraint_types = ['min_p_mw', 'max_p_mw', 'min_q_mvar', 'max_q_mvar']
+        constraints = []
+        for element_type in element_types:
+            for constraint_type in constraint_types:
+                constraints.append(self.to_vector(element_type, constraint_type))
+
+        dc_line_contrant_types = ["max_p_mw", "min_q_from_mvar", "max_q_from_mvar", "min_q_to_mvar", "max_q_to_mvar"]
+        for constraint_type in dc_line_contrant_types:
+            constraints.append(self.to_vector('dcline', constraint_type))
+
+        return np.concatenate(constraints, 1)
+
+    def count_violations(self):
         """ :return True if there is at least one constraint violated.
         Does not take into account branch constraintrs.
         """
+
         def count(element, column):
-            if self.net[element].size == 0:
+            if self.net[element].shape[0] == 0:
                 return 0
             val = self.net['res_' + element].sort_index()[column].to_numpy()
             max = self.net[element].sort_index()['max_' + column].to_numpy()
@@ -125,9 +165,14 @@ class NetworkManager:
         gen = count('gen', 'p_mw') + count('gen', 'q_mvar')
         sgen = count('sgen', 'p_mw') + count('sgen', 'q_mvar')
         ext_grid = count('ext_grid', 'p_mw') + count('ext_grid', 'q_mvar')
-        line = 0# len(pp.overloaded_lines(self.net, 110))
-        violations = bus + gen + sgen + ext_grid + line
-        return violations > 0
+        line = len(pp.overloaded_lines(self.net, 100))
+        return bus + gen + sgen + ext_grid + line
+
+    def count_contraints(self):
+        def count(element):
+            return self.net[element].shape[0] * 2
+
+        return count('bus') + count('gen') + count('sgen') + count('ext_grid') + count('line')
 
     def powerflow(self):
         try:
@@ -147,11 +192,11 @@ class NetworkManager:
         try:
             try:
                 pp.runopp(self.net, calculate_voltage_angles=True)
-                #pp.runpm_ac_opf(self.net)
+                # pp.runpm_ac_opf(self.net)
             except RuntimeError:
                 reload(pandapower)
                 pp.runopp(self.net, calculate_voltage_angles=True)
-                #pp.runpm_ac_opf(self.net)
+                # pp.runpm_ac_opf(self.net)
         except (RuntimeError, TypeError, NameError):
             raise pp.OPFNotConverged
         if not self.opf_converged():

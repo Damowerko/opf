@@ -21,7 +21,7 @@ from opf.data import OPFData
 from opf import power
 import sklearn as sk
 
-matplotlib.rcParams['text.usetex'] = True
+matplotlib.rcParams['text.usetex'] = False
 matplotlib.rcParams['font.family'] = 'serif'
 torch.set_default_dtype(torch.float32)
 
@@ -31,7 +31,7 @@ os.chdir("..")
 Data
 """
 nDataSplits = 1
-case_name = "case5"
+case_name = "case30"
 data_dir = "data"
 A_scaling = 0.001
 A_threshold = 0.01
@@ -71,7 +71,7 @@ lossFunction = nn.MSELoss()
 
 # Overall training options
 nEpochs = 10  # Number of epochs
-batchSize = 16  # Batch size
+batchSize = 64  # Batch size
 doLearningRateDecay = False  # Learning rate decay
 learningRateDecayRate = 0.9  # Rate
 learningRateDecayPeriod = 1  # How many epochs after which update the lr
@@ -128,7 +128,7 @@ modelList = []
 case_info = data.case_info()
 
 alphas = ([2], [4])
-Fs = ([1],[2],[4])
+Fs = ([4],[8],[16])
 Ks = ([2],[4],[8],[16])
 Ms = (2,4)
 Ns = ([case_info['num_nodes']],)
@@ -137,7 +137,7 @@ parameters = itertools.product(alphas, Fs, Ks, Ms, Ns)
 for alpha, F, K, M, N in parameters:
     # MLP layer
     nGenerators = case_info['num_gen']
-        dimMLP = [nGenerators]  # MLP after the last layer
+    dimMLP = [nGenerators]  # MLP after the last layer
 
     # region MODELS
 
@@ -151,7 +151,7 @@ for alpha, F, K, M, N in parameters:
         hParamsSelGNNDeg['name'] = 'SelectionDegree'  # Name of the architecture
 
         # \\\ Architecture parameters
-        hParamsSelGNNDeg['F'] = [4] + F  # Features per layer
+        hParamsSelGNNDeg['F'] = [data.inputs.shape[1]] + F  # Features per layer
         hParamsSelGNNDeg['K'] = K  # Number of filter taps per layer
         hParamsSelGNNDeg['bias'] = True  # Decide whether to include a bias term
         hParamsSelGNNDeg['sigma'] = torch.nn.ReLU  # Selected nonlinearity
@@ -177,7 +177,7 @@ for alpha, F, K, M, N in parameters:
         hParamsAggGNNDeg['name'] = 'AggregationDegree'
 
         # \\\ Architecture parameters
-        hParamsAggGNNDeg['F'] = [4] + F  # Features per layer
+        hParamsAggGNNDeg['F'] = [data.inputs.shape[1]] + F  # Features per layer
         hParamsAggGNNDeg['K'] = K  # Number of filter taps per layer
         hParamsAggGNNDeg['bias'] = True  # Decide whether to include a bias term
         hParamsAggGNNDeg['sigma'] = torch.nn.ReLU  # Selected nonlinearity
@@ -386,8 +386,8 @@ for alpha, F, K, M, N in parameters:
     # Options:
     doPrint = True  # Decide whether to print stuff while running
     doLogging = False  # Log into tensorboard
-    doSaveVars = True  # Save (pickle) useful variables
-    doFigs = True  # Plot some figures (this only works if doSaveVars is True)
+    doSaveVars = False  # Save (pickle) useful variables
+    doFigs = False  # Plot some figures (this only works if doSaveVars is True)
     # Parameters:
     printInterval = 0  # After how many training steps, print the partial results
     #   0 means to never print partial results while training
