@@ -1,0 +1,3 @@
+[submodule "graph-neural-networks"]
+	path = graph-neural-networks
+	url = https://github.com/Damowerko/graph-neural-networks.git
