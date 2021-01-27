@@ -6,8 +6,8 @@ import pytorch_lightning as pl
 import torch
 import torch.nn
 
-import GNN.Utils.graphML as gml
-from GNN.Modules.architectures import SelectionGNN
+import alegnn.utils.graphML as gml
+from alegnn.modules.architectures import SelectionGNN
 from pyopf.complex import ComplexPolar, ComplexRect
 from pyopf.power import NetworkManager
 
@@ -104,7 +104,8 @@ class OPFLogBarrier(pl.LightningModule):
         self.init_shunt()
 
     def loss(self, cost, constraints):
-        constraint_losses = [val["loss"] for val in constraints.values() if val["loss"] is not None and not val["loss"].isnan()]
+        constraint_losses = [val["loss"] for val in constraints.values() if
+                             val["loss"] is not None and not val["loss"].isnan()]
         return cost * self.cost_weight + torch.stack(constraint_losses).mean()
 
     def metrics(self, cost, constraints, prefix):
@@ -137,24 +138,20 @@ class OPFLogBarrier(pl.LightningModule):
         x, load = x
         cost, constraints = self.optimal_power_flow(*self(x, load))
         loss = self.loss(cost, constraints)
-        result = pl.TrainResult(loss)
-        result.log("train_loss", loss)
-        result.log_dict(self.metrics(cost, constraints, "train"))
-        return result
+        self.log_dict(self.metrics(cost, constraints, "train"))
+        return loss
 
     def validation_step(self, x, *args, **kwargs):
         x, load = x
         cost, constraints = self.optimal_power_flow(*self(x, load))
-        result = pl.EvalResult()
-        result.log_dict(self.metrics(cost, constraints, "val"))
-        return result
+        self.log_dict(self.metrics(cost, constraints, "val"))
+        return cost
 
-    def test_step(self, x, *args, **kwargs) -> pl.EvalResult:
+    def test_step(self, x, *args, **kwargs):
         x, load = x
         cost, constraints = self.optimal_power_flow(*self(x, load))
-        result = pl.EvalResult()
-        result.log_dict(self.metrics(cost, constraints, "test"))
-        return result
+        self.log_dict(self.metrics(cost, constraints, "test"))
+        return cost
 
     def optimal_power_flow(self, x, p_load: torch.Tensor, q_load: torch.Tensor):
         """
@@ -178,6 +175,12 @@ class OPFLogBarrier(pl.LightningModule):
 
         V = ComplexPolar(vm, va).unsqueeze(-1)  # network will learn rectangular voltages
         S = ComplexRect(p, q).unsqueeze(-1)
+
+        # Convert voltage and power to per unit
+        V /= self.base_kv
+        S /= self.base_mva
+        p_load /= self.base_mva
+        q_load /= self.base_mva
 
         Sd = ComplexRect(p_load, q_load).unsqueeze(-1)
         Sg = S + Sd
@@ -219,20 +222,6 @@ class OPFLogBarrier(pl.LightningModule):
         """
         Sg = Sg.to_rect()  # cast to rectangular coordinates
         vad = va.unsqueeze(2) - va.unsqueeze(1)  # voltage angle difference matrix
-        # constraints = {
-        #     "equality_powerflow": self.equality(S - Sbus),
-        #     "equality_reference": self.equality(va[self.reference_buses]),
-        #     "inequality_real_power_min": self.inequality(self.p_min - Sg.real),
-        #     "inequality_real_power_max": self.inequality(Sg.real - self.p_max),
-        #     "inequality_reactive_power_min": self.inequality(self.q_min - Sg.imag),
-        #     "inequality_reactive_power_max": self.inequality(Sg.imag - self.q_max),
-        #     "inequality_voltage_magnitude_min": self.inequality(self.vm_min - vm),
-        #     "inequality_voltage_magnitude_max": self.inequality(vm - self.vm_max),
-        #     "inequality_forward_rate_max": self.inequality(Sf.abs() - self.rate_a),
-        #     "inequality_backward_rate_max": self.inequality(St.abs() - self.rate_a),
-        #     "inequality_voltage_angle_difference_min": self.inequality(self.vad_min - vad),
-        #     "inequality_voltage_angle_difference_max": self.inequality(vad - self.vad_max)
-        # }
         constraints = {
             "equality_powerflow": self.equality(S - Sbus),
             "equality_reference": self.equality(va[self.reference_buses]),
@@ -245,8 +234,8 @@ class OPFLogBarrier(pl.LightningModule):
             "equality_voltage_magnitude": self.equality((self.vm_min - vm)[:, self.vm_mask]),
             "inequality_voltage_magnitude_min": self.inequality((self.vm_min - vm)[:, ~self.vm_mask]),
             "inequality_voltage_magnitude_max": self.inequality((vm - self.vm_max)[:, ~self.vm_mask]),
-            #"inequality_forward_rate_max": self.inequality(Sf.abs() - self.rate_a),
-            #"inequality_backward_rate_max": self.inequality(St.abs() - self.rate_a),
+            "inequality_forward_rate_max": self.inequality(Sf.abs() - self.rate_a),
+            "inequality_backward_rate_max": self.inequality(St.abs() - self.rate_a),
             "equality_voltage_angle_difference": self.equality((self.vad_min - vad)[:, self.vad_mask], angle=True),
             "inequality_voltage_angle_difference_min": self.inequality((self.vad_min - vad)[:, ~self.vad_mask],
                                                                        angle=True),
@@ -257,8 +246,8 @@ class OPFLogBarrier(pl.LightningModule):
 
     def equality(self, u, angle=False):
         if angle:
-            u = torch.fmod(u, 2*np.pi)
-            u[u > 2*np.pi] = 2*np.pi - u[u > 2*np.pi]
+            u = torch.fmod(u, 2 * np.pi)
+            u[u > 2 * np.pi] = 2 * np.pi - u[u > 2 * np.pi]
         loss = u.abs().square().mean()
         return {"loss": loss}
 
@@ -266,8 +255,8 @@ class OPFLogBarrier(pl.LightningModule):
         assert not ((u > 0) * u.isinf()).any()
 
         if angle:
-            u = torch.fmod(u, 2*np.pi)
-            u[u > 2*np.pi] = 2*np.pi - u[u > 2*np.pi]
+            u = torch.fmod(u, 2 * np.pi)
+            u[u > 2 * np.pi] = 2 * np.pi - u[u > 2 * np.pi]
 
         unconstrained = (u < 0) * u.isinf()
         violated = u >= 0
@@ -345,11 +334,14 @@ class OPFLogBarrier(pl.LightningModule):
     def init_bus(self):
         self.vm_min = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
         self.vm_max = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
+        self.base_kv = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
+        self.base_mva = self.pm["baseMVA"]
         self.reference_buses = []
         for bus in self.pm["bus"].values():
             i = bus["bus_i"] - 1
             self.vm_min[i] = bus["vmin"]
             self.vm_max[i] = bus["vmax"]
+            self.base_kv[i] = bus["base_kv"]
             if bus["bus_type"] == 3:
                 self.reference_buses.append(i)
         self.vm_mask = self.equality_threshold > (self.vm_max - self.vm_min).abs()

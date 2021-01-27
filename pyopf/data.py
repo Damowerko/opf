@@ -1,9 +1,20 @@
+import os
 from functools import partial
 from multiprocessing import Pool
 
 import numpy as np
-import tqdm
 from pyopf.power import NetworkManager, LoadGenerator, OPFNotConverged
+
+
+def load_data(case, data_dir="./data"):
+    data = np.load(os.path.join(data_dir, case + ".npz"))
+    return data["train_samples"], data["test_samples"], data["test_labels"]
+
+
+def save_data(case, train_samples, test_samples, test_labels, data_dir="./data"):
+    filename = os.path.join(data_dir, case + ".npz")
+    np.savez(filename, train_samples=train_samples, test_samples=test_samples, test_labels=test_labels)
+
 
 def generate_samples(manager: NetworkManager, num_samples, load_scale=1.0):
     load = manager.get_load(reactive=True) * load_scale
@@ -30,18 +41,21 @@ def label_sample(manager: NetworkManager, load_sample):
         return None
 
 
-def label_samples(manager, load_samples):
+def label_samples(manager, load_samples, pool=True):
     """
-
+    Labels samples using :method:`label_sample`.
     :param manager: NetworkManager instance.
     :param load_samples: Active and reactive loads on each node per sample.
+    :param pool: If true then use a process pool.
     :return: A list of tuples (load_samples, optimal_power_flow) where values of opf which did not converge were
         filtered out.
     """
-    with Pool() as p:
-        f = partial(label_sample, manager)
-        opfs = list(tqdm.tqdm((p.imap(f, load_samples)), total=load_samples.shape[0]))
-    data = zip(load_samples, opfs)
+    f = partial(label_sample, manager)
+    if pool:
+        with Pool() as p:
+            opfs = list(p.imap(f, load_samples))
+    else:
+        opfs = list(map(f, load_samples))
+    data = list(zip(load_samples, opfs))
     data = list(filter(lambda x: x[1] is not None, data))
     return zip(*data)
-

@@ -3,12 +3,14 @@ import math
 import os
 import warnings
 from importlib import reload
+from itertools import chain
 
 import networkx as nx
 import numpy as np
 import pandapower as pp
 import pandapower.networks
 import pandapower.topology
+import pandapower.plotting
 import pandas as pd
 from pandapower.converter.matpower.to_mpc import _ppc2mpc
 from pandapower.converter.powermodels.to_pm import convert_pp_to_pm
@@ -27,8 +29,6 @@ def load_case(case_name, data_dir, reindex=True):
         net = pp.from_json(os.path.join(data_dir, case_name, "train.json"))
     else:
         raise ValueError("Network name {} is undefined.".format(case_name))
-    if not os.path.exists(os.path.join(data_dir, case_name)):
-        os.mkdir(os.path.join(data_dir, case_name))
     if reindex:
         pp.create_continuous_bus_index(net, start=0)
     return net
@@ -57,26 +57,47 @@ def adjacency_from_net(net, scaling=0.001, threshold=0.01):
 
 class NetworkManager:
     def __init__(self, net, A_scaling=0.001, A_threshold=0.01):
-        self.net = net
+        self.net = self.simplify_net(net)
         self.A_scaling = A_scaling
         self.A_threshold = A_threshold
-        self._adjacency, self._bus_indices = adjacency_from_net(self.net, self.A_scaling, self.A_threshold)
-        self.gen_indices = self._gen_indices()
-        self.sgen_indices = self._sgen_indices()
-        self.load_indices = self._load_indices()
-        self.gen_default = self.get_gen()
+
+        self.gen_indices = self.net.gen.bus.to_numpy()
+        self.sgen_indices = self.net.sgen.bus.to_numpy()
+        self.load_indices = self.net.load.bus.to_numpy()
+
+        self._adjacency, self._bus_indices = \
+            adjacency_from_net(self.net, self.A_scaling, self.A_threshold)
 
         assert len(set(self.gen_indices)) == len(self.gen_indices)
         assert len(set(self.sgen_indices)) == len(self.sgen_indices)
 
-    def _gen_indices(self):
-        return self.net.gen.index.to_numpy()
+    @staticmethod
+    def simplify_net(net):
+        """
+        Simplifies the net by ensuring that there is only one generator per node. It will
+        create additional auxiliary nodes to split up the generators.
+        :param net: The pandapower network.
+        :return: The modified pandapower network.
+        """
 
-    def _sgen_indices(self):
-        return self.net.sgen.index.to_numpy()
-
-    def _load_indices(self):
-        return self.net.load["bus"].to_numpy()
+        gen_bus = set()
+        for gen_index, row in net.gen.iterrows():
+            bus_index = row["bus"]
+            # check if bus already exists
+            if bus_index in gen_bus:
+                # Create new bus with unique index
+                bus_row = net.bus.loc[bus_index]
+                new_bus_index = net.bus.shape[0]
+                net.bus = net.bus.append(bus_row, ignore_index=True)
+                # Change the generator bus
+                net.gen.loc[gen_index].bus = new_bus_index
+                # Connect original bus with low impedence line
+                pp.create_line_from_parameters(net, from_bus=bus_index, to_bus=new_bus_index, bus_length=0.01,
+                                               r_ohm_per_km=0.01, x_ohm_per_km=0.01, c_nf_per_km=0.01,
+                                               r0_ohm_per_km=0.01, x0_ohm_per_km=0.01, c0_nf_per_km=0.01,
+                                               max_i_ka=1e8, max_loading_percent=100)
+            gen_bus.add(bus_index)
+        return net
 
     def get_adjacency(self):
         return np.copy(self._adjacency)
@@ -85,15 +106,9 @@ class NetworkManager:
     def n_buses(self):
         return self._adjacency.shape[0]
 
-    def get_bus_index(self, i):
-        return self._bus_indices[i]
-
     def set_gen(self, g: np.ndarray):
-        self.net["gen"]["p_mw"] = g[self.gen_indices]
-        self.net["sgen"]["p_mw"] = g[self.sgen_indices]
-
-    def reset_gen(self):
-        self.set_gen(self.gen_default)
+        self.net["gen"]["p_mw"] = g[:len(self.gen_indices)]
+        self.net["sgen"]["p_mw"] = g[len(self.gen_indices):]
 
     def get_gen(self):
         g = np.zeros((self.n_buses, 2))
@@ -218,6 +233,7 @@ class NetworkManager:
                 pp.runopp(self.net, calculate_voltage_angles=True)
                 # pp.runpm_ac_opf(self.net)
             except RuntimeError:
+                pp.diagnostic(self.net)
                 reload(pandapower)
                 pp.runopp(self.net, calculate_voltage_angles=True)
                 # pp.runpm_ac_opf(self.net)

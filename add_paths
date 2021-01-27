@@ -1,1 +1,1 @@
-export PYTHONPATH=$PYTHONPATH:$(pwd):$(pwd)/GNN
+export PYTHONPATH=$PYTHONPATH:$(pwd)
