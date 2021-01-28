@@ -1,4 +1,4 @@
-from functools import cached_property, reduce
+from functools import reduce
 from typing import List, Dict
 
 import numpy as np
@@ -99,6 +99,7 @@ class OPFLogBarrier(pl.LightningModule):
         self.n_bus = len(self.pm["bus"])
         self.n_branch = len(self.pm["branch"])
         self.init_gen()
+        self.init_cost_coefficients()
         self.init_bus()
         self.init_branch()
         self.init_shunt()
@@ -126,7 +127,7 @@ class OPFLogBarrier(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)
 
-    def forward(self, x, load):
+    def forward(self, x):
         self.gnn.to(x.dtype).to(x.device)
         x = self.gnn(x)
         x = torch.reshape(x, (-1, 4, self.n_bus))
@@ -135,21 +136,18 @@ class OPFLogBarrier(pl.LightningModule):
         return x, p_load, q_load
 
     def training_step(self, x, *args, **kwargs):
-        x, load = x
-        cost, constraints = self.optimal_power_flow(*self(x, load))
+        cost, constraints = self.optimal_power_flow(*self(x[0]))
         loss = self.loss(cost, constraints)
         self.log_dict(self.metrics(cost, constraints, "train"))
         return loss
 
     def validation_step(self, x, *args, **kwargs):
-        x, load = x
-        cost, constraints = self.optimal_power_flow(*self(x, load))
+        cost, constraints = self.optimal_power_flow(*self(x[0]))
         self.log_dict(self.metrics(cost, constraints, "val"))
         return cost
 
     def test_step(self, x, *args, **kwargs):
-        x, load = x
-        cost, constraints = self.optimal_power_flow(*self(x, load))
+        cost, constraints = self.optimal_power_flow(*self(x[0]))
         self.log_dict(self.metrics(cost, constraints, "test"))
         return cost
 
@@ -184,29 +182,28 @@ class OPFLogBarrier(pl.LightningModule):
 
         Sd = ComplexRect(p_load, q_load).unsqueeze(-1)
         Sg = S + Sd
-        If = ComplexPolar(self.Yf).matmul(V)  # Current from
-        It = ComplexPolar(self.Yt).matmul(V)  # Current to
-        Sf = ComplexPolar(self.Cf).matmul(V).squeeze(-1).diag() \
+        If = self.Yf.matmul(V)  # Current from
+        It = self.Yt.matmul(V)  # Current to
+        Sf = self.Cf.matmul(V).squeeze(-1).diag() \
             .matmul(If.conj())  # [Cf V] If* = Power from branch
-        St = ComplexPolar(self.Ct).matmul(V).squeeze(-1).diag() \
+        St = self.Ct.matmul(V).squeeze(-1).diag() \
             .matmul(It.conj())  # [Cf V] It* = Power to branch
         Sbus_sh = V.squeeze(-1).diag().matmul(
-            ComplexPolar(self.Ybus_sh).matmul(V.conj()))  # [V][Ybus_shunt] V* = shunt bus power
+            self.Ybus_sh.matmul(V.conj()))  # [V][Ybus_shunt] V* = shunt bus power
         Sbus = ComplexPolar(self.Cf.T).matmul(Sf) + ComplexPolar(self.Cf.T).matmul(Sf) + Sbus_sh
 
         cost = self.cost(S.real, S.imag)
         constraints = self.constraints(S, Sbus, V.abs(), V.angle(), Sg, Sf, St)
         return cost, constraints
 
-    @cached_property
-    def cost_coefficients(self):
+    def init_cost_coefficients(self):
         """A tuple of two 3xN matrices, representing the polynomial coefficients of active and reactive power cost."""
         element_types = ["gen", "sgen"]
         pcs, qcs = zip(*map(lambda et: self.manager.cost_coefficients(et), element_types))
         p_coeff = reduce(lambda x, y: x + y, pcs)
         q_coeff = reduce(lambda x, y: x + y, qcs)
-        return (torch.from_numpy(p_coeff).to(torch.float32).to(self.device),
-                torch.from_numpy(q_coeff).to(torch.float32).to(self.device))
+        self.cost_coefficients = (torch.from_numpy(p_coeff).to(torch.float32).to(self.device),
+                                  torch.from_numpy(q_coeff).to(torch.float32).to(self.device))
 
     def cost(self, p, q):
         """Compute the cost to produce the active and reactive power."""
@@ -324,11 +321,11 @@ class OPFLogBarrier(pl.LightningModule):
             self.vad_max[fr_bus, to_bus] = branch["angmax"]
         Yt = np.diag(Yff).dot(Cf) + np.diag(Yft).dot(Ct)
         Yf = np.diag(Ytf).dot(Cf) + np.diag(Ytt).dot(Ct)
-        self.Ybus_branch = torch.from_numpy(Cf.T.dot(Yf) + Ct.T.dot(Yt)).to(self.device)
-        self.Yt = torch.from_numpy(Yt).to(self.device)
-        self.Yf = torch.from_numpy(Yf).to(self.device)
-        self.Ct = torch.from_numpy(Ct).to(self.device)
-        self.Cf = torch.from_numpy(Cf).to(self.device)
+        self.Ybus_branch = ComplexRect.from_numpy(Cf.T.dot(Yf) + Ct.T.dot(Yt)).to_polar().to(self.device)
+        self.Yt = ComplexRect.from_numpy(Yt).to_polar().to(self.device)
+        self.Yf = ComplexRect.from_numpy(Yf).to_polar().to(self.device)
+        self.Ct = ComplexRect.from_numpy(Ct).to_polar().to(self.device)
+        self.Cf = ComplexRect.from_numpy(Cf).to_polar().to(self.device)
         self.vad_mask = self.equality_threshold > (self.vad_max - self.vad_min).abs()
 
     def init_bus(self):
@@ -347,35 +344,26 @@ class OPFLogBarrier(pl.LightningModule):
         self.vm_mask = self.equality_threshold > (self.vm_max - self.vm_min).abs()
 
     def init_shunt(self):
-        self.Ybus_sh = torch.zeros((self.n_bus, self.n_bus), device=self.device, dtype=torch.cfloat)
+        Ybus_sh = np.zeros((self.n_bus, self.n_bus), dtype=np.csingle)
         for shunt in self.pm["shunt"].values():
             i = shunt["shunt_bus"] - 1
-            self.Ybus_sh[i, i] += shunt["gs"] + 1j * shunt["bs"]
+            Ybus_sh[i, i] += shunt["gs"] + 1j * shunt["bs"]
+        self.Ybus_sh = ComplexRect.from_numpy(Ybus_sh).to_polar()
 
     def to(self, *args, **kwargs):
         super().to(*args, **kwargs)
-        self.p_min = self.p_min.to(*args,
-                                   **kwargs)  # torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
-        self.p_max = self.p_max.to(*args,
-                                   **kwargs)  # torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
-        self.q_min = self.q_min.to(*args,
-                                   **kwargs)  # torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
-        self.q_max = self.q_max.to(*args,
-                                   **kwargs)  # torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
-        self.rate_a = self.rate_a.to(*args,
-                                     **kwargs)  # torch.full((self.n_branch, 1), float("inf"), device=self.device, dtype=torch.float32)
-        self.vad_max = self.vad_max.to(*args,
-                                       **kwargs)  # torch.full((self.n_bus, self.n_bus), float("inf"), device=self.device, dtype=torch.float32)
-        self.vad_min = self.vad_min.to(*args,
-                                       **kwargs)  # torch.full((self.n_bus, self.n_bus), -float("inf"), device=self.device, dtype=torch.float32)
-        self.Yt = self.Yt.to(*args, **kwargs)  # torch.from_numpy(Yt).to(self.device)
-        self.Yf = self.Yf.to(*args, **kwargs)  # torch.from_numpy(Yf).to(self.device)
-        self.Ct = self.Ct.to(*args, **kwargs)  # torch.from_numpy(Ct).to(self.device)
-        self.Cf = self.Cf.to(*args, **kwargs)  # torch.from_numpy(Cf).to(self.device)
-        self.vm_min = self.vm_min.to(*args,
-                                     **kwargs)  # torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
-        self.vm_max = self.vm_max.to(*args,
-                                     **kwargs)  # torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
-        self.Ybus_sh = self.Ybus_sh.to(*args,
-                                       **kwargs)  # torch.zeros((self.n_bus, self.n_bus), device=self.device, dtype=torch.cfloat)
+        self.p_min = self.p_min.to(*args, **kwargs)
+        self.p_max = self.p_max.to(*args, **kwargs)
+        self.q_min = self.q_min.to(*args, **kwargs)
+        self.q_max = self.q_max.to(*args, **kwargs)
+        self.rate_a = self.rate_a.to(*args, **kwargs)
+        self.vad_max = self.vad_max.to(*args, **kwargs)
+        self.vad_min = self.vad_min.to(*args, **kwargs)
+        self.Yt = self.Yt.to(*args, **kwargs)
+        self.Yf = self.Yf.to(*args, **kwargs)
+        self.Ct = self.Ct.to(*args, **kwargs)
+        self.Cf = self.Cf.to(*args, **kwargs)
+        self.vm_min = self.vm_min.to(*args, **kwargs)
+        self.vm_max = self.vm_max.to(*args, **kwargs)
+        self.Ybus_sh = self.Ybus_sh.to(*args, **kwargs)
         return self

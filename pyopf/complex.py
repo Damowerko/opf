@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import torch
+import numpy as np
 
 
 class Complex(ABC):
@@ -69,6 +70,9 @@ class Complex(ABC):
         diag = torch.diag_embed if len(self.shape) > 1 else torch.diag
         return self._apply(diag)
 
+    def to(self, *args, **kwargs) -> Complex:
+        return self._apply(lambda x: x.to(*args, **kwargs))
+
     @abstractmethod
     def conj(self) -> Complex:
         pass
@@ -131,8 +135,13 @@ class ComplexRect(Complex):
             self._imag = args[1]
         assert self.real.shape == self.imag.shape
 
+    @staticmethod
+    def from_numpy(array: np.ndarray) -> ComplexRect:
+        return ComplexRect(torch.from_numpy(array.real), torch.from_numpy(array.imag))
+
     def to_polar(self):
-        return ComplexPolar((self._real ** 2 + self._imag ** 2 + 1e-16).sqrt(), (self._imag / (self._real + 1e-16)).atan())
+        return ComplexPolar((self._real ** 2 + self._imag ** 2 + 1e-16).sqrt(),
+                            (self._imag / (self._real + 1e-16)).atan())
 
     def to_rect(self):
         return self
