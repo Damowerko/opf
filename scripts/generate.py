@@ -11,6 +11,7 @@ if __name__ == "__main__":
     parser.add_argument("test_samples", type=int, help="Number of labeled samples to generate.")
     parser.add_argument("-d", "--data", metavar="-d", type=str, help="The data directory.", default="./data")
     parser.add_argument("--scale", default=1.0, type=float, help="Scale the load.")
+    parser.add_argument("--name", default=None, type=str, help="The filename.")
     args = parser.parse_args()
 
     case = load_case(args.case, args.data)
@@ -23,7 +24,10 @@ if __name__ == "__main__":
         test_samples = generate_samples(manager, args.test_samples, load_scale=args.scale)
         test_samples, test_labels = label_samples(manager, test_samples, True)
 
-    save_data(args.case, train_samples, test_samples, test_labels, args.data)
+    if args.name is None:
+        args.name = args.case
+
+    save_data(args.name, train_samples, test_samples, test_labels, args.data)
     print(f"Generation complete!"
           f"Train samples: {len(train_samples)}"
           f"Test samples: {len(test_samples)}")
