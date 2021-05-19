@@ -99,6 +99,7 @@ class OPFLogBarrier(pl.LightningModule):
         self.n_bus = len(self.pm["bus"])
         self.n_branch = len(self.pm["branch"])
         self.init_gen()
+        self.init_load()
         self.init_cost_coefficients()
         self.init_bus()
         self.init_branch()
@@ -106,7 +107,7 @@ class OPFLogBarrier(pl.LightningModule):
 
     def loss(self, cost, constraints):
         constraint_losses = [val["loss"] for val in constraints.values() if
-                             val["loss"] is not None and not val["loss"].isnan()]
+                             val["loss"] is not None and not torch.isnan(val["loss"])]
         return cost * self.cost_weight + torch.stack(constraint_losses).mean()
 
     def metrics(self, cost, constraints, prefix):
@@ -128,11 +129,12 @@ class OPFLogBarrier(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=1e-3)
 
     def forward(self, x):
-        self.gnn.to(x.dtype).to(x.device)
+        x = torch.transpose(x, 1, 2)
+        x = x.matmul(self.load_matrix.T)
+        p_load = x[:, 0, :]
+        q_load = x[:, 1, :]
         x = self.gnn(x)
         x = torch.reshape(x, (-1, 4, self.n_bus))
-        p_load = load[:, :, 0]
-        q_load = load[:, :, 1]
         return x, p_load, q_load
 
     def training_step(self, x, *args, **kwargs):
@@ -166,19 +168,16 @@ class OPFLogBarrier(pl.LightningModule):
         assert p_load.shape[1] == self.n_bus
         assert q_load.shape[1] == self.n_bus
 
-        vm = x[:, 0, :]
-        va = x[:, 1, :]
-        p = x[:, 2, :]
-        q = x[:, 3, :]
+        # Convert voltage and power to per unit
+        vm = x[:, 0, :] / self.base_kv
+        va = x[:, 1, :]  # no need to scale since this is the angle
+        p = x[:, 2, :] / self.base_mva
+        q = x[:, 3, :] / self.base_mva
+        p_load /= self.base_mva
+        q_load /= self.base_mva
 
         V = ComplexPolar(vm, va).unsqueeze(-1)  # network will learn rectangular voltages
         S = ComplexRect(p, q).unsqueeze(-1)
-
-        # Convert voltage and power to per unit
-        V /= self.base_kv
-        S /= self.base_mva
-        p_load /= self.base_mva
-        q_load /= self.base_mva
 
         Sd = ComplexRect(p_load, q_load).unsqueeze(-1)
         Sg = S + Sd
@@ -190,9 +189,9 @@ class OPFLogBarrier(pl.LightningModule):
             .matmul(It.conj())  # [Cf V] It* = Power to branch
         Sbus_sh = V.squeeze(-1).diag().matmul(
             self.Ybus_sh.matmul(V.conj()))  # [V][Ybus_shunt] V* = shunt bus power
-        Sbus = ComplexPolar(self.Cf.T).matmul(Sf) + ComplexPolar(self.Cf.T).matmul(Sf) + Sbus_sh
+        Sbus = self.Cf.T.matmul(Sf) + self.Cf.T.matmul(Sf) + Sbus_sh
 
-        cost = self.cost(S.real, S.imag)
+        cost = self .cost(S.real, S.imag)
         constraints = self.constraints(S, Sbus, V.abs(), V.angle(), Sg, Sf, St)
         return cost, constraints
 
@@ -217,6 +216,7 @@ class OPFLogBarrier(pl.LightningModule):
         Calculates the powerflow constraints.
         :returns: Map from constraint name => (value name => tensor value)
         """
+        Sg = Sg.transpose(1, 2).matmul(self.gen_matrix.matmul(self.gen_matrix.T)).transpose(1, 2)
         Sg = Sg.to_rect()  # cast to rectangular coordinates
         vad = va.unsqueeze(2) - va.unsqueeze(1)  # voltage angle difference matrix
         constraints = {
@@ -249,13 +249,13 @@ class OPFLogBarrier(pl.LightningModule):
         return {"loss": loss}
 
     def inequality(self, u, angle=False):
-        assert not ((u > 0) * u.isinf()).any()
+        assert not ((u > 0) * torch.isinf(u)).any()
 
         if angle:
             u = torch.fmod(u, 2 * np.pi)
             u[u > 2 * np.pi] = 2 * np.pi - u[u > 2 * np.pi]
 
-        unconstrained = (u < 0) * u.isinf()
+        unconstrained = (u < 0) * torch.isinf(u)
         violated = u >= 0
         violated_rate = torch.Tensor([float(violated.sum()) / float(u.numel())])
         violated_rms = u[violated].square().mean().sqrt() if violated_rate > 0 else 0
@@ -273,7 +273,7 @@ class OPFLogBarrier(pl.LightningModule):
                 below = u <= threshold
                 log = (-torch.log(-u[below]) / self.t).mean()
                 linear = ((-np.log(-threshold) / self.t) + (u[~below] - threshold) * self.s).mean()
-                loss = (log if not log.isnan() else 0) + (linear if not linear.isnan() else 0)
+                loss = (log if not torch.isnan(log) else 0) + (linear if not torch.isnan(linear) else 0)
         return dict(loss=torch.as_tensor(loss, dtype=self.dtype, device=self.device),
                     violated_rate=torch.as_tensor(violated_rate, dtype=self.dtype, device=self.device),
                     violated_rms=torch.as_tensor(violated_rms, dtype=self.dtype, device=self.device))
@@ -283,14 +283,22 @@ class OPFLogBarrier(pl.LightningModule):
         self.p_max = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
         self.q_min = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
         self.q_max = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
+        self.gen_matrix = torch.zeros((self.n_bus, len(self.pm["gen"])), device=self.device, dtype=torch.float32)
         for gen in self.pm["gen"].values():
             i = gen["gen_bus"] - 1
             self.p_min[i] = gen["pmin"]
             self.q_min[i] = gen["qmin"]
             self.p_max[i] = gen["pmax"]
             self.q_max[i] = gen["qmax"]
+            self.gen_matrix[i, gen["index"] - 1] = 1
         self.p_mask = self.equality_threshold > (self.p_max - self.p_min).abs()
         self.q_mask = self.equality_threshold > (self.q_max - self.q_min).abs()
+
+    def init_load(self):
+        self.load_matrix = torch.zeros((self.n_bus, len(self.pm["load"])), device=self.device, dtype=torch.float32)
+        for load in self.pm["load"].values():
+            i = load["load_bus"] - 1
+            self.load_matrix[i, load["index"] - 1] = 1
 
     def init_branch(self):
         self.rate_a = torch.full((self.n_branch, 1), float("inf"), device=self.device, dtype=torch.float32)

@@ -1,8 +1,8 @@
 #!/usr/bin/python
 import argparse
+
 from pyopf.data import generate_samples, label_samples, save_data
 from pyopf.power import NetworkManager, load_case
-import numpy as np
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate OPF dataset.")
@@ -22,7 +22,8 @@ if __name__ == "__main__":
     if args.test_samples > 0:
         test_samples = generate_samples(manager, args.test_samples, load_scale=args.scale)
         test_samples, test_labels = label_samples(manager, test_samples, True)
-        samples = np.stack(test_samples)
-        labels = np.stack(test_labels)
 
     save_data(args.case, train_samples, test_samples, test_labels, args.data)
+    print(f"Generation complete!"
+          f"Train samples: {len(train_samples)}"
+          f"Test samples: {len(test_samples)}")

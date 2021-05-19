@@ -30,7 +30,7 @@ def load_case(case_name, data_dir, reindex=True):
     else:
         raise ValueError("Network name {} is undefined.".format(case_name))
     if reindex:
-        pp.create_continuous_bus_index(net, start=0)
+        pp.create_continuous_elements_index(net, start=0)
     return net
 
 
@@ -79,6 +79,9 @@ class NetworkManager:
         :param net: The pandapower network.
         :return: The modified pandapower network.
         """
+
+        # for simplification rplace all sgen by gen
+        pp.replace_sgen_by_gen(net)
 
         gen_bus = set()
         for gen_index, row in net.gen.iterrows():
