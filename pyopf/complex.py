@@ -48,9 +48,13 @@ class Complex(ABC):
 
     def matmul(self, other) -> Complex:
         a = self.to_polar()
-        b = other.to_polar()
-        abs = a.abs().matmul(b.abs())
-        ang = (a.angle() + b.angle().transpose(-1, -2)).sum(-1).unsqueeze(-1)
+        if isinstance(other, Complex):
+            b = other.to_polar()
+            abs = a.abs().matmul(b.abs())
+            ang = (a.angle() + b.angle().transpose(-1, -2)).sum(-1).unsqueeze(-1)
+        else:
+            abs = a.abs().matmul(other)
+            ang = a.angle()
         return ComplexPolar(abs, ang)
 
     def mv(self, other) -> Complex:
@@ -69,6 +73,13 @@ class Complex(ABC):
     def diag(self) -> Complex:
         diag = torch.diag_embed if len(self.shape) > 1 else torch.diag
         return self._apply(diag)
+
+    def transpose(self, *args) -> Complex:
+        return self._apply(lambda x: torch.transpose(x, *args))
+
+    @property
+    def T(self) -> Complex:
+        return self._apply(lambda x: x.T)
 
     def to(self, *args, **kwargs) -> Complex:
         return self._apply(lambda x: x.to(*args, **kwargs))
