@@ -1,32 +1,20 @@
 import glob
-import math
-import os
-import warnings
-from importlib import reload
-from itertools import chain
+from copy import deepcopy
 
 import networkx as nx
 import numpy as np
 import pandapower as pp
 import pandapower.networks
 import pandapower.topology
-import pandapower.plotting
 import pandas as pd
 from pandapower.converter.matpower.to_mpc import _ppc2mpc
 from pandapower.converter.powermodels.to_pm import convert_pp_to_pm
 from pandapower.converter.pypower.to_ppc import to_ppc
 
-OPFNotConverged = pp.OPFNotConverged
 
-
-def load_case(case_name, data_dir, reindex=True):
-    custom_cases = ['denmark']
+def load_case(case_name, reindex=True):
     if hasattr(pp.networks, case_name):
         net = getattr(pp.networks, case_name)()
-        if case_name == 'iceland':
-            net['line']['x_ohm_per_km'][80] = -net['line']['x_ohm_per_km'][80]
-    elif case_name in custom_cases:
-        net = pp.from_json(os.path.join(data_dir, case_name, "train.json"))
     else:
         raise ValueError("Network name {} is undefined.".format(case_name))
     if reindex:
@@ -34,110 +22,180 @@ def load_case(case_name, data_dir, reindex=True):
     return net
 
 
-def adjacency_from_net(net, scaling=0.001, threshold=0.01):
-    nxgraph = pp.topology.create_nxgraph(net, calc_branch_impedances=True, multi=False)
-    index_attribute = "index"
-    nxgraph = nx.convert_node_labels_to_integers(nxgraph, label_attribute=index_attribute)
-    N = len(nxgraph.nodes)
-    G = np.zeros((N, N))
-    for u, v, data in nxgraph.edges(data=True):
-        value = math.exp(-data['z_ohm'] * scaling)
-        if value > threshold:
-            G[u, v] = value
-            G[v, u] = value
-    indicies = [index for _, index in nxgraph.nodes(data=index_attribute)]
+def simplify_net(net):
+    """
+    Simplifies the net:
+        * one generator per bus
+        * replaces static generators (PQ) with generators (PV)
 
-    nxg = nx.from_numpy_array(G)
-    num_connected_components = len(list(nx.connected_components(nxg)))
-    if num_connected_components > 1:
-        warnings.warn("The graph has more than 1 connected component ({}). Try decreasing scaling and/or threshold "
-                      "parameters.".format(num_connected_components))
-    return G, indicies
+    It will move generators onto new buses which are connected to the original node with a low impedence line.
+
+    TODO: Consider merging generators together instead of adding new buses.
+
+    :param net: The pandapower network.
+    :return: The modified pandapower network.
+    """
+    net = deepcopy(net)
+    pp.replace_sgen_by_gen(net)
+
+    gen_bus = set()  # keep track of the set of all buses
+    # external grid should be considered a generator
+    assert len(net.ext_grid == 1)
+    gen_bus.add(net.ext_grid.iloc[0].bus)
+
+    for gen_index, row in net.gen.iterrows():
+        bus_index = row["bus"]
+        # check if bus already exists
+        if bus_index in gen_bus:
+            # Create new bus with unique index
+            new_bus_index = net.bus.shape[0]
+            bus_row = net.bus.loc[bus_index]
+            bus_row["name"] = new_bus_index
+            net.bus = net.bus.append(bus_row, ignore_index=True)
+            # Change the generator bus
+            net.gen.at[gen_index, "bus"] = new_bus_index
+            # Connect original bus with low impedence line
+            pp.create_line_from_parameters(net, bus_index, new_bus_index, 0.01, 1, 1, 0.01, 1e8,
+                                           r0_ohm_per_km=1, x0_ohm_per_km=1, c0_nf_per_km=1,
+                                           max_loading_percent=100)
+        gen_bus.add(bus_index)
+    return net
 
 
-class NetworkManager:
-    def __init__(self, net, A_scaling=0.001, A_threshold=0.01):
-        self.net = self.simplify_net(net)
-        self.A_scaling = A_scaling
-        self.A_threshold = A_threshold
+class NetWrapper:
+    def __init__(self, net, per_unit=True):
+        """
+        Wrapper around a PandaPower network.
+        :param net: PandaPower network.
+        :param per_unit: Should the input/output values be in the per unit system?
+        """
+        self.net = simplify_net(net)
+        self.per_unit = per_unit
 
+        self.bus_indices = self.net.bus.index.to_numpy()
         self.gen_indices = self.net.gen.bus.to_numpy()
-        self.sgen_indices = self.net.sgen.bus.to_numpy()
         self.load_indices = self.net.load.bus.to_numpy()
 
-        self._adjacency, self._bus_indices = \
-            adjacency_from_net(self.net, self.A_scaling, self.A_threshold)
-
+        self.base_mva = self.net.sn_mva
+        self.base_kv = self.net.bus["vn_kv"].to_numpy()
+        self.base_ka = self.base_mva / self.base_kv
+        self.base_ohm = self.base_kv / self.base_ka
         assert len(set(self.gen_indices)) == len(self.gen_indices)
-        assert len(set(self.sgen_indices)) == len(self.sgen_indices)
 
-    @staticmethod
-    def simplify_net(net):
+    def impedence_matrix(self):
         """
-        Simplifies the net by ensuring that there is only one generator per node. It will
-        create additional auxiliary nodes to split up the generators.
-        :param net: The pandapower network.
-        :return: The modified pandapower network.
+        Creates a matrix of the branch impedance values from a PandaPower network.
+        Includes all branch elements.
+
+        :param net: Pandapower network.
+        :param per_unit: If true the output will be in per unit else in ohms.
+        :param
         """
+        unit = "pu" if self.per_unit else "ohm"
+        graph = pp.topology.create_nxgraph(
+            self.net,
+            calc_branch_impedances=True,
+            multi=False,
+            branch_impedance_unit=unit,
 
-        # for simplification rplace all sgen by gen
-        pp.replace_sgen_by_gen(net)
-
-        gen_bus = set()
-        for gen_index, row in net.gen.iterrows():
-            bus_index = row["bus"]
-            # check if bus already exists
-            if bus_index in gen_bus:
-                # Create new bus with unique index
-                bus_row = net.bus.loc[bus_index]
-                new_bus_index = net.bus.shape[0]
-                net.bus = net.bus.append(bus_row, ignore_index=True)
-                # Change the generator bus
-                net.gen.loc[gen_index].bus = new_bus_index
-                # Connect original bus with low impedence line
-                pp.create_line_from_parameters(net, from_bus=bus_index, to_bus=new_bus_index, bus_length=0.01,
-                                               r_ohm_per_km=0.01, x_ohm_per_km=0.01, c_nf_per_km=0.01,
-                                               r0_ohm_per_km=0.01, x0_ohm_per_km=0.01, c0_nf_per_km=0.01,
-                                               max_i_ka=1e8, max_loading_percent=100)
-            gen_bus.add(bus_index)
-        return net
-
-    def get_adjacency(self):
-        return np.copy(self._adjacency)
+        )
+        # Check that node indices matrch the network bus indices.
+        assert (np.asarray(graph.nodes) == self.bus_indices).all()
+        return nx.linalg.graphmatrix.adjacency_matrix(graph, weight=f"z_{unit}")
 
     @property
     def n_buses(self):
-        return self._adjacency.shape[0]
+        return self.net.bus.shape[0]
 
-    def set_gen(self, g: np.ndarray):
-        self.net["gen"]["p_mw"] = g[:len(self.gen_indices)]
-        self.net["sgen"]["p_mw"] = g[len(self.gen_indices):]
+    def set_gen(self, p_gen: np.ndarray):
+        self.net["gen"]["p_mw"] = p_gen * self.base_mva if self.per_unit else p_gen
 
     def get_gen(self):
-        g = np.zeros((self.n_buses, 2))
-        g[:, 0].put(self.gen_indices, self.net["gen"]["p_mw"].to_numpy())
-        g[:, 1].put(self.sgen_indices, self.net["sgen"]["p_mw"].to_numpy())
-        return g
+        p_gen = self.net["gen"]["p_mw"].to_numpy()
+        if self.per_unit:
+            p_gen /= self.base_mva
+        return p_gen
 
-    def get_gen_index(self):
-        gen_index = self.net['gen']['bus'].to_numpy()
-        sgen_index = self.net['sgen']['bus'].to_numpy()
-        return np.concatenate((gen_index, sgen_index))
+    def set_load(self, p, q):
+        self.net["load"]["p_mw"] = p * self.base_mva if self.per_unit else p
+        self.net["load"]["q_mvar"] = q * self.base_mva if self.per_unit else q
 
-    def get_gen_len(self) -> int:
-        return len(self.net["gen"]) + len(self.net["sgen"])
+    def get_load(self):
+        p_load = self.net["load"]["p_mw"].to_numpy()
+        q_load = self.net["load"]["q_mvar"].to_numpy()
+        if self.per_unit:
+            p_load /= self.base_mva
+            q_load /= self.base_mva
+        return p_load, q_load
 
-    def set_load(self, l):
-        l = np.transpose(l)
-        self.net["load"]["p_mw"] = l[0]
-        self.net["load"]["q_mvar"] = l[1]
+    def powerflow(self):
+        try:
+            pp.runpp(self.net)
+            return self._results()
+        except pp.LoadflowNotConverged:
+            return None, None
 
-    def get_load(self, reactive=False):
-        p = self.net["load"]["p_mw"].to_numpy()
-        q = self.net["load"]["q_mvar"].to_numpy()
-        if reactive:
-            return np.stack((p, q), axis=1)
-        return p
+    def optimal_ac(self):
+        """
+        Run optimal power flow.
+        :return: A tuple of bus, generator, and external grid results as numpy arrays. Each column represents a
+        different value. Returns None if not converged.
+            Bus columns: [|V| angle(V) Re(S) Im(S)].
+            Generator columns: [Re(S) Im(S)]
+            External grid columns: [Re(S) Im(S)]
+        """
+        try:
+            pp.runopp(self.net, calculate_voltage_angles=False)
+        except pp.OPFNotConverged:
+            return None
+        return self._results()
+
+    def optimal_dc(self):
+        try:
+            pp.rundcopp(self.net)
+        except pp.OPFNotConverged:
+            return None
+        return self._results()
+
+    def _opf_converged(self):
+        return self.net['OPF_converged']
+
+    def _results(self):
+        bus = self.net["res_bus"]
+        gen = self.net["res_gen"]
+        ext = self.net["res_ext_grid"]
+
+        vm = bus["vm_pu"].to_numpy()
+        va = bus["va_degree"].to_numpy()
+        p_load = bus["p_mw"].to_numpy()
+        q_load = bus["q_mvar"].to_numpy()
+        p_gen = gen["p_mw"].to_numpy()
+        q_gen = gen["q_mvar"].to_numpy()
+        p_ext = ext["p_mw"].to_numpy()
+        q_ext = ext["q_mvar"].to_numpy()
+
+        if self.per_unit:
+            p_load /= self.base_mva
+            q_load /= self.base_mva
+            p_gen /= self.base_mva
+            q_gen /= self.base_mva
+            p_ext /= self.base_mva
+            q_ext /= self.base_mva
+
+        bus = np.stack((vm, va, p_load, q_load), axis=1)
+        gen = np.stack((p_gen, q_gen), axis=1)
+        ext = np.stack((p_ext, q_ext), axis=1)
+        return bus, gen, ext
+
+    def to_powermodels(self):
+        return convert_pp_to_pm(self.net, trafo_model="pi")
+
+    def to_pypower(self):
+        return to_ppc(self.net, trafo_model="pi")
+
+    def to_matpower(self):
+        ppc = self.to_pypower()
+        return _ppc2mpc(ppc)
 
     def cost_coefficients(self, element_type):
         assert element_type in ["gen", "sgen", "ext_grid", "load", "dcline", "storage"]
@@ -215,54 +273,6 @@ class NetworkManager:
             return self.net[element].shape[0] * 2
 
         return count('bus') + count('gen') + count('sgen') + count('ext_grid') + count('line')
-
-    def powerflow(self):
-        try:
-            pp.runpp(self.net)
-            return self._results()
-        except pp.LoadflowNotConverged:
-            pp.diagnostic(self.net)
-            return None, None
-
-    def optimal_dc(self):
-        pp.rundcopp(self.net)
-        if not self.opf_converged():
-            raise pp.OPFNotConverged
-        return self._results()
-
-    def optimal_ac(self):
-        try:
-            try:
-                pp.runopp(self.net, calculate_voltage_angles=True)
-                # pp.runpm_ac_opf(self.net)
-            except RuntimeError:
-                pp.diagnostic(self.net)
-                reload(pandapower)
-                pp.runopp(self.net, calculate_voltage_angles=True)
-                # pp.runpm_ac_opf(self.net)
-        except (RuntimeError, TypeError, NameError):
-            raise pp.OPFNotConverged
-        if not self.opf_converged():
-            raise pp.OPFNotConverged
-        return self._results()
-
-    def opf_converged(self):
-        return self.net['OPF_converged']
-
-    def _results(self):
-        b = self.net["res_bus"].to_numpy()
-        g = np.concatenate((self.net["res_gen"]["p_mw"].to_numpy(), self.net["res_sgen"]["p_mw"].to_numpy()))
-        return b, g
-
-    def powermodels_data(self):
-        return convert_pp_to_pm(self.net, trafo_model="pi")
-
-    def pypower_data(self):
-        return to_ppc(self.net, trafo_model="pi")
-
-    def matpower_data(self):
-        ppc = self.pypower_data()
-        return _ppc2mpc(ppc)
 
 
 class LoadGenerator:

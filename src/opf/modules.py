@@ -1,15 +1,15 @@
 from functools import reduce
 from typing import List, Dict
 
+import alegnn.utils.graphML as gml
 import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn
-
-import alegnn.utils.graphML as gml
 from alegnn.modules.architectures import SelectionGNN
-from pyopf.complex import ComplexPolar, ComplexRect
-from pyopf.power import NetworkManager
+
+from opf.complex import ComplexRect
+from opf.power import NetWrapper
 
 
 class LocalGNN(SelectionGNN):
@@ -82,19 +82,42 @@ class LocalGNN(SelectionGNN):
         return x
 
 
-# noinspection PyAttributeOutsideInit,PyPep8Naming
+class GNN(pl.LightningModule):
+    def __init__(self, gso, features, taps, mlp):
+        super().__init__()
+        self.save_hyperparameters(ignore=["gso"])
+
+        n_layers = len(taps)
+        self.gnn = SelectionGNN(
+            features,
+            taps,
+            True,
+            torch.nn.ReLU,
+            [gso.shape[-1]] * n_layers,
+            gml.NoPool,
+            [1] * n_layers,
+            mlp,
+            gso
+        )
+
+    def forward(self, x):
+        return self.gnn(x)
+
+
 class OPFLogBarrier(pl.LightningModule):
-    def __init__(self, manager: NetworkManager, gnn, t=10, s=1000, type="log",
+    def __init__(self, net_wrapper: NetWrapper, model, t=10, s=1000, type="log",
                  equality_threshold=0.001, cost_weight=1.0):
         super().__init__()
-        self.manager = manager
-        self.pm = self.manager.powermodels_data()
-        self.gnn = gnn
+        self.net_wrapper = net_wrapper
+        self.pm = self.net_wrapper.to_powermodels()
+        self.model = model
         self.t = t
         self.s = s
         self.cost_weight = cost_weight
         self.type = type
         self.equality_threshold = equality_threshold
+
+        self.save_hyperparameters(ignore=["net_wrapper", "gnn"])
 
         self.n_bus = len(self.pm["bus"])
         self.n_branch = len(self.pm["branch"])
@@ -128,14 +151,12 @@ class OPFLogBarrier(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)
 
-    def forward(self, x):
-        x = torch.transpose(x, 1, 2)
-        x = x.matmul(self.load_matrix.T)
-        p_load = x[:, 0, :]
-        q_load = x[:, 1, :]
-        x = self.gnn(x)
-        x = torch.reshape(x, (-1, 4, self.n_bus))
-        return x, p_load, q_load
+    def forward(self, load):
+        load = torch.transpose(load, 1, 2)
+        load = load.matmul(self.load_matrix.T)
+        bus = self.model(load)
+        bus = torch.reshape(bus, (-1, 4, self.n_bus))
+        return bus, load
 
     def training_step(self, x, *args, **kwargs):
         cost, constraints = self.optimal_power_flow(*self(x[0]))
@@ -153,84 +174,93 @@ class OPFLogBarrier(pl.LightningModule):
         self.log_dict(self.metrics(cost, constraints, "test"))
         return cost
 
-    def optimal_power_flow(self, x, p_load: torch.Tensor, q_load: torch.Tensor):
+    def power_flow(self, V):
         """
-        Find the cost function using the log-barrier relaxation of the ACOPF problem.
+        Find the branch variables given the bus voltages. The inputs and outputs should both be
+        in the per unit system.
 
         Reference:
             https://lanl-ansi.github.io/PowerModels.jl/stable/math-model/
             https://matpower.org/docs/MATPOWER-manual.pdf
         """
+        If = self.Yf @ V  # Current from
+        It = self.Yt @ V  # Current to
+        Sf = (self.Cf @ V) * If.conj()  # [Cf V] If* = Power from branch
+        St = (self.Ct @ V) * It.conj()  # [Cf V] It* = Power to branch
+        Sbus_sh = (V * self.Ybus_sh.unsqueeze(0)) * V.conj()  # [V][Ybus_shunt] V* = shunt bus power
+        Sbus = self.Cf.T @ Sf + self.Cf.T @ Sf + Sbus_sh
+        return If, It, Sf, St, Sbus
 
-        assert x.shape[0] == p_load.shape[0] == q_load.shape[0]
-        assert x.shape[1] == 4
-        assert x.shape[2] == self.n_bus
-        assert p_load.shape[1] == self.n_bus
-        assert q_load.shape[1] == self.n_bus
+    def bus(self, bus, load):
+        """
+        Compute the bus variables: voltage, net power, power generated and power demanded. All of them are complex.
+
+        :param bus: [|V| angle(V) Re(S) Im(S)]
+        :param load: [Re(load) Im(load)]
+        :return: V, S, Sg, Sd.
+        """
+        assert bus.shape[0] == load.shape[0]
+        assert bus.shape[1] == 4
+        assert bus.shape[2] == self.n_bus
+        assert load.shape[1] == 2
+        assert load.shape[2] == self.n_bus
 
         # Convert voltage and power to per unit
-        vm = x[:, 0, :] / self.base_kv
-        va = x[:, 1, :]  # no need to scale since this is the angle
-        p = x[:, 2, :] / self.base_mva
-        q = x[:, 3, :] / self.base_mva
-        p_load /= self.base_mva
-        q_load /= self.base_mva
+        vr = bus[:, 0, :]
+        vi = bus[:, 1, :]
+        p = bus[:, 2, :]
+        q = bus[:, 3, :]
 
-        V = ComplexPolar(vm, va).unsqueeze(-1)  # network will learn rectangular voltages
-        S = ComplexRect(p, q).unsqueeze(-1)
-
-        Sd = ComplexRect(p_load, q_load).unsqueeze(-1)
+        V = torch.complex(vr, vi).unsqueeze(-1)
+        S = torch.complex(p, q).unsqueeze(-1)
+        Sd = torch.complex(load[:, 0, :], load[:, 1, :]).unsqueeze(-1)
         Sg = S + Sd
-        If = self.Yf.matmul(V)  # Current from
-        It = self.Yt.matmul(V)  # Current to
-        Sf = self.Cf.matmul(V).squeeze(-1).diag() \
-            .matmul(If.conj())  # [Cf V] If* = Power from branch
-        St = self.Ct.matmul(V).squeeze(-1).diag() \
-            .matmul(It.conj())  # [Cf V] It* = Power to branch
-        Sbus_sh = V.squeeze(-1).diag().matmul(
-            self.Ybus_sh.matmul(V.conj()))  # [V][Ybus_shunt] V* = shunt bus power
-        Sbus = self.Cf.T.matmul(Sf) + self.Cf.T.matmul(Sf) + Sbus_sh
+        return V, S, Sg, Sd
 
-        cost = self .cost(S.real, S.imag)
-        constraints = self.constraints(S, Sbus, V.abs(), V.angle(), Sg, Sf, St)
+    def optimal_power_flow(self, bus, load):
+        V, S, Sg, Sd = self.bus(bus, load)
+        If, It, Sf, St, Sbus = self.power_flow(V)
+        cost = self.cost(S.real, S.imag)
+        constraints = self.constraints(V, S, Sbus, Sg, Sf, St)
         return cost, constraints
 
     def init_cost_coefficients(self):
         """A tuple of two 3xN matrices, representing the polynomial coefficients of active and reactive power cost."""
         element_types = ["gen", "sgen"]
-        pcs, qcs = zip(*map(lambda et: self.manager.cost_coefficients(et), element_types))
+        pcs, qcs = zip(*map(lambda et: self.net_wrapper.cost_coefficients(et), element_types))
         p_coeff = reduce(lambda x, y: x + y, pcs)
         q_coeff = reduce(lambda x, y: x + y, qcs)
-        self.cost_coefficients = (torch.from_numpy(p_coeff).to(torch.float32).to(self.device),
-                                  torch.from_numpy(q_coeff).to(torch.float32).to(self.device))
+        p_coeff = torch.from_numpy(p_coeff).to(torch.float32).to(self.device).T
+        q_coeff = torch.from_numpy(q_coeff).to(torch.float32).to(self.device).T
+        self.register_buffer("p_coeff", p_coeff, False)
+        self.register_buffer("q_coeff", q_coeff, False)
 
     def cost(self, p, q):
         """Compute the cost to produce the active and reactive power."""
-        p_coeff, q_coeff = self.cost_coefficients  # get 3xN cost coefficient matrices
-        p_coeff, q_coeff = p_coeff.T, q_coeff.T
+        p_coeff, q_coeff = self.p_coeff, self.q_coeff
         return (p_coeff[:, 0] + p * p_coeff[:, 1] + (p ** 2) * p_coeff[:, 2] +
                 q_coeff[:, 0] + q * q_coeff[:, 1] + (q ** 2) * q_coeff[:, 2]).mean()
 
-    def constraints(self, S, Sbus, vm, va, Sg, Sf, St) -> Dict[str, Dict[str, torch.Tensor]]:
+    def constraints(self, V, S, Sbus, Sg, Sf, St) -> Dict[str, Dict[str, torch.Tensor]]:
         """
         Calculates the powerflow constraints.
         :returns: Map from constraint name => (value name => tensor value)
         """
-        Sg = Sg.transpose(1, 2).matmul(self.gen_matrix.matmul(self.gen_matrix.T)).transpose(1, 2)
-        Sg = Sg.to_rect()  # cast to rectangular coordinates
-        vad = va.unsqueeze(2) - va.unsqueeze(1)  # voltage angle difference matrix
+        # voltage angle difference
+        vad = (V @ V.conj().transpose(-1, -2)).angle()
+
         constraints = {
             "equality_powerflow": self.equality(S - Sbus),
-            "equality_reference": self.equality(va[self.reference_buses]),
+            "equality_reference": self.equality(V.angle()[self.reference_buses]),
             "equality_real_power": self.equality((self.p_min - Sg.real)[:, self.p_mask]),
             "inequality_real_power_min": self.inequality((self.p_min - Sg.real)[:, ~self.p_mask]),
             "inequality_real_power_max": self.inequality((Sg.real - self.p_max)[:, ~self.p_mask]),
             "equality_reactive_power": self.equality((self.q_min - Sg.imag)[:, self.q_mask]),
             "inequality_reactive_power_min": self.inequality((self.q_min - Sg.imag)[:, ~self.q_mask]),
             "inequality_reactive_power_max": self.inequality((Sg.imag - self.q_max)[:, ~self.q_mask]),
-            "equality_voltage_magnitude": self.equality((self.vm_min - vm)[:, self.vm_mask]),
-            "inequality_voltage_magnitude_min": self.inequality((self.vm_min - vm)[:, ~self.vm_mask]),
-            "inequality_voltage_magnitude_max": self.inequality((vm - self.vm_max)[:, ~self.vm_mask]),
+            "equality_voltage_magnitude": self.equality((self.vm_min - V.abs())[:, self.vm_mask]),
+            "inequality_voltage_magnitude_min": self.inequality((self.vm_min - V.angle())[:, ~self.vm_mask]),
+            "inequality_voltage_magnitude_max": self.inequality((V.abs() - self.vm_max)[:, ~self.vm_mask]),
             "inequality_forward_rate_max": self.inequality(Sf.abs() - self.rate_a),
             "inequality_backward_rate_max": self.inequality(St.abs() - self.rate_a),
             "equality_voltage_angle_difference": self.equality((self.vad_min - vad)[:, self.vad_mask], angle=True),
@@ -279,31 +309,38 @@ class OPFLogBarrier(pl.LightningModule):
                     violated_rms=torch.as_tensor(violated_rms, dtype=self.dtype, device=self.device))
 
     def init_gen(self):
-        self.p_min = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
-        self.p_max = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
-        self.q_min = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
-        self.q_max = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
-        self.gen_matrix = torch.zeros((self.n_bus, len(self.pm["gen"])), device=self.device, dtype=torch.float32)
+        p_min = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
+        p_max = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
+        q_min = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
+        q_max = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
+        gen_matrix = torch.zeros((self.n_bus, len(self.pm["gen"])), device=self.device, dtype=torch.float32)
         for gen in self.pm["gen"].values():
             i = gen["gen_bus"] - 1
-            self.p_min[i] = gen["pmin"]
-            self.q_min[i] = gen["qmin"]
-            self.p_max[i] = gen["pmax"]
-            self.q_max[i] = gen["qmax"]
-            self.gen_matrix[i, gen["index"] - 1] = 1
-        self.p_mask = self.equality_threshold > (self.p_max - self.p_min).abs()
-        self.q_mask = self.equality_threshold > (self.q_max - self.q_min).abs()
+            p_min[i] = gen["pmin"]
+            q_min[i] = gen["qmin"]
+            p_max[i] = gen["pmax"]
+            q_max[i] = gen["qmax"]
+            gen_matrix[i, gen["index"] - 1] = 1
+        self.p_mask = self.equality_threshold > (p_max - p_min).abs()
+        self.q_mask = self.equality_threshold > (q_max - q_min).abs()
+
+        self.register_buffer("p_min", p_min, False)
+        self.register_buffer("p_max", p_max, False)
+        self.register_buffer("q_min", q_min, False)
+        self.register_buffer("q_max", q_max, False)
+        self.register_buffer("gen_matrix", gen_matrix, False)
 
     def init_load(self):
-        self.load_matrix = torch.zeros((self.n_bus, len(self.pm["load"])), device=self.device, dtype=torch.float32)
+        load_matrix = torch.zeros((self.n_bus, len(self.pm["load"])), device=self.device, dtype=torch.float32)
         for load in self.pm["load"].values():
             i = load["load_bus"] - 1
-            self.load_matrix[i, load["index"] - 1] = 1
+            load_matrix[i, load["index"] - 1] = 1
+        self.register_buffer("load_matrix", load_matrix, False)
 
     def init_branch(self):
-        self.rate_a = torch.full((self.n_branch, 1), float("inf"), device=self.device, dtype=torch.float32)
-        self.vad_max = torch.full((self.n_bus, self.n_bus), float("inf"), device=self.device, dtype=torch.float32)
-        self.vad_min = torch.full((self.n_bus, self.n_bus), -float("inf"), device=self.device, dtype=torch.float32)
+        rate_a = torch.full((self.n_branch, 1), float("inf"), device=self.device, dtype=torch.float32)
+        vad_max = torch.full((self.n_bus, self.n_bus), float("inf"), device=self.device, dtype=torch.float32)
+        vad_min = torch.full((self.n_bus, self.n_bus), -float("inf"), device=self.device, dtype=torch.float32)
         Yff = np.zeros((self.n_branch,), dtype=np.csingle)
         Yft = np.zeros((self.n_branch,), dtype=np.csingle)
         Ytf = np.zeros((self.n_branch,), dtype=np.csingle)
@@ -324,54 +361,54 @@ class OPFLogBarrier(pl.LightningModule):
             Ytf[index] = -y / ratio
             Cf[index, fr_bus] = 1
             Ct[index, to_bus] = 1
-            self.rate_a[index] = branch["rate_a"]
-            self.vad_min[fr_bus, to_bus] = branch["angmin"]
-            self.vad_max[fr_bus, to_bus] = branch["angmax"]
+            rate_a[index] = branch["rate_a"]
+            vad_min[fr_bus, to_bus] = branch["angmin"]
+            vad_max[fr_bus, to_bus] = branch["angmax"]
         Yt = np.diag(Yff).dot(Cf) + np.diag(Yft).dot(Ct)
         Yf = np.diag(Ytf).dot(Cf) + np.diag(Ytt).dot(Ct)
-        self.Ybus_branch = ComplexRect.from_numpy(Cf.T.dot(Yf) + Ct.T.dot(Yt)).to_polar().to(self.device)
-        self.Yt = ComplexRect.from_numpy(Yt).to_polar().to(self.device)
-        self.Yf = ComplexRect.from_numpy(Yf).to_polar().to(self.device)
-        self.Ct = ComplexRect.from_numpy(Ct).to_polar().to(self.device)
-        self.Cf = ComplexRect.from_numpy(Cf).to_polar().to(self.device)
-        self.vad_mask = self.equality_threshold > (self.vad_max - self.vad_min).abs()
+        self.vad_mask = self.equality_threshold > (vad_max - vad_min).abs()
+
+        self.register_buffer("Ybus_branch", torch.from_numpy(Cf.T.dot(Yf) + Ct.T.dot(Yt)), False)
+        self.register_buffer("Yt", torch.from_numpy(Yt), False)
+        self.register_buffer("Yf", torch.from_numpy(Yf), False)
+        self.register_buffer("Ct", torch.from_numpy(Ct), False)
+        self.register_buffer("Cf", torch.from_numpy(Cf), False)
+        self.register_buffer("rate_a", rate_a, False)
+        self.register_buffer("vad_max", vad_max, False)
+        self.register_buffer("vad_min", vad_min, False)
 
     def init_bus(self):
-        self.vm_min = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
-        self.vm_max = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
-        self.base_kv = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
+        vm_min = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
+        vm_max = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
+        base_kv = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
         self.base_mva = self.pm["baseMVA"]
         self.reference_buses = []
         for bus in self.pm["bus"].values():
             i = bus["bus_i"] - 1
-            self.vm_min[i] = bus["vmin"]
-            self.vm_max[i] = bus["vmax"]
-            self.base_kv[i] = bus["base_kv"]
+            vm_min[i] = bus["vmin"]
+            vm_max[i] = bus["vmax"]
+            base_kv[i] = bus["base_kv"]
             if bus["bus_type"] == 3:
                 self.reference_buses.append(i)
-        self.vm_mask = self.equality_threshold > (self.vm_max - self.vm_min).abs()
+        self.vm_mask = self.equality_threshold > (vm_max - vm_min).abs()
+
+        self.register_buffer("vm_min", vm_min, False)
+        self.register_buffer("vm_max", vm_max, False)
+        self.register_buffer("base_kv", base_kv, False)
 
     def init_shunt(self):
-        Ybus_sh = np.zeros((self.n_bus, self.n_bus), dtype=np.csingle)
+        Ybus_sh = np.zeros((self.n_bus,1), dtype=np.csingle)
         for shunt in self.pm["shunt"].values():
             i = shunt["shunt_bus"] - 1
-            Ybus_sh[i, i] += shunt["gs"] + 1j * shunt["bs"]
-        self.Ybus_sh = ComplexRect.from_numpy(Ybus_sh).to_polar()
+            Ybus_sh[i] += shunt["gs"] + 1j * shunt["bs"]
+        self.Ybus_sh = torch.from_numpy(Ybus_sh) #ComplexRect.from_numpy(Ybus_sh).to_polar()
 
     def to(self, *args, **kwargs):
         super().to(*args, **kwargs)
-        self.p_min = self.p_min.to(*args, **kwargs)
-        self.p_max = self.p_max.to(*args, **kwargs)
-        self.q_min = self.q_min.to(*args, **kwargs)
-        self.q_max = self.q_max.to(*args, **kwargs)
-        self.rate_a = self.rate_a.to(*args, **kwargs)
-        self.vad_max = self.vad_max.to(*args, **kwargs)
-        self.vad_min = self.vad_min.to(*args, **kwargs)
+        # TODO: Figure out how to register underlying buffers
         self.Yt = self.Yt.to(*args, **kwargs)
         self.Yf = self.Yf.to(*args, **kwargs)
         self.Ct = self.Ct.to(*args, **kwargs)
         self.Cf = self.Cf.to(*args, **kwargs)
-        self.vm_min = self.vm_min.to(*args, **kwargs)
-        self.vm_max = self.vm_max.to(*args, **kwargs)
         self.Ybus_sh = self.Ybus_sh.to(*args, **kwargs)
         return self

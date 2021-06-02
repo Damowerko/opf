@@ -9,8 +9,8 @@ import torch
 
 from GNN.Modules.architectures import SelectionGNN
 from GNN.Utils import graphTools
-from pyopf.data import OPFData
-from pyopf.modules import LocalGNN
+from opf import OPFData
+from opf.modules import LocalGNN
 
 os.chdir("..")
 
@@ -32,7 +32,7 @@ grid_search = True
 data = OPFData(data_dir, case_name, ratio_train, ratio_valid, param_meta['A_scaling'], param_meta['A_threshold'],
                np.float32, device=device, use_constraints=False)
 case_info = data.case_info()
-F0 = data.inputs.shape[1]
+F0 = data.bus.shape[1]
 N = case_info['num_nodes']
 
 param_grid = {

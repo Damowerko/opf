@@ -55,6 +55,7 @@ class Complex(ABC):
         else:
             abs = a.abs().matmul(other)
             ang = a.angle()
+        print(abs.shape, ang.shape)
         return ComplexPolar(abs, ang)
 
     def mv(self, other) -> Complex:
