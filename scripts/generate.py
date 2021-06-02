@@ -4,7 +4,7 @@ import os
 
 import numpy as np
 
-from opf.data import generate_samples, label_samples
+from opf.generate import generate_samples, label_samples
 from opf.power import load_case, NetWrapper
 
 def main():
