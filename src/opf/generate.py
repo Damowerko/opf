@@ -9,12 +9,12 @@ from opf.power import NetWrapper, LoadGenerator
 from opf.power import load_case
 
 
-def generate_samples(manager: NetWrapper, num_samples, load_scale=1.0):
+def generate_samples(manager: NetWrapper, num_samples, load_scale=1.0, delta=0.1):
     p, q = manager.get_load()
     p *= load_scale
     q *= load_scale
-    p = LoadGenerator.generate_load_from_random(p, num_samples, delta=0.1)
-    q = LoadGenerator.generate_load_from_random(q, num_samples, delta=0.1)
+    p = LoadGenerator.generate_load_from_random(p, num_samples, delta=delta)
+    q = LoadGenerator.generate_load_from_random(q, num_samples, delta=delta)
     load_samples = np.stack((p, q), axis=2)
     return load_samples
 
@@ -52,9 +52,20 @@ def label_samples(manager, load, pool=True):
 def main():
     parser = argparse.ArgumentParser(description="Generate OPF dataset.")
     parser.add_argument("case", type=str, help="Test case to use.")
-    parser.add_argument("train_samples", type=int, help="Number of unlabeled samples to generate.")
-    parser.add_argument("test_samples", type=int, help="Number of labeled samples to generate.")
-    parser.add_argument("-d", "--data", metavar="-d", type=str, help="The data directory.", default="./data")
+    parser.add_argument(
+        "train_samples", type=int, help="Number of unlabeled samples to generate."
+    )
+    parser.add_argument(
+        "test_samples", type=int, help="Number of labeled samples to generate."
+    )
+    parser.add_argument(
+        "-d",
+        "--data",
+        metavar="-d",
+        type=str,
+        help="The data directory.",
+        default="./data",
+    )
     parser.add_argument("--scale", default=1.0, type=float, help="Scale the load.")
     parser.add_argument("--name", default=None, type=str, help="The filename.")
     args = parser.parse_args()
@@ -66,21 +77,27 @@ def main():
     test_load, test_bus, test_gen, test_ext = None, None, None, None
     if args.test_samples > 0:
         test_load = generate_samples(manager, args.test_samples, load_scale=args.scale)
-        test_load, test_bus, test_gen, test_ext = label_samples(manager, test_load, False)
+        test_load, test_bus, test_gen, test_ext = label_samples(
+            manager, test_load, False
+        )
 
     if args.name is None:
         args.name = args.case
 
     filename = os.path.join(args.data, args.case + ".npz")
-    np.savez(filename,
-             train_load=train_load,
-             test_load=test_load,
-             test_bus=test_bus,
-             test_gen=test_gen,
-             test_ext=test_ext)
-    print(f"Generation complete!"
-          f"Train samples: {len(train_load)}"
-          f"Test samples: {len(test_load)}")
+    np.savez(
+        filename,
+        train_load=train_load,
+        test_load=test_load,
+        test_bus=test_bus,
+        test_gen=test_gen,
+        test_ext=test_ext,
+    )
+    print(
+        f"Generation complete!"
+        f"Train samples: {len(train_load)}"
+        f"Test samples: {len(test_load)}"
+    )
 
 
 if __name__ == "__main__":

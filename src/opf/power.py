@@ -55,9 +55,20 @@ def simplify_net(net):
             # Change the generator bus
             net.gen.at[gen_index, "bus"] = new_bus_index
             # Connect original bus with low impedence line
-            pp.create_line_from_parameters(net, bus_index, new_bus_index, 0.01, 1, 1, 0.01, 1e8,
-                                           r0_ohm_per_km=1, x0_ohm_per_km=1, c0_nf_per_km=1,
-                                           max_loading_percent=100)
+            pp.create_line_from_parameters(
+                net,
+                bus_index,
+                new_bus_index,
+                0.01,
+                1,
+                1,
+                0.01,
+                1e8,
+                r0_ohm_per_km=1,
+                x0_ohm_per_km=1,
+                c0_nf_per_km=1,
+                max_loading_percent=100,
+            )
         gen_bus.add(bus_index)
     return net
 
@@ -97,7 +108,6 @@ class NetWrapper:
             calc_branch_impedances=True,
             multi=False,
             branch_impedance_unit=unit,
-
         )
         # Check that node indices matrch the network bus indices.
         assert (np.asarray(graph.nodes) == self.bus_indices).all()
@@ -158,7 +168,7 @@ class NetWrapper:
         return self._results()
 
     def _opf_converged(self):
-        return self.net['OPF_converged']
+        return self.net["OPF_converged"]
 
     def _results(self):
         bus = self.net["res_bus"]
@@ -210,8 +220,12 @@ class NetWrapper:
         q_coeff = np.zeros((3, self.n_buses))
         indices = joined["bus"].to_numpy().flatten()
 
-        p_coeff[:, indices] = joined[["cp0_eur", "cp1_eur_per_mw", "cp2_eur_per_mw2"]].to_numpy().T
-        q_coeff[:, indices] = joined[["cq0_eur", "cq1_eur_per_mvar", "cq2_eur_per_mvar2"]].to_numpy().T
+        p_coeff[:, indices] = (
+            joined[["cp0_eur", "cp1_eur_per_mw", "cp2_eur_per_mw2"]].to_numpy().T
+        )
+        q_coeff[:, indices] = (
+            joined[["cq0_eur", "cq1_eur_per_mvar", "cq2_eur_per_mvar2"]].to_numpy().T
+        )
         return p_coeff, q_coeff
 
     def cost(self):
@@ -223,48 +237,62 @@ class NetWrapper:
             index = int(row["element"])
             p = self.net["res_" + row["et"]]["p_mw"][index]
             q = self.net["res_" + row["et"]]["q_mvar"][index]
-            cost += row["cp0_eur"] + p * row["cp1_eur_per_mw"] + p * p * row["cp2_eur_per_mw2"] \
-                    + row["cq0_eur"] + q * row["cq1_eur_per_mvar"] + q * q * row["cq2_eur_per_mvar2"]
+            cost += (
+                row["cp0_eur"]
+                + p * row["cp1_eur_per_mw"]
+                + p * p * row["cp2_eur_per_mw2"]
+                + row["cq0_eur"]
+                + q * row["cq1_eur_per_mvar"]
+                + q * q * row["cq2_eur_per_mvar2"]
+            )
         return cost
 
     def to_vector(self, element_type: str, constraint_type: str):
         element: pd.DataFrame = self.net[element_type]
         if constraint_type not in element:
             return np.zeros((self.n_buses, 1))
-        series: pd.Series = element[constraint_type].reindex(pd.RangeIndex(self.n_buses)).fillna(0)
+        series: pd.Series = (
+            element[constraint_type].reindex(pd.RangeIndex(self.n_buses)).fillna(0)
+        )
         return series.to_numpy().reshape(self.n_buses, 1)
 
     def get_constrains(self):
-        element_types = ['gen', 'sgen', 'ext_grid', 'load', 'storage']
-        constraint_types = ['min_p_mw', 'max_p_mw', 'min_q_mvar', 'max_q_mvar']
+        element_types = ["gen", "sgen", "ext_grid", "load", "storage"]
+        constraint_types = ["min_p_mw", "max_p_mw", "min_q_mvar", "max_q_mvar"]
         constraints = []
         for element_type in element_types:
             for constraint_type in constraint_types:
                 constraints.append(self.to_vector(element_type, constraint_type))
 
-        dc_line_contrant_types = ["max_p_mw", "min_q_from_mvar", "max_q_from_mvar", "min_q_to_mvar", "max_q_to_mvar"]
+        dc_line_contrant_types = [
+            "max_p_mw",
+            "min_q_from_mvar",
+            "max_q_from_mvar",
+            "min_q_to_mvar",
+            "max_q_to_mvar",
+        ]
         for constraint_type in dc_line_contrant_types:
-            constraints.append(self.to_vector('dcline', constraint_type))
+            constraints.append(self.to_vector("dcline", constraint_type))
 
         return np.concatenate(constraints, 1)
 
     def count_violations(self):
-        """ :return True if there is at least one constraint violated.
+        """:return True if there is at least one constraint violated.
         Does not take into account branch constraintrs.
         """
 
         def count(element, column):
             if self.net[element].shape[0] == 0:
                 return 0
-            val = self.net['res_' + element].sort_index()[column].to_numpy()
-            max = self.net[element].sort_index()['max_' + column].to_numpy()
-            min = self.net[element].sort_index()['min_' + column].to_numpy()
+            val = self.net["res_" + element].sort_index()[column].to_numpy()
+            max = self.net[element].sort_index()["max_" + column].to_numpy()
+            min = self.net[element].sort_index()["min_" + column].to_numpy()
             return np.sum(val > max) + np.sum(val < min)
 
-        bus = count('bus', 'vm_pu')
-        gen = count('gen', 'p_mw') + count('gen', 'q_mvar')
-        sgen = count('sgen', 'p_mw') + count('sgen', 'q_mvar')
-        ext_grid = count('ext_grid', 'p_mw') + count('ext_grid', 'q_mvar')
+        bus = count("bus", "vm_pu")
+        gen = count("gen", "p_mw") + count("gen", "q_mvar")
+        sgen = count("sgen", "p_mw") + count("sgen", "q_mvar")
+        ext_grid = count("ext_grid", "p_mw") + count("ext_grid", "q_mvar")
         line = len(pp.overloaded_lines(self.net, 100))
         return bus + gen + sgen + ext_grid + line
 
@@ -272,7 +300,13 @@ class NetWrapper:
         def count(element):
             return self.net[element].shape[0] * 2
 
-        return count('bus') + count('gen') + count('sgen') + count('ext_grid') + count('line')
+        return (
+            count("bus")
+            + count("gen")
+            + count("sgen")
+            + count("ext_grid")
+            + count("line")
+        )
 
 
 class LoadGenerator:
@@ -288,7 +322,9 @@ class LoadGenerator:
         return len(self.commercial_data.columns), len(self.residential_data.columns)
 
     @staticmethod
-    def generate_load_from_random(average: np.ndarray, num_samples: int, delta: float = 0.1) -> pd.DataFrame:
+    def generate_load_from_random(
+        average: np.ndarray, num_samples: int, delta: float = 0.1
+    ) -> pd.DataFrame:
         """
         Generate loads by sampling from the uniform distribution on [average*(1-delta),average*(1+delta)].
         :param average: A vector with average load for each node.
@@ -311,7 +347,9 @@ class LoadGenerator:
         size()[0] + size()[1] by K, where K is the number of series to generate.
         :return: A series of hourly power demanded in kW.
         """
-        data: np.ndarray = pd.concat([self.commercial_data, self.residential_data], axis=1).to_numpy()
+        data: np.ndarray = pd.concat(
+            [self.commercial_data, self.residential_data], axis=1
+        ).to_numpy()
         composition: np.ndarray = np.asarray(composition)
         return data @ composition
 
@@ -327,13 +365,19 @@ class LoadGenerator:
         commercial = np.random.rand(self.size()[0], average.size)
         residential = np.random.rand(self.size()[1], average.size)
         commercial *= average * portion_commercial / np.linalg.norm(commercial, 1)
-        residential *= average * (1 - portion_commercial) / np.linalg.norm(residential, 1)
+        residential *= (
+            average * (1 - portion_commercial) / np.linalg.norm(residential, 1)
+        )
         return np.vstack((commercial, residential))
 
     @staticmethod
     def parse_data(input_dir, state):
-        commercial_paths = glob.glob("{}/commercial/USA_{}*/*.csv".format(input_dir, state))
-        residential_paths = glob.glob("{}/residential/*/USA_{}*.csv".format(input_dir, state))
+        commercial_paths = glob.glob(
+            "{}/commercial/USA_{}*/*.csv".format(input_dir, state)
+        )
+        residential_paths = glob.glob(
+            "{}/residential/*/USA_{}*.csv".format(input_dir, state)
+        )
 
         def aggregate_electricity(path):
             return pd.read_csv(path).filter(regex="Electricity", axis=1).sum(axis=1)

@@ -152,8 +152,10 @@ class ComplexRect(Complex):
         return ComplexRect(torch.from_numpy(array.real), torch.from_numpy(array.imag))
 
     def to_polar(self):
-        return ComplexPolar((self._real ** 2 + self._imag ** 2 + 1e-16).sqrt(),
-                            (self._imag / (self._real + 1e-16)).atan())
+        return ComplexPolar(
+            (self._real ** 2 + self._imag ** 2 + 1e-16).sqrt(),
+            (self._imag / (self._real + 1e-16)).atan(),
+        )
 
     def to_rect(self):
         return self

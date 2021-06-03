@@ -7,6 +7,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn
 from alegnn.modules.architectures import SelectionGNN
+import logging
 
 from opf.complex import ComplexRect
 from opf.power import NetWrapper
@@ -33,14 +34,18 @@ class LocalGNN(SelectionGNN):
     locality. So, only local operations are included.
     """
 
-    def __init__(self,
-                 # Graph Filtering,
-                 dimNodeSignals=None, nFilterTaps=None, bias=None,
-                 # Nonlinearity,
-                 nonlinearity=torch.nn.ReLU,
-                 # Structure
-                 GSO=None,
-                 index: List[int] = None):
+    def __init__(
+        self,
+        # Graph Filtering,
+        dimNodeSignals=None,
+        nFilterTaps=None,
+        bias=None,
+        # Nonlinearity,
+        nonlinearity=torch.nn.ReLU,
+        # Structure
+        GSO=None,
+        index: List[int] = None,
+    ):
 
         # We need to compute the values of nSelectedNodes, and poolingSize
         # so that there is no pooling.
@@ -69,11 +74,17 @@ class LocalGNN(SelectionGNN):
 
         self.index = index
 
-        super().__init__(dimNodeSignals, nFilterTaps, bias,
-                         nonlinearity,
-                         nSelectedNodes, poolingFunction, poolingSize,
-                         [],
-                         GSO)
+        super().__init__(
+            dimNodeSignals,
+            nFilterTaps,
+            bias,
+            nonlinearity,
+            nSelectedNodes,
+            poolingFunction,
+            poolingSize,
+            [],
+            GSO,
+        )
 
     def forward(self, x):
         x = super().forward(x)
@@ -97,7 +108,7 @@ class GNN(pl.LightningModule):
             gml.NoPool,
             [1] * n_layers,
             mlp,
-            gso
+            gso,
         )
 
     def forward(self, x):
@@ -105,8 +116,17 @@ class GNN(pl.LightningModule):
 
 
 class OPFLogBarrier(pl.LightningModule):
-    def __init__(self, net_wrapper: NetWrapper, model, t=10, s=1000, type="log",
-                 equality_threshold=0.001, cost_weight=1.0):
+    def __init__(
+        self,
+        net_wrapper: NetWrapper,
+        model,
+        t=10,
+        s=1000,
+        type="log",
+        equality_threshold=0.001,
+        cost_weight=1.0,
+        lr=1e-4,
+    ):
         super().__init__()
         self.net_wrapper = net_wrapper
         self.pm = self.net_wrapper.to_powermodels()
@@ -117,7 +137,7 @@ class OPFLogBarrier(pl.LightningModule):
         self.type = type
         self.equality_threshold = equality_threshold
 
-        self.save_hyperparameters(ignore=["net_wrapper", "gnn"])
+        self.save_hyperparameters(ignore=["net_wrapper", "model"])
 
         self.n_bus = len(self.pm["bus"])
         self.n_branch = len(self.pm["branch"])
@@ -129,12 +149,19 @@ class OPFLogBarrier(pl.LightningModule):
         self.init_shunt()
 
     def loss(self, cost, constraints):
-        constraint_losses = [val["loss"] for val in constraints.values() if
-                             val["loss"] is not None and not torch.isnan(val["loss"])]
+        constraint_losses = [
+            val["loss"]
+            for val in constraints.values()
+            if val["loss"] is not None and not torch.isnan(val["loss"])
+        ]
         return cost * self.cost_weight + torch.stack(constraint_losses).mean()
 
     def metrics(self, cost, constraints, prefix):
-        metrics = {f"{prefix}_cost": cost, f"{prefix}_equality_loss": 0, f"{prefix}_inequality_loss": 0}
+        metrics = {
+            f"{prefix}_cost": cost,
+            f"{prefix}_equality_loss": 0,
+            f"{prefix}_inequality_loss": 0,
+        }
         for constraint_name, constraint_values in constraints.items():
             constraint_type = constraint_name.split("_")[0]
             for value_name, value in constraint_values.items():
@@ -146,10 +173,19 @@ class OPFLogBarrier(pl.LightningModule):
                     else:
                         metrics[aggregate_name] = value.clone().detach()
         # cast all values to tensor
-        return {k: v if torch.is_tensor(v) else torch.as_tensor(v) for k, v in metrics.items()}
+        return {
+            k: v if torch.is_tensor(v) else torch.as_tensor(v)
+            for k, v in metrics.items()
+        }
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.AdamW(self.parameters(), self.hparams.lr)
+        lr_scheduler = {
+            "scheduler": torch.optim.lr_scheduler.MultiStepLR(optimizer, []),
+            "monitor": "val_loss",
+            "name": "scheduler",
+        }
+        return [optimizer], [lr_scheduler]
 
     def forward(self, load):
         load = torch.transpose(load, 1, 2)
@@ -161,11 +197,14 @@ class OPFLogBarrier(pl.LightningModule):
     def training_step(self, x, *args, **kwargs):
         cost, constraints = self.optimal_power_flow(*self(x[0]))
         loss = self.loss(cost, constraints)
+        self.log("train_loss", loss, on_step=True, on_epoch=True)
         self.log_dict(self.metrics(cost, constraints, "train"))
         return loss
 
     def validation_step(self, x, *args, **kwargs):
         cost, constraints = self.optimal_power_flow(*self(x[0]))
+        loss = self.loss(cost, constraints)
+        self.log("val_loss", loss, on_step=True, on_epoch=True)
         self.log_dict(self.metrics(cost, constraints, "val"))
         return cost
 
@@ -187,7 +226,9 @@ class OPFLogBarrier(pl.LightningModule):
         It = self.Yt @ V  # Current to
         Sf = (self.Cf @ V) * If.conj()  # [Cf V] If* = Power from branch
         St = (self.Ct @ V) * It.conj()  # [Cf V] It* = Power to branch
-        Sbus_sh = (V * self.Ybus_sh.unsqueeze(0)) * V.conj()  # [V][Ybus_shunt] V* = shunt bus power
+        Sbus_sh = (
+            V * self.Ybus_sh.unsqueeze(0)
+        ) * V.conj()  # [V][Ybus_shunt] V* = shunt bus power
         Sbus = self.Cf.T @ Sf + self.Cf.T @ Sf + Sbus_sh
         return If, It, Sf, St, Sbus
 
@@ -227,7 +268,9 @@ class OPFLogBarrier(pl.LightningModule):
     def init_cost_coefficients(self):
         """A tuple of two 3xN matrices, representing the polynomial coefficients of active and reactive power cost."""
         element_types = ["gen", "sgen"]
-        pcs, qcs = zip(*map(lambda et: self.net_wrapper.cost_coefficients(et), element_types))
+        pcs, qcs = zip(
+            *map(lambda et: self.net_wrapper.cost_coefficients(et), element_types)
+        )
         p_coeff = reduce(lambda x, y: x + y, pcs)
         q_coeff = reduce(lambda x, y: x + y, qcs)
         p_coeff = torch.from_numpy(p_coeff).to(torch.float32).to(self.device).T
@@ -238,8 +281,14 @@ class OPFLogBarrier(pl.LightningModule):
     def cost(self, p, q):
         """Compute the cost to produce the active and reactive power."""
         p_coeff, q_coeff = self.p_coeff, self.q_coeff
-        return (p_coeff[:, 0] + p * p_coeff[:, 1] + (p ** 2) * p_coeff[:, 2] +
-                q_coeff[:, 0] + q * q_coeff[:, 1] + (q ** 2) * q_coeff[:, 2]).mean()
+        return (
+            p_coeff[:, 0]
+            + p * p_coeff[:, 1]
+            + (p ** 2) * p_coeff[:, 2]
+            + q_coeff[:, 0]
+            + q * q_coeff[:, 1]
+            + (q ** 2) * q_coeff[:, 2]
+        ).mean()
 
     def constraints(self, V, S, Sbus, Sg, Sf, St) -> Dict[str, Dict[str, torch.Tensor]]:
         """
@@ -251,27 +300,51 @@ class OPFLogBarrier(pl.LightningModule):
 
         constraints = {
             "equality_powerflow": self.equality(S - Sbus),
-            "equality_reference": self.equality(V.angle()[self.reference_buses]),
-            "equality_real_power": self.equality((self.p_min - Sg.real)[:, self.p_mask]),
-            "inequality_real_power_min": self.inequality((self.p_min - Sg.real)[:, ~self.p_mask]),
-            "inequality_real_power_max": self.inequality((Sg.real - self.p_max)[:, ~self.p_mask]),
-            "equality_reactive_power": self.equality((self.q_min - Sg.imag)[:, self.q_mask]),
-            "inequality_reactive_power_min": self.inequality((self.q_min - Sg.imag)[:, ~self.q_mask]),
-            "inequality_reactive_power_max": self.inequality((Sg.imag - self.q_max)[:, ~self.q_mask]),
-            "equality_voltage_magnitude": self.equality((self.vm_min - V.abs())[:, self.vm_mask]),
-            "inequality_voltage_magnitude_min": self.inequality((self.vm_min - V.angle())[:, ~self.vm_mask]),
-            "inequality_voltage_magnitude_max": self.inequality((V.abs() - self.vm_max)[:, ~self.vm_mask]),
+            # "equality_reference": self.equality(V.angle()[self.reference_buses]),
+            "equality_real_power": self.equality(
+                (self.p_min - Sg.real)[:, self.p_mask]
+            ),
+            "inequality_real_power_min": self.inequality(
+                (self.p_min - Sg.real)[:, ~self.p_mask]
+            ),
+            "inequality_real_power_max": self.inequality(
+                (Sg.real - self.p_max)[:, ~self.p_mask]
+            ),
+            "equality_reactive_power": self.equality(
+                (self.q_min - Sg.imag)[:, self.q_mask]
+            ),
+            "inequality_reactive_power_min": self.inequality(
+                (self.q_min - Sg.imag)[:, ~self.q_mask]
+            ),
+            "inequality_reactive_power_max": self.inequality(
+                (Sg.imag - self.q_max)[:, ~self.q_mask]
+            ),
+            "equality_voltage_magnitude": self.equality(
+                (self.vm_min - V.abs())[:, self.vm_mask]
+            ),
+            "inequality_voltage_magnitude_min": self.inequality(
+                (self.vm_min - V.angle())[:, ~self.vm_mask]
+            ),
+            "inequality_voltage_magnitude_max": self.inequality(
+                (V.abs() - self.vm_max)[:, ~self.vm_mask]
+            ),
             "inequality_forward_rate_max": self.inequality(Sf.abs() - self.rate_a),
             "inequality_backward_rate_max": self.inequality(St.abs() - self.rate_a),
-            "equality_voltage_angle_difference": self.equality((self.vad_min - vad)[:, self.vad_mask], angle=True),
-            "inequality_voltage_angle_difference_min": self.inequality((self.vad_min - vad)[:, ~self.vad_mask],
-                                                                       angle=True),
-            "inequality_voltage_angle_difference_max": self.inequality((vad - self.vad_max)[:, ~self.vad_mask],
-                                                                       angle=True)
+            "equality_voltage_angle_difference": self.equality(
+                (self.vad_min - vad)[:, self.vad_mask], angle=True
+            ),
+            "inequality_voltage_angle_difference_min": self.inequality(
+                (self.vad_min - vad)[:, ~self.vad_mask], angle=True
+            ),
+            "inequality_voltage_angle_difference_max": self.inequality(
+                (vad - self.vad_max)[:, ~self.vad_mask], angle=True
+            ),
         }
         return constraints
 
     def equality(self, u, angle=False):
+        if u.nelement() == 0:
+            return {"loss": torch.tensor(0, device=self.device)}
         if angle:
             u = torch.fmod(u, 2 * np.pi)
             u[u > 2 * np.pi] = 2 * np.pi - u[u > 2 * np.pi]
@@ -299,21 +372,33 @@ class OPFLogBarrier(pl.LightningModule):
         elif self.type == "relaxed_log":
             u = u[~unconstrained]
             if u.numel() != 0:
-                threshold = - 1 / (self.s * self.t)
+                threshold = -1 / (self.s * self.t)
                 below = u <= threshold
                 log = (-torch.log(-u[below]) / self.t).mean()
-                linear = ((-np.log(-threshold) / self.t) + (u[~below] - threshold) * self.s).mean()
-                loss = (log if not torch.isnan(log) else 0) + (linear if not torch.isnan(linear) else 0)
-        return dict(loss=torch.as_tensor(loss, dtype=self.dtype, device=self.device),
-                    violated_rate=torch.as_tensor(violated_rate, dtype=self.dtype, device=self.device),
-                    violated_rms=torch.as_tensor(violated_rms, dtype=self.dtype, device=self.device))
+                linear = (
+                    (-np.log(-threshold) / self.t) + (u[~below] - threshold) * self.s
+                ).mean()
+                loss = (log if not torch.isnan(log) else 0) + (
+                    linear if not torch.isnan(linear) else 0
+                )
+        return dict(
+            loss=torch.as_tensor(loss, dtype=self.dtype, device=self.device),
+            violated_rate=torch.as_tensor(
+                violated_rate, dtype=self.dtype, device=self.device
+            ),
+            violated_rms=torch.as_tensor(
+                violated_rms, dtype=self.dtype, device=self.device
+            ),
+        )
 
     def init_gen(self):
         p_min = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
         p_max = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
         q_min = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
         q_max = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
-        gen_matrix = torch.zeros((self.n_bus, len(self.pm["gen"])), device=self.device, dtype=torch.float32)
+        gen_matrix = torch.zeros(
+            (self.n_bus, len(self.pm["gen"])), device=self.device, dtype=torch.float32
+        )
         for gen in self.pm["gen"].values():
             i = gen["gen_bus"] - 1
             p_min[i] = gen["pmin"]
@@ -331,23 +416,37 @@ class OPFLogBarrier(pl.LightningModule):
         self.register_buffer("gen_matrix", gen_matrix, False)
 
     def init_load(self):
-        load_matrix = torch.zeros((self.n_bus, len(self.pm["load"])), device=self.device, dtype=torch.float32)
+        load_matrix = torch.zeros(
+            (self.n_bus, len(self.pm["load"])), device=self.device, dtype=torch.float32
+        )
         for load in self.pm["load"].values():
             i = load["load_bus"] - 1
             load_matrix[i, load["index"] - 1] = 1
         self.register_buffer("load_matrix", load_matrix, False)
 
     def init_branch(self):
-        rate_a = torch.full((self.n_branch, 1), float("inf"), device=self.device, dtype=torch.float32)
-        vad_max = torch.full((self.n_bus, self.n_bus), float("inf"), device=self.device, dtype=torch.float32)
-        vad_min = torch.full((self.n_bus, self.n_bus), -float("inf"), device=self.device, dtype=torch.float32)
+        rate_a = torch.full(
+            (self.n_branch, 1), float("inf"), device=self.device, dtype=torch.float32
+        )
+        vad_max = torch.full(
+            (self.n_bus, self.n_bus),
+            float("inf"),
+            device=self.device,
+            dtype=torch.float32,
+        )
+        vad_min = torch.full(
+            (self.n_bus, self.n_bus),
+            -float("inf"),
+            device=self.device,
+            dtype=torch.float32,
+        )
         Yff = np.zeros((self.n_branch,), dtype=np.csingle)
         Yft = np.zeros((self.n_branch,), dtype=np.csingle)
         Ytf = np.zeros((self.n_branch,), dtype=np.csingle)
         Ytt = np.zeros((self.n_branch,), dtype=np.csingle)
         Cf = np.zeros((self.n_branch, self.n_bus), dtype=np.csingle)
         Ct = np.zeros((self.n_branch, self.n_bus), dtype=np.csingle)
-        for branch in self.pm['branch'].values():
+        for branch in self.pm["branch"].values():
             index = branch["index"] - 1
             fr_bus = branch["f_bus"] - 1
             to_bus = branch["t_bus"] - 1
@@ -357,7 +456,7 @@ class OPFLogBarrier(pl.LightningModule):
             ratio = branch["tap"] * np.exp(1j * branch["shift"])
             Yff[index] = (y + yc_fr) / np.abs(ratio) ** 2
             Yft[index] = -y / np.conj(ratio)
-            Ytt[index] = (y + yc_to)
+            Ytt[index] = y + yc_to
             Ytf[index] = -y / ratio
             Cf[index, fr_bus] = 1
             Ct[index, to_bus] = 1
@@ -368,7 +467,9 @@ class OPFLogBarrier(pl.LightningModule):
         Yf = np.diag(Ytf).dot(Cf) + np.diag(Ytt).dot(Ct)
         self.vad_mask = self.equality_threshold > (vad_max - vad_min).abs()
 
-        self.register_buffer("Ybus_branch", torch.from_numpy(Cf.T.dot(Yf) + Ct.T.dot(Yt)), False)
+        self.register_buffer(
+            "Ybus_branch", torch.from_numpy(Cf.T.dot(Yf) + Ct.T.dot(Yt)), False
+        )
         self.register_buffer("Yt", torch.from_numpy(Yt), False)
         self.register_buffer("Yf", torch.from_numpy(Yf), False)
         self.register_buffer("Ct", torch.from_numpy(Ct), False)
@@ -397,18 +498,8 @@ class OPFLogBarrier(pl.LightningModule):
         self.register_buffer("base_kv", base_kv, False)
 
     def init_shunt(self):
-        Ybus_sh = np.zeros((self.n_bus,1), dtype=np.csingle)
+        Ybus_sh = np.zeros((self.n_bus, 1), dtype=np.csingle)
         for shunt in self.pm["shunt"].values():
             i = shunt["shunt_bus"] - 1
             Ybus_sh[i] += shunt["gs"] + 1j * shunt["bs"]
-        self.Ybus_sh = torch.from_numpy(Ybus_sh) #ComplexRect.from_numpy(Ybus_sh).to_polar()
-
-    def to(self, *args, **kwargs):
-        super().to(*args, **kwargs)
-        # TODO: Figure out how to register underlying buffers
-        self.Yt = self.Yt.to(*args, **kwargs)
-        self.Yf = self.Yf.to(*args, **kwargs)
-        self.Ct = self.Ct.to(*args, **kwargs)
-        self.Cf = self.Cf.to(*args, **kwargs)
-        self.Ybus_sh = self.Ybus_sh.to(*args, **kwargs)
-        return self
+        self.register_buffer("Ybus_sh", torch.from_numpy(Ybus_sh), False)
