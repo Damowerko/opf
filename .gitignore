@@ -1,7 +1,11 @@
+# Project
 /data/
-/.idea/
-/venv/
-**/__pycache__/
-/.ipynb_checkpoints/
-/.vscode/
 **/logs/
+
+# IDE
+/.idea/
+/.vscode/
+
+#Python
+**/__pycache__/
+**/.ipynb_checkpoints/
