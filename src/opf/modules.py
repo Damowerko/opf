@@ -1,4 +1,4 @@
-from functools import reduce
+from functools import reduce, cached_property
 from typing import List, Dict
 
 import alegnn.utils.graphML as gml
@@ -126,6 +126,7 @@ class OPFLogBarrier(pl.LightningModule):
         equality_threshold=0.001,
         cost_weight=1.0,
         lr=1e-4,
+        constraint_features=False,
     ):
         super().__init__()
         self.net_wrapper = net_wrapper
@@ -147,249 +148,6 @@ class OPFLogBarrier(pl.LightningModule):
         self.init_bus()
         self.init_branch()
         self.init_shunt()
-
-    def loss(self, cost, constraints):
-        constraint_losses = [
-            val["loss"]
-            for val in constraints.values()
-            if val["loss"] is not None and not torch.isnan(val["loss"])
-        ]
-        return cost * self.cost_weight + torch.stack(constraint_losses).mean()
-
-    def metrics(self, cost, constraints, prefix):
-        metrics = {
-            f"{prefix}_cost": cost,
-            f"{prefix}_equality_loss": 0,
-            f"{prefix}_inequality_loss": 0,
-        }
-        for constraint_name, constraint_values in constraints.items():
-            constraint_type = constraint_name.split("_")[0]
-            for value_name, value in constraint_values.items():
-                metrics[f"{prefix}_{constraint_name}_{value_name}"] = value
-                aggregate_name = f"{prefix}_{constraint_type}_{value_name}"
-                if not torch.isnan(value):
-                    if aggregate_name in metrics:
-                        metrics[aggregate_name] += value
-                    else:
-                        metrics[aggregate_name] = value.clone().detach()
-        # cast all values to tensor
-        return {
-            k: v if torch.is_tensor(v) else torch.as_tensor(v)
-            for k, v in metrics.items()
-        }
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), self.hparams.lr)
-        lr_scheduler = {
-            "scheduler": torch.optim.lr_scheduler.MultiStepLR(optimizer, []),
-            "monitor": "val_loss",
-            "name": "scheduler",
-        }
-        return [optimizer], [lr_scheduler]
-
-    def forward(self, load):
-        load = torch.transpose(load, 1, 2)
-        load = load.matmul(self.load_matrix.T)
-        bus = self.model(load)
-        bus = torch.reshape(bus, (-1, 4, self.n_bus))
-        return bus, load
-
-    def training_step(self, x, *args, **kwargs):
-        cost, constraints = self.optimal_power_flow(*self(x[0]))
-        loss = self.loss(cost, constraints)
-        self.log("train_loss", loss, on_step=True, on_epoch=True)
-        self.log_dict(self.metrics(cost, constraints, "train"))
-        return loss
-
-    def validation_step(self, x, *args, **kwargs):
-        cost, constraints = self.optimal_power_flow(*self(x[0]))
-        loss = self.loss(cost, constraints)
-        self.log("val_loss", loss, on_step=True, on_epoch=True)
-        self.log_dict(self.metrics(cost, constraints, "val"))
-        return cost
-
-    def test_step(self, x, *args, **kwargs):
-        cost, constraints = self.optimal_power_flow(*self(x[0]))
-        self.log_dict(self.metrics(cost, constraints, "test"))
-        return cost
-
-    def power_flow(self, V):
-        """
-        Find the branch variables given the bus voltages. The inputs and outputs should both be
-        in the per unit system.
-
-        Reference:
-            https://lanl-ansi.github.io/PowerModels.jl/stable/math-model/
-            https://matpower.org/docs/MATPOWER-manual.pdf
-        """
-        If = self.Yf @ V  # Current from
-        It = self.Yt @ V  # Current to
-        Sf = (self.Cf @ V) * If.conj()  # [Cf V] If* = Power from branch
-        St = (self.Ct @ V) * It.conj()  # [Cf V] It* = Power to branch
-        Sbus_sh = (
-            V * self.Ybus_sh.unsqueeze(0)
-        ) * V.conj()  # [V][Ybus_shunt] V* = shunt bus power
-        Sbus = self.Cf.T @ Sf + self.Cf.T @ Sf + Sbus_sh
-        return If, It, Sf, St, Sbus
-
-    def bus(self, bus, load):
-        """
-        Compute the bus variables: voltage, net power, power generated and power demanded. All of them are complex.
-
-        :param bus: [|V| angle(V) Re(S) Im(S)]
-        :param load: [Re(load) Im(load)]
-        :return: V, S, Sg, Sd.
-        """
-        assert bus.shape[0] == load.shape[0]
-        assert bus.shape[1] == 4
-        assert bus.shape[2] == self.n_bus
-        assert load.shape[1] == 2
-        assert load.shape[2] == self.n_bus
-
-        # Convert voltage and power to per unit
-        vr = bus[:, 0, :]
-        vi = bus[:, 1, :]
-        p = bus[:, 2, :]
-        q = bus[:, 3, :]
-
-        V = torch.complex(vr, vi).unsqueeze(-1)
-        S = torch.complex(p, q).unsqueeze(-1)
-        Sd = torch.complex(load[:, 0, :], load[:, 1, :]).unsqueeze(-1)
-        Sg = S + Sd
-        return V, S, Sg, Sd
-
-    def optimal_power_flow(self, bus, load):
-        V, S, Sg, Sd = self.bus(bus, load)
-        If, It, Sf, St, Sbus = self.power_flow(V)
-        cost = self.cost(S.real, S.imag)
-        constraints = self.constraints(V, S, Sbus, Sg, Sf, St)
-        return cost, constraints
-
-    def init_cost_coefficients(self):
-        """A tuple of two 3xN matrices, representing the polynomial coefficients of active and reactive power cost."""
-        element_types = ["gen", "sgen"]
-        pcs, qcs = zip(
-            *map(lambda et: self.net_wrapper.cost_coefficients(et), element_types)
-        )
-        p_coeff = reduce(lambda x, y: x + y, pcs)
-        q_coeff = reduce(lambda x, y: x + y, qcs)
-        p_coeff = torch.from_numpy(p_coeff).to(torch.float32).to(self.device).T
-        q_coeff = torch.from_numpy(q_coeff).to(torch.float32).to(self.device).T
-        self.register_buffer("p_coeff", p_coeff, False)
-        self.register_buffer("q_coeff", q_coeff, False)
-
-    def cost(self, p, q):
-        """Compute the cost to produce the active and reactive power."""
-        p_coeff, q_coeff = self.p_coeff, self.q_coeff
-        return (
-            p_coeff[:, 0]
-            + p * p_coeff[:, 1]
-            + (p ** 2) * p_coeff[:, 2]
-            + q_coeff[:, 0]
-            + q * q_coeff[:, 1]
-            + (q ** 2) * q_coeff[:, 2]
-        ).mean()
-
-    def constraints(self, V, S, Sbus, Sg, Sf, St) -> Dict[str, Dict[str, torch.Tensor]]:
-        """
-        Calculates the powerflow constraints.
-        :returns: Map from constraint name => (value name => tensor value)
-        """
-        # voltage angle difference
-        vad = (V @ V.conj().transpose(-1, -2)).angle()
-
-        constraints = {
-            "equality_powerflow": self.equality(S - Sbus),
-            # "equality_reference": self.equality(V.angle()[self.reference_buses]),
-            "equality_real_power": self.equality(
-                (self.p_min - Sg.real)[:, self.p_mask]
-            ),
-            "inequality_real_power_min": self.inequality(
-                (self.p_min - Sg.real)[:, ~self.p_mask]
-            ),
-            "inequality_real_power_max": self.inequality(
-                (Sg.real - self.p_max)[:, ~self.p_mask]
-            ),
-            "equality_reactive_power": self.equality(
-                (self.q_min - Sg.imag)[:, self.q_mask]
-            ),
-            "inequality_reactive_power_min": self.inequality(
-                (self.q_min - Sg.imag)[:, ~self.q_mask]
-            ),
-            "inequality_reactive_power_max": self.inequality(
-                (Sg.imag - self.q_max)[:, ~self.q_mask]
-            ),
-            "equality_voltage_magnitude": self.equality(
-                (self.vm_min - V.abs())[:, self.vm_mask]
-            ),
-            "inequality_voltage_magnitude_min": self.inequality(
-                (self.vm_min - V.angle())[:, ~self.vm_mask]
-            ),
-            "inequality_voltage_magnitude_max": self.inequality(
-                (V.abs() - self.vm_max)[:, ~self.vm_mask]
-            ),
-            "inequality_forward_rate_max": self.inequality(Sf.abs() - self.rate_a),
-            "inequality_backward_rate_max": self.inequality(St.abs() - self.rate_a),
-            "equality_voltage_angle_difference": self.equality(
-                (self.vad_min - vad)[:, self.vad_mask], angle=True
-            ),
-            "inequality_voltage_angle_difference_min": self.inequality(
-                (self.vad_min - vad)[:, ~self.vad_mask], angle=True
-            ),
-            "inequality_voltage_angle_difference_max": self.inequality(
-                (vad - self.vad_max)[:, ~self.vad_mask], angle=True
-            ),
-        }
-        return constraints
-
-    def equality(self, u, angle=False):
-        if u.nelement() == 0:
-            return {"loss": torch.tensor(0, device=self.device)}
-        if angle:
-            u = torch.fmod(u, 2 * np.pi)
-            u[u > 2 * np.pi] = 2 * np.pi - u[u > 2 * np.pi]
-        loss = u.abs().square().mean()
-        return {"loss": loss}
-
-    def inequality(self, u, angle=False):
-        assert not ((u > 0) * torch.isinf(u)).any()
-
-        if angle:
-            u = torch.fmod(u, 2 * np.pi)
-            u[u > 2 * np.pi] = 2 * np.pi - u[u > 2 * np.pi]
-
-        unconstrained = (u < 0) * torch.isinf(u)
-        violated = u >= 0
-        violated_rate = torch.Tensor([float(violated.sum()) / float(u.numel())])
-        violated_rms = u[violated].square().mean().sqrt() if violated_rate > 0 else 0
-
-        loss = None
-        if self.type == "log":
-            u = u[~unconstrained * ~violated]
-            if u.numel() != 0:
-                log = -torch.log(-u) / self.t
-                loss = log.mean()
-        elif self.type == "relaxed_log":
-            u = u[~unconstrained]
-            if u.numel() != 0:
-                threshold = -1 / (self.s * self.t)
-                below = u <= threshold
-                log = (-torch.log(-u[below]) / self.t).mean()
-                linear = (
-                    (-np.log(-threshold) / self.t) + (u[~below] - threshold) * self.s
-                ).mean()
-                loss = (log if not torch.isnan(log) else 0) + (
-                    linear if not torch.isnan(linear) else 0
-                )
-        return dict(
-            loss=torch.as_tensor(loss, dtype=self.dtype, device=self.device),
-            violated_rate=torch.as_tensor(
-                violated_rate, dtype=self.dtype, device=self.device
-            ),
-            violated_rms=torch.as_tensor(
-                violated_rms, dtype=self.dtype, device=self.device
-            ),
-        )
 
     def init_gen(self):
         p_min = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
@@ -479,9 +237,9 @@ class OPFLogBarrier(pl.LightningModule):
         self.register_buffer("vad_min", vad_min, False)
 
     def init_bus(self):
-        vm_min = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
-        vm_max = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
-        base_kv = torch.zeros(self.n_bus, device=self.device, dtype=torch.float32)
+        vm_min = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
+        vm_max = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
+        base_kv = torch.zeros((self.n_bus, 1), device=self.device, dtype=torch.float32)
         self.base_mva = self.pm["baseMVA"]
         self.reference_buses = []
         for bus in self.pm["bus"].values():
@@ -503,3 +261,276 @@ class OPFLogBarrier(pl.LightningModule):
             i = shunt["shunt_bus"] - 1
             Ybus_sh[i] += shunt["gs"] + 1j * shunt["bs"]
         self.register_buffer("Ybus_sh", torch.from_numpy(Ybus_sh), False)
+
+    def init_cost_coefficients(self):
+        """A tuple of two 3xN matrices, representing the polynomial coefficients of active and reactive power cost."""
+        element_types = ["gen", "sgen"]
+        pcs, qcs = zip(
+            *map(lambda et: self.net_wrapper.cost_coefficients(et), element_types)
+        )
+        p_coeff = reduce(lambda x, y: x + y, pcs)
+        q_coeff = reduce(lambda x, y: x + y, qcs)
+        p_coeff = torch.from_numpy(p_coeff).to(torch.float32).to(self.device).T
+        q_coeff = torch.from_numpy(q_coeff).to(torch.float32).to(self.device).T
+        self.register_buffer("p_coeff", p_coeff, False)
+        self.register_buffer("q_coeff", q_coeff, False)
+
+    def forward(self, load):
+        load = load.transpose(1, 2) @ self.load_matrix.T
+        if self.hparams.constraint_features:
+            x = torch.cat(
+                (
+                    load,
+                    self.bus_constraints_matrix.T.unsqueeze(0).repeat(
+                        load.shape[0], 1, 1
+                    ),
+                ),
+                dim=1,
+            )
+        else:
+            x = load
+        bus = self.model(x)
+        bus = torch.reshape(bus, (-1, 4, self.n_bus))
+        return bus, load
+
+    def optimal_power_flow(self, bus, load):
+        V, S, Sg, Sd = self.bus(bus, load)
+        If, It, Sf, St, Sbus = self.power_flow(V)
+        cost = self.cost(S.real, S.imag)
+        constraints = self.constraints(V, S, Sbus, Sg, Sf, St)
+        return cost, constraints
+
+    def cost(self, p, q):
+        """Compute the cost to produce the active and reactive power."""
+        p_coeff, q_coeff = self.p_coeff, self.q_coeff
+        return (
+            p_coeff[:, 0]
+            + p * p_coeff[:, 1]
+            + (p ** 2) * p_coeff[:, 2]
+            + q_coeff[:, 0]
+            + q * q_coeff[:, 1]
+            + (q ** 2) * q_coeff[:, 2]
+        ).mean()
+
+    def power_flow(self, V):
+        """
+        Find the branch variables given the bus voltages. The inputs and outputs should both be
+        in the per unit system.
+
+        Reference:
+            https://lanl-ansi.github.io/PowerModels.jl/stable/math-model/
+            https://matpower.org/docs/MATPOWER-manual.pdf
+        """
+        If = self.Yf @ V  # Current from
+        It = self.Yt @ V  # Current to
+        Sf = (self.Cf @ V) * If.conj()  # [Cf V] If* = Power from branch
+        St = (self.Ct @ V) * It.conj()  # [Cf V] It* = Power to branch
+        Sbus_sh = (
+            V * self.Ybus_sh.unsqueeze(0)
+        ) * V.conj()  # [V][Ybus_shunt] V* = shunt bus power
+        Sbus = self.Cf.T @ Sf + self.Cf.T @ Sf + Sbus_sh
+        return If, It, Sf, St, Sbus
+
+    def bus(self, bus, load):
+        """
+        Compute the bus variables: voltage, net power, power generated and power demanded. All of them are complex.
+
+        :param bus: [|V| angle(V) Re(S) Im(S)]
+        :param load: [Re(load) Im(load)]
+        :return: V, S, Sg, Sd.
+        """
+        assert bus.shape[0] == load.shape[0]
+        assert bus.shape[1] == 4
+        assert bus.shape[2] == self.n_bus
+        assert load.shape[1] == 2
+        assert load.shape[2] == self.n_bus
+
+        # Convert voltage and power to per unit
+        vr = bus[:, 0, :]
+        vi = bus[:, 1, :]
+        p = bus[:, 2, :]
+        q = bus[:, 3, :]
+
+        V = torch.complex(vr, vi).unsqueeze(-1)
+        S = torch.complex(p, q).unsqueeze(-1)
+        Sd = torch.complex(load[:, 0, :], load[:, 1, :]).unsqueeze(-1)
+        Sg = S + Sd
+        return V, S, Sg, Sd
+
+    def constraints(self, V, S, Sbus, Sg, Sf, St) -> Dict[str, Dict[str, torch.Tensor]]:
+        """
+        Calculates the powerflow constraints.
+        :returns: Map from constraint name => (value name => tensor value)
+        """
+        # voltage angle difference
+        vad = (V @ V.conj().transpose(-1, -2)).angle()
+
+        constraints = {
+            "equality_powerflow": self.equality(S - Sbus),
+            # "equality_reference": self.equality(V.angle()[self.reference_buses]),
+            "equality_real_power": self.equality(
+                (self.p_min - Sg.real)[:, self.p_mask]
+            ),
+            "inequality_real_power_min": self.inequality(
+                (self.p_min - Sg.real)[:, ~self.p_mask]
+            ),
+            "inequality_real_power_max": self.inequality(
+                (Sg.real - self.p_max)[:, ~self.p_mask]
+            ),
+            "equality_reactive_power": self.equality(
+                (self.q_min - Sg.imag)[:, self.q_mask]
+            ),
+            "inequality_reactive_power_min": self.inequality(
+                (self.q_min - Sg.imag)[:, ~self.q_mask]
+            ),
+            "inequality_reactive_power_max": self.inequality(
+                (Sg.imag - self.q_max)[:, ~self.q_mask]
+            ),
+            "equality_voltage_magnitude": self.equality(
+                (self.vm_min - V.abs())[:, self.vm_mask]
+            ),
+            "inequality_voltage_magnitude_min": self.inequality(
+                (self.vm_min - V.abs())[:, ~self.vm_mask]
+            ),
+            "inequality_voltage_magnitude_max": self.inequality(
+                (V.abs() - self.vm_max)[:, ~self.vm_mask]
+            ),
+            "inequality_forward_rate_max": self.inequality(Sf.abs() - self.rate_a),
+            "inequality_backward_rate_max": self.inequality(St.abs() - self.rate_a),
+            "equality_voltage_angle_difference": self.equality(
+                (self.vad_min - vad)[:, self.vad_mask], angle=True
+            ),
+            "inequality_voltage_angle_difference_min": self.inequality(
+                (self.vad_min - vad)[:, ~self.vad_mask], angle=True
+            ),
+            "inequality_voltage_angle_difference_max": self.inequality(
+                (vad - self.vad_max)[:, ~self.vad_mask], angle=True
+            ),
+        }
+        return constraints
+
+    @property
+    def bus_constraints_matrix(self):
+        """Returns a matrix representing the bus constraints as a graph signal."""
+        return torch.cat(
+            (
+                self.p_min,
+                self.p_max,
+                self.q_min,
+                self.q_max,
+                self.vm_min,
+                self.vm_max,
+            ),
+            dim=1,
+        ).to(self.device)
+
+    @property
+    def branch_constraints_matrix(self):
+        return torch.stack((self.rate_a, self.vad_min, self.vad_max), dim=0)
+
+    def loss(self, cost, constraints):
+        constraint_losses = [
+            val["loss"]
+            for val in constraints.values()
+            if val["loss"] is not None and not torch.isnan(val["loss"])
+        ]
+        return cost * self.cost_weight + torch.stack(constraint_losses).mean()
+
+    def metrics(self, cost, constraints, prefix):
+        metrics = {
+            f"{prefix}_cost": cost,
+            f"{prefix}_equality_loss": 0,
+            f"{prefix}_inequality_loss": 0,
+        }
+        for constraint_name, constraint_values in constraints.items():
+            constraint_type = constraint_name.split("_")[0]
+            for value_name, value in constraint_values.items():
+                metrics[f"{prefix}_{constraint_name}_{value_name}"] = value
+                aggregate_name = f"{prefix}_{constraint_type}_{value_name}"
+                if not torch.isnan(value):
+                    if aggregate_name in metrics:
+                        metrics[aggregate_name] += value
+                    else:
+                        metrics[aggregate_name] = value.clone().detach()
+        # cast all values to tensor
+        return {
+            k: v if torch.is_tensor(v) else torch.as_tensor(v)
+            for k, v in metrics.items()
+        }
+
+    def training_step(self, x, *args, **kwargs):
+        cost, constraints = self.optimal_power_flow(*self(x[0]))
+        loss = self.loss(cost, constraints)
+        self.log("train_loss", loss, on_step=True, on_epoch=True)
+        self.log_dict(self.metrics(cost, constraints, "train"))
+        return loss
+
+    def validation_step(self, x, *args, **kwargs):
+        cost, constraints = self.optimal_power_flow(*self(x[0]))
+        loss = self.loss(cost, constraints)
+        self.log("val_loss", loss, on_step=True, on_epoch=True)
+        self.log_dict(self.metrics(cost, constraints, "val"))
+        return cost
+
+    def test_step(self, x, *args, **kwargs):
+        cost, constraints = self.optimal_power_flow(*self(x[0]))
+        self.log_dict(self.metrics(cost, constraints, "test"))
+        return cost
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(self.parameters(), self.hparams.lr)
+        lr_scheduler = {
+            "scheduler": torch.optim.lr_scheduler.MultiStepLR(optimizer, []),
+            "monitor": "val_loss",
+            "name": "scheduler",
+        }
+        return [optimizer], [lr_scheduler]
+
+    def equality(self, u, angle=False):
+        if u.nelement() == 0:
+            return {"loss": torch.tensor(0, device=self.device)}
+        if angle:
+            u = torch.fmod(u, 2 * np.pi)
+            u[u > 2 * np.pi] = 2 * np.pi - u[u > 2 * np.pi]
+        loss = u.abs().square().mean()
+        return {"loss": loss}
+
+    def inequality(self, u, angle=False):
+        assert not ((u > 0) * torch.isinf(u)).any()
+
+        if angle:
+            u = torch.fmod(u, 2 * np.pi)
+            u[u > 2 * np.pi] = 2 * np.pi - u[u > 2 * np.pi]
+
+        unconstrained = (u < 0) * torch.isinf(u)
+        violated = u >= 0
+        violated_rate = torch.Tensor([float(violated.sum()) / float(u.numel())])
+        violated_rms = u[violated].square().mean().sqrt() if violated_rate > 0 else 0
+
+        loss = None
+        if self.type == "log":
+            u = u[~unconstrained * ~violated]
+            if u.numel() != 0:
+                log = -torch.log(-u) / self.t
+                loss = log.mean()
+        elif self.type == "relaxed_log":
+            u = u[~unconstrained]
+            if u.numel() != 0:
+                threshold = -1 / (self.s * self.t)
+                below = u <= threshold
+                log = (-torch.log(-u[below]) / self.t).mean()
+                linear = (
+                    (-np.log(-threshold) / self.t) + (u[~below] - threshold) * self.s
+                ).mean()
+                loss = (log if not torch.isnan(log) else 0) + (
+                    linear if not torch.isnan(linear) else 0
+                )
+        return dict(
+            loss=torch.as_tensor(loss, dtype=self.dtype, device=self.device),
+            violated_rate=torch.as_tensor(
+                violated_rate, dtype=self.dtype, device=self.device
+            ),
+            violated_rms=torch.as_tensor(
+                violated_rms, dtype=self.dtype, device=self.device
+            ),
+        )
