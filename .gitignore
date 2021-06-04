@@ -1,6 +1,7 @@
 # Project
 /data/
 **/logs/
+scripts/latest.ckpt
 
 # IDE
 /.idea/
