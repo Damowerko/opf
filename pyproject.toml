@@ -20,6 +20,7 @@ comet-ml = "^3.10.0"
 jupyter = "^1.0.0"
 poethepoet = "^0.10.0"
 black = "^21.5b2"
+wandb = "^0.10.31"
 
 [tool.poe.tasks]
 force-cuda11 = "python -m pip install torch==1.8.1+cu111 -f https://download.pytorch.org/whl/torch_stable.html"
