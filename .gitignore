@@ -10,3 +10,4 @@ scripts/latest.ckpt
 #Python
 **/__pycache__/
 **/.ipynb_checkpoints/
+.python-version
