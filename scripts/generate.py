@@ -47,7 +47,7 @@ def main():
         test_load = generate_samples(manager, args.test_samples, load_scale=args.scale)
         print(f"Labeling test sampels...")
         test_load, test_bus, test_gen, test_ext = label_samples(
-            manager, test_load, False
+            manager, test_load, True
         )
 
     if args.name is None:
