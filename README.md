@@ -1,4 +1,14 @@
 # OPF
+
+## Installation
+This project uses [poetry](https://python-poetry.org/) for dependency managemnt. To install the project and all
+the dependencies simply call use `poetry install`. Poetry will create a virtualenv for you.
+
+If your GPU needs CUDA 11 then you will need to change the pytroch version manually. Each time 
+after calling `poetry install` you will need to to the following.
+1. Activate the virtualenv using `poetry shell`.
+2. Run `poe cuda11`.
+
 ## Code Overview
 `wrapper.py` is the main file used for experiments. Here you chose the models you want to experiment with and their hyperparameters.
 
