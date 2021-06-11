@@ -17,6 +17,8 @@ class CaseDataModule(pl.LightningDataModule):
         batch_size=32,
         ratio_train=0.8,
         num_workers=0,
+        adj_scale=None,
+        adj_threshold=0.01,
         pin_memory=False,
     ):
         super().__init__()
@@ -26,6 +28,8 @@ class CaseDataModule(pl.LightningDataModule):
         self.ratio_train = ratio_train
         self.num_workers = num_workers
         self.pin_memory = pin_memory
+        self.adj_scale = adj_scale
+        self.adj_threshold = adj_threshold
 
         self.net_wrapper = NetWrapper(load_case(case_name))
         self.dims = (1, self.net_wrapper.n_buses, 2)
@@ -51,11 +55,16 @@ class CaseDataModule(pl.LightningDataModule):
                 torch.from_numpy(data["test_bus"]).float(),
             )
 
-    def adjacency(self, scale, threshold):
+    def gso(self):
         adjacency = self.net_wrapper.impedence_matrix()
-        np.exp(-scale * np.abs(adjacency.data), out=adjacency.data)
-        adjacency.data[adjacency.data < threshold] = 0
-        return adjacency.toarray()
+        if self.adj_scale is None:
+            # Choose scaling factor so that the mean weight is 0.5
+            self.adj_scale = 2 * np.exp(-1) / np.mean(self.net_wrapper.impedence_matrix().data)
+        np.exp(-self.adj_scale * np.abs(adjacency.data), out=adjacency.data)
+        adjacency.data[adjacency.data < self.adj_threshold] = 0
+        adjacency = adjacency.toarray()
+        # Normalize GSO by dividing by larget eigenvalue
+        return adjacency / np.max(np.real(np.linalg.eigh(adjacency)[0]))
 
     def train_dataloader(self):
         return DataLoader(
