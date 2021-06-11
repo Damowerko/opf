@@ -1,11 +1,11 @@
 # Project
-/data/
-**/logs/
+data/
+logs/
 scripts/latest.ckpt
 
 # IDE
-/.idea/
-/.vscode/
+.idea/
+.vscode/
 
 #Python
 **/__pycache__/
