@@ -137,6 +137,7 @@ class OPFLogBarrier(pl.LightningModule):
         self.cost_weight = cost_weight
         self.type = type
         self.equality_threshold = equality_threshold
+        self.detailed_metrics = False
 
         self.save_hyperparameters(ignore=["net_wrapper", "model"])
 
@@ -326,8 +327,8 @@ class OPFLogBarrier(pl.LightningModule):
         Sf = (self.Cf @ V) * If.conj()  # [Cf V] If* = Power from branch
         St = (self.Ct @ V) * It.conj()  # [Cf V] It* = Power to branch
         Sbus_sh = (
-            V * self.Ybus_sh.unsqueeze(0)
-        ) * V.conj()  # [V][Ybus_shunt] V* = shunt bus power
+                      V * self.Ybus_sh.unsqueeze(0)
+                  ) * V.conj()  # [V][Ybus_shunt] V* = shunt bus power
         Sbus = self.Cf.T @ Sf + self.Cf.T @ Sf + Sbus_sh
         return If, It, Sf, St, Sbus
 
@@ -366,44 +367,44 @@ class OPFLogBarrier(pl.LightningModule):
         vad = (V @ V.conj().transpose(-1, -2)).angle()
 
         constraints = {
-            "equality_powerflow": self.equality(S - Sbus),
+            "equality/powerflow": self.equality(S - Sbus),
             # "equality_reference": self.equality(V.angle()[self.reference_buses]),
-            "equality_real_power": self.equality(
+            "equality/real_power": self.equality(
                 (self.p_min - Sg.real)[:, self.p_mask]
             ),
-            "inequality_real_power_min": self.inequality(
+            "inequality/real_power_min": self.inequality(
                 (self.p_min - Sg.real)[:, ~self.p_mask]
             ),
-            "inequality_real_power_max": self.inequality(
+            "inequality/real_power_max": self.inequality(
                 (Sg.real - self.p_max)[:, ~self.p_mask]
             ),
-            "equality_reactive_power": self.equality(
+            "equality/reactive_power": self.equality(
                 (self.q_min - Sg.imag)[:, self.q_mask]
             ),
-            "inequality_reactive_power_min": self.inequality(
+            "inequality/reactive_power_min": self.inequality(
                 (self.q_min - Sg.imag)[:, ~self.q_mask]
             ),
-            "inequality_reactive_power_max": self.inequality(
+            "inequality/reactive_power_max": self.inequality(
                 (Sg.imag - self.q_max)[:, ~self.q_mask]
             ),
-            "equality_voltage_magnitude": self.equality(
+            "equality/voltage_magnitude": self.equality(
                 (self.vm_min - V.abs())[:, self.vm_mask]
             ),
-            "inequality_voltage_magnitude_min": self.inequality(
+            "inequality/voltage_magnitude_min": self.inequality(
                 (self.vm_min - V.abs())[:, ~self.vm_mask]
             ),
-            "inequality_voltage_magnitude_max": self.inequality(
+            "inequality/voltage_magnitude_max": self.inequality(
                 (V.abs() - self.vm_max)[:, ~self.vm_mask]
             ),
-            "inequality_forward_rate_max": self.inequality(Sf.abs() - self.rate_a),
-            "inequality_backward_rate_max": self.inequality(St.abs() - self.rate_a),
-            "equality_voltage_angle_difference": self.equality(
+            "inequality/forward_rate_max": self.inequality(Sf.abs() - self.rate_a),
+            "inequality/backward_rate_max": self.inequality(St.abs() - self.rate_a),
+            "equality/voltage_angle_difference": self.equality(
                 (self.vad_min - vad)[:, self.vad_mask], angle=True
             ),
-            "inequality_voltage_angle_difference_min": self.inequality(
+            "inequality/voltage_angle_difference_min": self.inequality(
                 (self.vad_min - vad)[:, ~self.vad_mask], angle=True
             ),
-            "inequality_voltage_angle_difference_max": self.inequality(
+            "inequality/voltage_angle_difference_max": self.inequality(
                 (vad - self.vad_max)[:, ~self.vad_mask], angle=True
             ),
         }
@@ -436,64 +437,78 @@ class OPFLogBarrier(pl.LightningModule):
         ]
         return cost * self.cost_weight + torch.stack(constraint_losses).mean()
 
-    def metrics(self, cost, constraints, prefix):
+    @staticmethod
+    def metrics(cost, constraints, prefix, detailed=False):
         metrics = {
-            f"{prefix}_cost": cost,
-            f"{prefix}_equality_loss": 0,
-            f"{prefix}_inequality_loss": 0,
+            f"{prefix}/cost": cost,
+            f"{prefix}/equality/loss": 0,
+            f"{prefix}/equality/n_element": 0,
+            f"{prefix}/inequality/loss": 0,
+            f"{prefix}/inequality/violated_rate": 0,
+            f"{prefix}/inequality/violated_rms": 0,
+            f"{prefix}/inequality/n_element": 0,
         }
         for constraint_name, constraint_values in constraints.items():
-            constraint_type = constraint_name.split("_")[0]
+            constraint_type = constraint_name.split("/")[0]
             for value_name, value in constraint_values.items():
-                metrics[f"{prefix}_{constraint_name}_{value_name}"] = value
-                aggregate_name = f"{prefix}_{constraint_type}_{value_name}"
-                if not torch.isnan(value):
-                    if aggregate_name in metrics:
-                        metrics[aggregate_name] += value
+                if detailed:
+                    metrics[f"{prefix}/{constraint_name}/{value_name}"] = value
+                aggregate_name = f"{prefix}/{constraint_type}/{value_name}"
+                if not torch.is_tensor(value) or not torch.isnan(value):
+                    if value_name in ("violated_rate", "violated_rms"):
+                        # we want a weighted average
+                        metrics[aggregate_name] += value * constraint_values["n_element"]
                     else:
-                        metrics[aggregate_name] = value.clone().detach()
+                        metrics[aggregate_name] += value
+        metrics[f"{prefix}/inequality/violated_rate"] /= metrics[f"{prefix}/inequality/n_element"]
+        metrics[f"{prefix}/inequality/violated_rms"] /= metrics[f"{prefix}/inequality/n_element"]
         # cast all values to tensor
         return {
             k: v if torch.is_tensor(v) else torch.as_tensor(v)
             for k, v in metrics.items()
         }
 
-    def training_step(self, x, *args, **kwargs):
-        cost, constraints = self.optimal_power_flow(*self(x[0]))
+    def training_step(self, batch, batch_idx):
+        bus, load = self(batch[0])
+        cost, constraints = self.optimal_power_flow(bus, load)
         loss = self.loss(cost, constraints)
-        self.log("train_loss", loss, on_step=True, on_epoch=True)
-        self.log_dict(self.metrics(cost, constraints, "train"))
+        self.log("train/loss", loss, prog_bar=True)
+        self.log_dict(self.metrics(cost, constraints, "train", self.detailed_metrics))
         return loss
 
-    def validation_step(self, x, *args, **kwargs):
-        cost, constraints = self.optimal_power_flow(*self(x[0]))
+    def validation_step(self, batch, batch_idx):
+        bus, load = self(batch[0])
+        cost, constraints = self.optimal_power_flow(bus, load)
         loss = self.loss(cost, constraints)
-        self.log("val_loss", loss, on_step=True, on_epoch=True)
-        self.log_dict(self.metrics(cost, constraints, "val"))
-        return cost
+        self.log("val/loss", loss, prog_bar=True)
+        self.log_dict(self.metrics(cost, constraints, "val", self.detailed_metrics))
 
-    def test_step(self, x, *args, **kwargs):
-        cost, constraints = self.optimal_power_flow(*self(x[0]))
-        self.log_dict(self.metrics(cost, constraints, "test"))
-        return cost
+    def test_step(self, batch, batch_idx):
+        load, acopf_bus = batch
+        bus, load = self(load)
+        cost, constraints = self.optimal_power_flow(bus, load)
+        self.log_dict(self.metrics(cost, constraints, "test", self.detailed_metrics))
+
+        cost, constraints = self.optimal_power_flow(acopf_bus.transpose(1,2), load)
+        self.log_dict(self.metrics(cost, constraints, "acopf", self.detailed_metrics))
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), self.hparams.lr)
         lr_scheduler = {
             "scheduler": torch.optim.lr_scheduler.MultiStepLR(optimizer, []),
-            "monitor": "val_loss",
+            "monitor": "val/loss",
             "name": "scheduler",
         }
         return [optimizer], [lr_scheduler]
 
     def equality(self, u, angle=False):
         if u.nelement() == 0:
-            return {"loss": torch.tensor(0, device=self.device)}
+            return {"loss": torch.tensor(0, device=self.device), "n_element": u.nelement()}
         if angle:
             u = torch.fmod(u, 2 * np.pi)
             u[u > 2 * np.pi] = 2 * np.pi - u[u > 2 * np.pi]
         loss = u.abs().square().mean()
-        return {"loss": loss}
+        return {"loss": loss, "n_element": u.nelement()}
 
     def inequality(self, u, angle=False):
         assert not ((u > 0) * torch.isinf(u)).any()
@@ -522,9 +537,7 @@ class OPFLogBarrier(pl.LightningModule):
                 linear = (
                     (-np.log(-threshold) / self.t) + (u[~below] - threshold) * self.s
                 ).mean()
-                loss = (log if not torch.isnan(log) else 0) + (
-                    linear if not torch.isnan(linear) else 0
-                )
+                loss = log + linear
         return dict(
             loss=torch.as_tensor(loss, dtype=self.dtype, device=self.device),
             violated_rate=torch.as_tensor(
@@ -533,4 +546,5 @@ class OPFLogBarrier(pl.LightningModule):
             violated_rms=torch.as_tensor(
                 violated_rms, dtype=self.dtype, device=self.device
             ),
+            n_element=u.nelement()
         )
