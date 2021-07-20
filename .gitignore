@@ -2,6 +2,8 @@
 data/
 logs/
 scripts/latest.ckpt
+**/wandb
+figures/
 
 # IDE
 .idea/

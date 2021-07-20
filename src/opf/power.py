@@ -36,14 +36,14 @@ def simplify_net(net):
     :return: The modified pandapower network.
     """
     net = deepcopy(net)
-    pp.replace_sgen_by_gen(net)
+    pp.replace_gen_by_sgen(net)
 
     gen_bus = set()  # keep track of the set of all buses
     # external grid should be considered a generator
     assert len(net.ext_grid == 1)
     gen_bus.add(net.ext_grid.iloc[0].bus)
 
-    for gen_index, row in net.gen.iterrows():
+    for gen_index, row in net.sgen.iterrows():
         bus_index = row["bus"]
         # check if bus already exists
         if bus_index in gen_bus:
@@ -53,7 +53,7 @@ def simplify_net(net):
             bus_row["name"] = new_bus_index
             net.bus = net.bus.append(bus_row, ignore_index=True)
             # Change the generator bus
-            net.gen.at[gen_index, "bus"] = new_bus_index
+            net.sgen.at[gen_index, "bus"] = new_bus_index
             # Connect original bus with low impedence line
             pp.create_line_from_parameters(
                 net,
@@ -84,8 +84,10 @@ class NetWrapper:
         self.per_unit = per_unit
 
         self.bus_indices = self.net.bus.index.to_numpy()
-        self.gen_indices = self.net.gen.bus.to_numpy()
+        self.gen_indices = self.net.sgen.bus.to_numpy()
         self.load_indices = self.net.load.bus.to_numpy()
+        self.ext_indices = self.net.ext_grid.bus.to_numpy()
+        self.shunt_indices = self.net.shunt.bus.to_numpy()
 
         self.base_mva = self.net.sn_mva
         self.base_kv = self.net.bus["vn_kv"].to_numpy()
@@ -117,14 +119,24 @@ class NetWrapper:
     def n_buses(self):
         return self.net.bus.shape[0]
 
-    def set_gen(self, p_gen: np.ndarray):
-        self.net["gen"]["p_mw"] = p_gen * self.base_mva if self.per_unit else p_gen
+    def set_gen_sparse(self, p_gen: np.ndarray, q_gen: np.ndarray):
+        p_gen = p_gen[self.gen_indices]
+        q_gen = q_gen[self.gen_indices]
+        self.set_gen(p_gen, q_gen)
+
+    def set_gen(self, p_gen: np.ndarray, q_gen: np.ndarray):
+        self.net["sgen"]["p_mw"] = p_gen * self.base_mva if self.per_unit else p_gen
+        self.net["sgen"]["q_mvar"] = q_gen * self.base_mva if self.per_unit else q_gen
 
     def get_gen(self):
-        p_gen = self.net["gen"]["p_mw"].to_numpy()
+        p_gen = self.net["sgen"]["p_mw"].to_numpy()
+        q_gen = self.net["sgen"]["q_mvar"].to_numpy()
         if self.per_unit:
             p_gen /= self.base_mva
-        return p_gen
+        return p_gen, q_gen
+
+    def set_load_sparse(self, p, q):
+        self.set_load(p[self.load_indices], q[self.load_indices])
 
     def set_load(self, p, q):
         self.net["load"]["p_mw"] = p * self.base_mva if self.per_unit else p
@@ -140,12 +152,12 @@ class NetWrapper:
 
     def powerflow(self):
         try:
-            pp.runpp(self.net)
+            pp.runpp(self.net, calculate_voltage_angles=True, trafo_model="pi")
             return self._results()
         except pp.LoadflowNotConverged:
             return None, None
 
-    def optimal_ac(self):
+    def optimal_ac(self, powermodels=True):
         """
         Run optimal power flow.
         :return: A tuple of bus, generator, and external grid results as numpy arrays. Each column represents a
@@ -155,7 +167,10 @@ class NetWrapper:
             External grid columns: [Re(S) Im(S)]
         """
         try:
-            pp.runopp(self.net, calculate_voltage_angles=False)
+            if powermodels:
+                pp.runpm_ac_opf(self.net, calculate_voltage_angles=True, trafo_model="pi")
+            else:
+                pp.runopp(self.net, calculate_voltage_angles=True)
         except pp.OPFNotConverged:
             return None
         return self._results()
@@ -172,29 +187,34 @@ class NetWrapper:
 
     def _results(self):
         bus = self.net["res_bus"]
-        gen = self.net["res_gen"]
+        gen = self.net["res_sgen"]
         ext = self.net["res_ext_grid"]
+        sh = self.net["res_shunt"]
 
         vm = bus["vm_pu"].to_numpy()
-        va = bus["va_degree"].to_numpy()
-        p_load = bus["p_mw"].to_numpy()
-        q_load = bus["q_mvar"].to_numpy()
+        va = bus["va_degree"].to_numpy() * np.pi / 180
+        # Note the negative sign. We are converting from PandaPower convention to MatPower/PowerModels.jl.
+        p_bus = -bus["p_mw"].to_numpy()
+        q_bus = -bus["q_mvar"].to_numpy()
         p_gen = gen["p_mw"].to_numpy()
         q_gen = gen["q_mvar"].to_numpy()
         p_ext = ext["p_mw"].to_numpy()
         q_ext = ext["q_mvar"].to_numpy()
 
+        p_bus[self.shunt_indices] += sh["p_mw"].to_numpy()
+        q_bus[self.shunt_indices] += sh["q_mvar"].to_numpy()
+
         if self.per_unit:
-            p_load /= self.base_mva
-            q_load /= self.base_mva
+            p_bus /= self.base_mva
+            q_bus /= self.base_mva
             p_gen /= self.base_mva
             q_gen /= self.base_mva
             p_ext /= self.base_mva
             q_ext /= self.base_mva
 
-        bus = np.stack((vm, va, p_load, q_load), axis=1)
-        gen = np.stack((p_gen, q_gen), axis=1)
-        ext = np.stack((p_ext, q_ext), axis=1)
+        bus = np.stack((vm, va, p_bus, q_bus), axis=1).T
+        gen = np.stack((p_gen, q_gen), axis=1).T
+        ext = np.stack((p_ext, q_ext), axis=1).T
         return bus, gen, ext
 
     def to_powermodels(self):

@@ -15,7 +15,7 @@ class CaseDataModule(pl.LightningDataModule):
         case_name,
         data_dir="./data",
         batch_size=32,
-        ratio_train=0.8,
+        ratio_train=0.9,
         num_workers=0,
         adj_scale=None,
         adj_threshold=0.01,
@@ -59,7 +59,9 @@ class CaseDataModule(pl.LightningDataModule):
         adjacency = self.net_wrapper.impedence_matrix()
         if self.adj_scale is None:
             # Choose scaling factor so that the mean weight is 0.5
-            self.adj_scale = 2 * np.exp(-1) / np.mean(self.net_wrapper.impedence_matrix().data)
+            self.adj_scale = (
+                2 * np.exp(-1) / np.mean(self.net_wrapper.impedence_matrix().data)
+            )
         np.exp(-self.adj_scale * np.abs(adjacency.data), out=adjacency.data)
         adjacency.data[adjacency.data < self.adj_threshold] = 0
         adjacency = adjacency.toarray()

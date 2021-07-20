@@ -1,4 +1,4 @@
-program: train.py
+program: scripts/train.py
 method: grid
 metric:
   name: val/loss
@@ -30,4 +30,11 @@ parameters:
     values:
       - 1
       - 2
-      - 4
+  lr:
+    values:
+      - 1e-3
+      - 1e-4
+      - 1e-5
+  cost_weight:
+    values:
+      - 1.0

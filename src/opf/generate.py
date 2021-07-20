@@ -15,7 +15,7 @@ def generate_samples(manager: NetWrapper, num_samples, load_scale=1.0, delta=0.1
     q *= load_scale
     p = LoadGenerator.generate_load_from_random(p, num_samples, delta=delta)
     q = LoadGenerator.generate_load_from_random(q, num_samples, delta=delta)
-    load_samples = np.stack((p, q), axis=2)
+    load_samples = np.stack((p, q), axis=1)
     return load_samples
 
 
@@ -26,7 +26,7 @@ def label_sample(manager: NetWrapper, load_sample):
     :param load_sample: The active and reactive load at each node.
     :return:
     """
-    manager.set_load(*load_sample.T)
+    manager.set_load(*load_sample)
     return manager.optimal_ac()
 
 
@@ -68,6 +68,12 @@ def main():
     )
     parser.add_argument("--scale", default=1.0, type=float, help="Scale the load.")
     parser.add_argument("--name", default=None, type=str, help="The filename.")
+    parser.add_argument(
+        "--pool",
+        default=False,
+        action="store_true",
+        help="If set then will use a multiprocessing pool to accelerate ACOPF.",
+    )
     args = parser.parse_args()
 
     case = load_case(args.case, args.data)
@@ -78,7 +84,7 @@ def main():
     if args.test_samples > 0:
         test_load = generate_samples(manager, args.test_samples, load_scale=args.scale)
         test_load, test_bus, test_gen, test_ext = label_samples(
-            manager, test_load, False
+            manager, test_load, pool=args.pool
         )
 
     if args.name is None:
