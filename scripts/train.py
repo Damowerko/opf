@@ -2,7 +2,6 @@
 
 import os
 import pytorch_lightning as pl
-import torch.cuda
 from pytorch_lightning.loggers import WandbLogger
 from opf.dataset import CaseDataModule
 from opf.modules import OPFLogBarrier, GNN
@@ -16,12 +15,12 @@ hyperparameter_defaults = dict(
     batch_size=2048,
     max_epochs=1000,
     K=8,
-    F=32,
+    F=64,
     gnn_layers=2,
     MLP=4,
     mlp_layers=1,
-    t=10,
-    s=500,
+    s=100,
+    t=500,
     cost_weight=0.1,
     lr=0.0001,
     constraint_features=False,
@@ -70,13 +69,15 @@ def train(param):
     early = pl.callbacks.EarlyStopping(monitor="val/loss", patience=10)
     trainer = pl.Trainer(
         logger=logger,
-        gpus=1,
+        gpus=[0],
+        auto_select_gpus=True,
         max_epochs=param["max_epochs"],
         callbacks=[early],
         precision=64,
         auto_lr_find=True
     )
 
+    trainer.tune(barrier, datamodule=dm)
     trainer.fit(barrier, dm)
     trainer.test(datamodule=dm)
     logger.finalize("finished")

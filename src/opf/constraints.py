@@ -84,7 +84,6 @@ def inequality(value, lower_bound, upper_bound, s, t, eps=1e-4, angle=False):
         u_lower = fix_angle(u_lower)
         u_upper = fix_angle(u_upper)
 
-    u_equal /= band[~mask_equality].mean()
     u_lower /= band[mask_lower]
     u_upper /= band[mask_upper]
 
@@ -99,4 +98,4 @@ def inequality(value, lower_bound, upper_bound, s, t, eps=1e-4, angle=False):
     assert not torch.isnan(u_equal).any()
     assert not torch.isinf(u_inequality).any()
     assert not torch.isnan(u_inequality).any()
-    return metrics(loss, torch.cat((u_equal.flatten(), u_inequality)), eps)
+    return metrics(loss, torch.cat((u_equal.flatten() / band[~mask_equality].mean(), u_inequality)), eps)

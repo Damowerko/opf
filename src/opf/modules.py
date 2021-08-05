@@ -516,7 +516,7 @@ class OPFLogBarrier(pl.LightningModule):
             )
         return {**aggregate_metrics, **detailed_metrics}
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, *args):
         load = batch[0] @ self.load_matrix.T
         bus = self(load)
         cost, constraints = self.optimal_power_flow(bus, load)
@@ -528,7 +528,7 @@ class OPFLogBarrier(pl.LightningModule):
         )
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, *args):
         load = batch[0] @ self.load_matrix.T
         bus = self(load)
         cost, constraints = self.optimal_power_flow(bus, load)
@@ -539,7 +539,7 @@ class OPFLogBarrier(pl.LightningModule):
             sync_dist=True,
         )
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, *args):
         with torch.no_grad():
             load, acopf_bus = batch
             load = load @ self.load_matrix.T
@@ -547,9 +547,15 @@ class OPFLogBarrier(pl.LightningModule):
             # Run actual powerflow calculations
             bus = self.project_pandapower(bus, load)
             cost, constraints = self.optimal_power_flow(bus, load)
-            self.log_dict(
-                self.metrics(cost, constraints, "test", self.detailed_metrics)
-            )
+            test_metrics = self.metrics(cost, constraints, "test", self.detailed_metrics)
+            self.log_dict(test_metrics)
+
+            # Test the ACOPF solution for reference.
+            cost, constraints = self.optimal_power_flow(self.bus_from_polar(acopf_bus), load)
+            acopf_metrics = self.metrics(cost, constraints, "acopf", self.detailed_metrics)
+            self.log_dict(acopf_metrics)
+
+            return dict(**test_metrics, **acopf_metrics)
 
     def project_pandapower(self, bus, load):
         with torch.no_grad():
@@ -559,7 +565,7 @@ class OPFLogBarrier(pl.LightningModule):
                 Sd.real.squeeze().cpu().numpy(), Sd.imag.squeeze().cpu().numpy()
             )
             bus, gen, ext = self.net_wrapper.powerflow()
-            bus = torch.tensor(bus, device=self.device, dtype=self.dtype)
+            bus = torch.as_tensor(bus, device=self.device, dtype=self.dtype)
             bus = self.bus_from_polar(bus.unsqueeze(0))
         return bus
 

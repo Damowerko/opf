@@ -32,9 +32,10 @@ def model_from_parameters(param, gpus=-1, debug=False, logger=None, data_dir="./
         pin_memory=False,
     )
 
+    input_features = 8 if param["constraint_features"] else 2
     gnn = GNN(
         dm.gso(),
-        [2] + [param["F"]] * param["gnn_layers"],
+        [input_features] + [param["F"]] * param["gnn_layers"],
         [param["K"]] * param["gnn_layers"],
         [dm.net_wrapper.n_buses * param["MLP"]] * param["mlp_layers"],
     )
