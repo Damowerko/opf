@@ -23,7 +23,7 @@ def graph_info(gso, plot=False):
         plt.show()
 
 
-def model_from_parameters(param, gpus=-1, debug=False, logger=None, data_dir="./data", patience=10):
+def model_from_parameters(param, gpus=-1, debug=False, logger=None, data_dir="./data", patience=10, eps=1e-4):
     dm = CaseDataModule(
         param["case_name"],
         data_dir=data_dir,
@@ -48,7 +48,7 @@ def model_from_parameters(param, gpus=-1, debug=False, logger=None, data_dir="./
         cost_weight=param["cost_weight"],
         lr=param["lr"],
         constraint_features=param["constraint_features"],
-        eps=1e-3,
+        eps=eps,
     )
 
     model_checkpoint = pl.callbacks.ModelCheckpoint(monitor="val/loss")
@@ -59,6 +59,6 @@ def model_from_parameters(param, gpus=-1, debug=False, logger=None, data_dir="./
         max_epochs=param["max_epochs"],
         callbacks=[early, model_checkpoint],
         precision=64,
-        auto_lr_find=True,
+        auto_lr_find=True
     )
     return barrier, trainer, dm
