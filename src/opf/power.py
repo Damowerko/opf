@@ -112,8 +112,8 @@ class NetWrapper:
             branch_impedance_unit=unit,
         )
         # Check that node indices matrch the network bus indices.
-        assert (np.asarray(graph.nodes) == self.bus_indices).all()
-        return nx.linalg.graphmatrix.adjacency_matrix(graph, weight=f"z_{unit}")
+        assert set(graph.nodes) == set(self.bus_indices)
+        return nx.linalg.graphmatrix.adjacency_matrix(graph, weight=f"z_{unit}", nodelist=self.bus_indices)
 
     @property
     def n_buses(self):
@@ -155,7 +155,7 @@ class NetWrapper:
             pp.runpp(self.net, calculate_voltage_angles=True, trafo_model="pi")
             return self._results()
         except pp.LoadflowNotConverged:
-            return None, None
+            return None
 
     def optimal_ac(self, powermodels=True):
         """
@@ -249,9 +249,10 @@ class NetWrapper:
         return p_coeff, q_coeff
 
     def cost(self):
-        _, g = self.powerflow()
-        if g is None:
+        res_powerflow = self.powerflow()
+        if res_powerflow is None:
             return None
+        _, g = res_powerflow
         cost = 0
         for _, row in self.net["poly_cost"].iterrows():
             index = int(row["element"])

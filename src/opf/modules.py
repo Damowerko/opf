@@ -475,7 +475,7 @@ class OPFLogBarrier(pl.LightningModule):
             for val in constraints.values()
             if val["loss"] is not None and not torch.isnan(val["loss"])
         ]
-        return cost * self.cost_weight + torch.stack(constraint_losses).mean()
+        return cost * self.cost_weight + torch.stack(constraint_losses).sum()
 
     def metrics(self, cost, constraints, prefix, detailed=False):
         aggregate_metrics = {
@@ -559,14 +559,16 @@ class OPFLogBarrier(pl.LightningModule):
 
     def project_pandapower(self, bus, load):
         with torch.no_grad():
-            V, S, Sg, Sd = self.bus(bus, load)
+            _, _, Sg, Sd = self.bus(bus, load)
             self.net_wrapper.set_gen_sparse(Sg.real.squeeze().cpu().numpy(), Sg.imag.squeeze().cpu().numpy())
             self.net_wrapper.set_load_sparse(
                 Sd.real.squeeze().cpu().numpy(), Sd.imag.squeeze().cpu().numpy()
             )
-            bus, gen, ext = self.net_wrapper.powerflow()
-            bus = torch.as_tensor(bus, device=self.device, dtype=self.dtype)
-            bus = self.bus_from_polar(bus.unsqueeze(0))
+            res_powerflow = self.net_wrapper.powerflow()
+            if res_powerflow is not None:
+                bus, _, _ = res_powerflow
+                bus = torch.as_tensor(bus, device=self.device, dtype=self.dtype)
+                bus = self.bus_from_polar(bus.unsqueeze(0))
         return bus
 
     def bus_from_polar(self, bus):
