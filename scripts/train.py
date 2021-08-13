@@ -3,79 +3,45 @@
 import os
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
-from opf.dataset import CaseDataModule
-from opf.modules import OPFLogBarrier, GNN
-from multiprocessing import cpu_count
+from opf.utils import model_from_parameters
 
 # Default parameters
 hyperparameter_defaults = dict(
-    case_name="case30",
+    case_name="case118",
     adj_scaling="auto",
     adj_threshold=0.01,
-    batch_size=2048,
-    max_epochs=1000,
+    batch_size=256,
+    max_epochs=10000,
+    patience=100,
     K=8,
-    F=64,
+    F=32,
     gnn_layers=2,
     MLP=4,
     mlp_layers=1,
-    s=100,
+    s=10,
     t=500,
     cost_weight=0.1,
-    lr=0.0001,
+    lr=1e-4,
+    eps=1e-4,
     constraint_features=False,
-    root_dir="./",
 )
 
-data_dir = os.path.join(hyperparameter_defaults["root_dir"], "data")
-log_dir = os.path.join(hyperparameter_defaults["root_dir"], "logs")
+root_dir="./"
+data_dir = os.path.join(root_dir, "data")
+log_dir = os.path.join(root_dir, "logs")
 
 
 def train(param):
-
-    data_dir = os.path.join(param["root_dir"], "data")
-    log_dir = os.path.join(param["root_dir"], "logs")
-
-    dm = CaseDataModule(
-        param["case_name"],
-        data_dir=data_dir,
-        batch_size=param["batch_size"],
-        num_workers=cpu_count(),
-        pin_memory=False,
-    )
-
-    gnn = GNN(
-        dm.gso(),
-        [2] + [param["F"]] * param["gnn_layers"],
-        [param["K"]] * param["gnn_layers"],
-        [dm.net_wrapper.n_buses * param["MLP"]] * param["mlp_layers"],
-    )
-
-    # noinspection PyTypeChecker
-    barrier: OPFLogBarrier = OPFLogBarrier(
-        dm.net_wrapper,
-        gnn,
-        t=param["t"],
-        s=param["s"],
-        cost_weight=param["cost_weight"],
-        lr=param["lr"],
-        constraint_features=param["constraint_features"],
-        eps=1e-4,
-    )
-
-    logger = WandbLogger(project="opf", save_dir=log_dir)
-    logger.watch(barrier)
-
-    early = pl.callbacks.EarlyStopping(monitor="val/loss", patience=10)
-    trainer = pl.Trainer(
+    logger = WandbLogger(project="opf", save_dir=log_dir, config=param)
+    barrier, trainer, dm = model_from_parameters(
+        param,
+        gpus=1,
         logger=logger,
-        gpus=[0],
-        auto_select_gpus=True,
-        max_epochs=param["max_epochs"],
-        callbacks=[early],
-        precision=64,
-        auto_lr_find=True
+        data_dir=data_dir,
+        patience=param["patience"],
+        eps=param["eps"],
     )
+    logger.watch(barrier)
 
     trainer.tune(barrier, datamodule=dm)
     trainer.fit(barrier, dm)
