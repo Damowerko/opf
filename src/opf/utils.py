@@ -28,8 +28,8 @@ def model_from_parameters(param, gpus=-1, debug=False, logger=None, data_dir="./
         param["case_name"],
         data_dir=data_dir,
         batch_size=param["batch_size"],
-        num_workers=0 if debug else cpu_count(),
-        pin_memory=False,
+        num_workers=0,# if debug else cpu_count(),
+        pin_memory=gpus,
     )
 
     input_features = 8 if param["constraint_features"] else 2

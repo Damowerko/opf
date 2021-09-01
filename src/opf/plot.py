@@ -46,7 +46,7 @@ def plot_inequality(title, value, lower, upper):
 
 
 def plot_constraints(
-    vars: pf.PowerflowVariables, constraints: Dict[str, pf.Constraints]
+    vars: pf.PowerflowVariables, constraints: Dict[str, pf.Constraint]
 ):
     plots = {}
     for name, constraint in constraints.items():

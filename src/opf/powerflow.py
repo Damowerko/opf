@@ -31,26 +31,6 @@ class Constraint(torch.nn.Module):
 
 
 @dataclass(eq=False, repr=False)
-class InequalityConstraint(Constraint):
-    variable: Callable[[PowerflowVariables], torch.Tensor]
-    min: Optional[torch.Tensor]
-    max: Optional[torch.Tensor]
-
-    def _apply(self, fn):
-        super()._apply(fn)
-        if self.min is not None:
-            self.min = fn(self.min)
-        if self.max is not None:
-            self.max = fn(self.max)
-
-
-@dataclass(eq=False, repr=False)
-class EqualityConstraint(Constraint):
-    value: Callable[[PowerflowVariables], torch.Tensor]
-    target: Callable[[PowerflowVariables], torch.Tensor]
-
-
-@dataclass(eq=False, repr=False)
 class PowerflowParameters(torch.nn.Module):
     n_bus: int
     n_branch: int
@@ -87,6 +67,26 @@ class PowerflowParameters(torch.nn.Module):
         self.load_matrix = fn(self.load_matrix)
         for constraint in self.constraints.values():
             constraint._apply(fn)
+
+
+@dataclass(eq=False, repr=False)
+class InequalityConstraint(Constraint):
+    variable: Callable[[PowerflowParameters, PowerflowVariables], torch.Tensor]
+    min: Callable[[PowerflowParameters, PowerflowVariables], torch.Tensor]
+    max: Callable[[PowerflowParameters, PowerflowVariables], torch.Tensor]
+
+    def _apply(self, fn):
+        super()._apply(fn)
+        if self.min is not None:
+            self.min = fn(self.min)
+        if self.max is not None:
+            self.max = fn(self.max)
+
+
+@dataclass(eq=False, repr=False)
+class EqualityConstraint(Constraint):
+    value: Callable[[PowerflowParameters, PowerflowVariables], torch.Tensor]
+    target: Callable[[PowerflowParameters, PowerflowVariables], torch.Tensor]
 
 
 def parameters_from_pm(pm) -> PowerflowParameters:
@@ -178,31 +178,33 @@ def parameters_from_pm(pm) -> PowerflowParameters:
     Ybus_sh = torch.from_numpy(Ybus_sh)
 
     # init constraints
-    constraints["equality/bus_power"] = EqualityConstraint(
-        True, False, lambda d: d.Sbus, lambda d: d.S
-    )
-    constraints["inequality/voltage_magnitude"] = InequalityConstraint(
-        True, True, lambda d: d.V.abs(), vm_min, vm_max
-    )
-    constraints["inequality/active_power"] = InequalityConstraint(
-        True, False, lambda d: d.Sg.real, p_min, p_max
-    )
-    constraints["inequality/reactive_power"] = InequalityConstraint(
-        True, False, lambda d: d.Sg.imag, q_min, q_max
-    )
-    constraints["inequality/forward_rate"] = InequalityConstraint(
-        False, False, lambda d: d.Sf.abs(), torch.zeros_like(rate_a), rate_a
-    )
-    constraints["inequality/backward_rate"] = InequalityConstraint(
-        False, False, lambda d: d.St.abs(), torch.zeros_like(rate_a), rate_a
-    )
-    constraints["inequality/voltage_angle_difference"] = InequalityConstraint(
-        False,
-        True,
-        lambda d: ((Cf @ d.V) * (Ct @ d.V).conj()).angle(),
-        vad_min,
-        vad_max,
-    )
+    constraints = {
+        "equality/bus_power": EqualityConstraint(
+            True, False, lambda p, d: d.Sbus, lambda p, d: d.S
+        ),
+        "inequality/voltage_magnitude": InequalityConstraint(
+            True, True, lambda p, d: d.V.abs(), vm_min, vm_max
+        ),
+        "inequality/active_power": InequalityConstraint(
+            True, False, lambda p, d: d.Sg.real, p_min, p_max
+        ),
+        "inequality/reactive_power": InequalityConstraint(
+            True, False, lambda p, d: d.Sg.imag, q_min, q_max
+        ),
+        "inequality/forward_rate": InequalityConstraint(
+            False, False, lambda p, d: d.Sf.abs(), torch.zeros_like(rate_a), rate_a
+        ),
+        "inequality/backward_rate": InequalityConstraint(
+            False, False, lambda p, d: d.St.abs(), torch.zeros_like(rate_a), rate_a
+        ),
+        "inequality/voltage_angle_difference": InequalityConstraint(
+            False,
+            True,
+            lambda p, d: ((p.Cf @ d.V) * (p.Ct @ d.V).conj()).angle(),
+            vad_min,
+            vad_max,
+        ),
+    }
 
     return PowerflowParameters(
         n_bus,

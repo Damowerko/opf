@@ -15,7 +15,7 @@ class CaseDataModule(pl.LightningDataModule):
         case_name,
         data_dir="./data",
         batch_size=32,
-        ratio_train=0.99,
+        ratio_train=0.95,
         num_workers=0,
         adj_scale=None,
         adj_threshold=0.01,
@@ -80,7 +80,7 @@ class CaseDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(
             self.val_data,
-            batch_size=1,
+            batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
         )

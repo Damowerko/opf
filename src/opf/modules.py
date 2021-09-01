@@ -186,7 +186,7 @@ class OPFLogBarrier(pl.LightningModule):
         with torch.no_grad():
             load = batch[0] @ self.powerflow_parameters.load_matrix
             _, constraints, cost, loss = self._step_helper(
-                self(load), load, project_pandapower=True
+                self(load), load, project_pandapower=False
             )
             self.log("val/loss", loss, prog_bar=True, sync_dist=True)
             self.log_dict(
@@ -204,7 +204,7 @@ class OPFLogBarrier(pl.LightningModule):
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
             )
-            self.log_dict(test_metrics, on_step=True, on_epoch=False)
+            self.log_dict(test_metrics)
 
             # Test the ACOPF solution for reference.
             _, constraints, cost, _ = self._step_helper(
@@ -213,8 +213,9 @@ class OPFLogBarrier(pl.LightningModule):
             acopf_metrics = self.metrics(
                 cost, constraints, "acopf", self.detailed_metrics
             )
-            self.log_dict(acopf_metrics, on_step=True, on_epoch=False)
+            self.log_dict(acopf_metrics)
             return dict(**test_metrics, **acopf_metrics)
+
 
     def parse_bus(self, bus: torch.Tensor):
         assert bus.shape[1] == 4
@@ -259,14 +260,14 @@ class OPFLogBarrier(pl.LightningModule):
         for name, constraint in self.powerflow_parameters.constraints.items():
             if isinstance(constraint, pf.EqualityConstraint):
                 values[name] = equality(
-                    constraint.value(variables),
-                    constraint.target(variables),
+                    constraint.value(self.powerflow_parameters, variables),
+                    constraint.target(self.powerflow_parameters, variables),
                     self.eps,
                     constraint.isAngle,
                 )
             elif isinstance(constraint, pf.InequalityConstraint):
                 values[name] = inequality(
-                    constraint.variable(variables),
+                    constraint.variable(self.powerflow_parameters, variables),
                     constraint.min,
                     constraint.max,
                     self.s,
