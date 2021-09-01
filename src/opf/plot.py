@@ -1,20 +1,24 @@
+from typing import Dict
 from matplotlib import pyplot as plt
 import numpy as np
 import torch
+import opf.powerflow as pf
 
-def plot_equality(title, v1, v2):
-    if isinstance(v1, torch.Tensor):
-        v1 = v1.numpy()
-    if isinstance(v2, torch.Tensor):
-        v2 = v2.numpy()
-    v1 = np.squeeze(v1)
-    v2 = np.squeeze(v2)
 
-    plt.figure()
-    plt.stairs(v1, baseline=None)
-    plt.stairs(v2, baseline=None)
-    plt.legend(("Value 1", "Value 2"))
+def plot_equality(title, target, value):
+    if isinstance(target, torch.Tensor):
+        target = target.numpy()
+    if isinstance(value, torch.Tensor):
+        value = value.numpy()
+    target = np.squeeze(target)
+    value = np.squeeze(value)
+
+    fig = plt.figure()
+    plt.stairs(target, baseline=None)
+    plt.stairs(value, baseline=None)
+    plt.legend(("Target", "Value"))
     plt.title(title)
+    return fig
 
 
 def plot_inequality(title, value, lower, upper):
@@ -30,11 +34,28 @@ def plot_inequality(title, value, lower, upper):
 
     violation = (value > upper) | (lower > value)
 
-    plt.figure()
+    fig = plt.figure()
     n = np.arange(len(value))
-    plt.stairs(value, color='b', baseline=None)
-    plt.stairs(lower, color='r', baseline=None)
-    plt.stairs(upper, color='g', baseline=None)
-    plt.scatter(n[violation]+0.5, value[violation], c="r", marker="|")
+    plt.stairs(value, color="b", baseline=None)
+    plt.stairs(lower, color="r", baseline=None)
+    plt.stairs(upper, color="g", baseline=None)
+    plt.scatter(n[violation] + 0.5, value[violation], c="r", marker="|")
     plt.legend(("val", "min", "max", "violation"))
     plt.title(title)
+    return fig
+
+
+def plot_constraints(
+    vars: pf.PowerflowVariables, constraints: Dict[str, pf.Constraints]
+):
+    plots = {}
+    for name, constraint in constraints.items():
+        if isinstance(constraint, pf.EqualityConstraint):
+            plots[name] = plot_equality(
+                name, constraint.target(vars), constraint.value(vars)
+            )
+        elif isinstance(constraint, pf.InequalityConstraint):
+            plots[name] = plot_inequality(
+                name, constraint.value(vars), constraint.min, constraint.max
+            )
+    return plots

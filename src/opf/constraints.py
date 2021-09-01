@@ -45,7 +45,7 @@ def truncated_log(u, s, t):
     )
 
 
-def equality(x, y, eps=1e-4, angle=False):
+def equality(x: torch.Tensor, y: torch.Tensor, eps=1e-4, angle=False):
     u = (x - y).abs()
     if angle:
         u = fix_angle(u)
@@ -64,7 +64,15 @@ def equality(x, y, eps=1e-4, angle=False):
     return metrics(loss, u, eps)
 
 
-def inequality(value, lower_bound, upper_bound, s, t, eps=1e-4, angle=False):
+def inequality(
+    value: torch.Tensor,
+    lower_bound: torch.Tensor,
+    upper_bound: torch.Tensor,
+    s,
+    t,
+    eps=1e-4,
+    angle=False,
+):
     # To properly normalize the results we do not want any of these to be inf.
     assert not torch.isinf(upper_bound).any()
     assert not torch.isinf(lower_bound).any()
@@ -98,4 +106,8 @@ def inequality(value, lower_bound, upper_bound, s, t, eps=1e-4, angle=False):
     assert not torch.isnan(u_equal).any()
     assert not torch.isinf(u_inequality).any()
     assert not torch.isnan(u_inequality).any()
-    return metrics(loss, torch.cat((u_equal.flatten() / band[~mask_equality].mean(), u_inequality)), eps)
+    return metrics(
+        loss,
+        torch.cat((u_equal.flatten() / band[~mask_equality].mean(), u_inequality)),
+        eps,
+    )

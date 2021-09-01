@@ -35,9 +35,9 @@ def model_from_parameters(param, gpus=-1, debug=False, logger=None, data_dir="./
     input_features = 8 if param["constraint_features"] else 2
     gnn = GNN(
         dm.gso(),
-        [input_features] + [param["F"]] * param["gnn_layers"],
-        [param["K"]] * param["gnn_layers"],
-        [dm.net_wrapper.n_buses * param["MLP"]] * param["mlp_layers"],
+        [input_features] + [param["F"]] * param["L"],
+        [param["K"]] * param["L"],
+        [dm.net_wrapper.n_buses * param["F_MLP"]] * param["L_MLP"],
     )
 
     barrier: OPFLogBarrier = OPFLogBarrier(
@@ -56,6 +56,7 @@ def model_from_parameters(param, gpus=-1, debug=False, logger=None, data_dir="./
     trainer = pl.Trainer(
         logger=logger,
         gpus=gpus,
+        auto_select_gpus=gpus != 0,
         max_epochs=param["max_epochs"],
         callbacks=[early, model_checkpoint],
         precision=64,
