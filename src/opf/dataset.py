@@ -55,7 +55,7 @@ class CaseDataModule(pl.LightningDataModule):
                 torch.from_numpy(data["test_bus"]).float(),
             )
 
-    def gso(self):
+    def gso(self, normalize=True):
         adjacency = self.net_wrapper.impedence_matrix()
         if self.adj_scale is None:
             # Choose scaling factor so that the mean weight is 0.5
@@ -66,7 +66,9 @@ class CaseDataModule(pl.LightningDataModule):
         adjacency.data[adjacency.data < self.adj_threshold] = 0
         adjacency = adjacency.toarray()
         # Normalize GSO by dividing by larget eigenvalue
-        return adjacency / np.max(np.real(np.linalg.eigh(adjacency)[0]))
+        if normalize:
+            adjacency /= np.max(np.real(np.linalg.eigh(adjacency)[0]))
+        return adjacency
 
     def train_dataloader(self):
         return DataLoader(

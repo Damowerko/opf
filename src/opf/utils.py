@@ -1,10 +1,8 @@
 import numpy as np
 import scipy.sparse
 from matplotlib import pyplot as plt
-import os
 from opf.modules import GNN, OPFLogBarrier
 from opf.dataset import CaseDataModule
-from multiprocessing import cpu_count
 import pytorch_lightning as pl
 
 
@@ -13,41 +11,66 @@ def graph_info(gso, plot=False):
     print(f"Connected components: {scipy.sparse.csgraph.connected_components(gso)[0]}")
 
     if plot:
-        plt.figure()
+        plt.figure(figsize=(12, 4))
+        plt.subplot(1, 2, 1)
         plt.imshow(gso)
         plt.colorbar()
 
-        plt.figure()
+        plt.subplot(1, 2, 2)
         plt.hist(gso[gso > 0].flat, bins=20, range=(0, 1))
         plt.title("Distribution of non-zero edge weights")
         plt.show()
 
 
-def model_from_parameters(param, gpus=-1, debug=False, logger=None, data_dir="./data", patience=10, eps=1e-4):
-    dm = CaseDataModule(
-        param["case_name"],
-        data_dir=data_dir,
-        batch_size=param["batch_size"],
-        num_workers=0,# if debug else cpu_count(),
-        pin_memory=gpus,
-    )
-
-    input_features = 8 if param["constraint_features"] else 2
+def create_model(dm, params, eps=1e-4):
+    input_features = 8 if params["constraint_features"] else 2
     gnn = GNN(
         dm.gso(),
-        [input_features] + [param["F"]] * param["L"],
-        [param["K"]] * param["L"],
-        [dm.net_wrapper.n_buses * param["F_MLP"]] * param["L_MLP"],
+        [input_features] + [params["F"]] * params["L"],
+        [params["K"]] * params["L"],
+        [dm.net_wrapper.n_buses * params["F_MLP"]] * params["L_MLP"],
     )
 
     barrier: OPFLogBarrier = OPFLogBarrier(
         dm.net_wrapper,
         gnn,
-        t=param["t"],
-        s=param["s"],
-        cost_weight=param["cost_weight"],
-        lr=param["lr"],
-        constraint_features=param["constraint_features"],
+        t=params["t"],
+        s=params["s"],
+        cost_weight=params["cost_weight"],
+        lr=params["lr"],
+        constraint_features=params["constraint_features"],
+        eps=eps,
+    )
+    return barrier
+
+
+def model_from_parameters(
+    params, gpus=-1, debug=False, logger=None, data_dir="./data", patience=10, eps=1e-4
+):
+    dm = CaseDataModule(
+        params["case_name"],
+        data_dir=data_dir,
+        batch_size=params["batch_size"],
+        num_workers=0,  # if debug else cpu_count(),
+        pin_memory=gpus,
+    )
+
+    input_features = 8 if params["constraint_features"] else 2
+    gnn = GNN(
+        dm.gso(),
+        [input_features] + [params["F"]] * params["L"],
+        [params["K"]] * params["L"],
+        [dm.net_wrapper.n_buses * params["F_MLP"]] * params["L_MLP"],
+    )
+
+    barrier: OPFLogBarrier = OPFLogBarrier(
+        dm.net_wrapper,
+        gnn,
+        t=params["t"],
+        s=params["s"],
+        cost_weight=params["cost_weight"],
+        lr=params["lr"],
+        constraint_features=params["constraint_features"],
         eps=eps,
     )
 
@@ -57,9 +80,9 @@ def model_from_parameters(param, gpus=-1, debug=False, logger=None, data_dir="./
         logger=logger,
         gpus=gpus,
         auto_select_gpus=gpus != 0,
-        max_epochs=param["max_epochs"],
+        max_epochs=params["max_epochs"],
         callbacks=[early, model_checkpoint],
         precision=64,
-        auto_lr_find=True
+        auto_lr_find=True,
     )
     return barrier, trainer, dm

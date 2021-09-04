@@ -1,40 +1,26 @@
 program: scripts/train.py
 method: grid
-metric:
-  name: val/loss
-  goal: minimize
-description: Sweep with one layer.
+name: "case30_cost_weight"
 project: "opf"
 parameters:
   s:
     values:
       - 10
-      - 100
-      - 500
   t:
     values:
-      - 10
-      - 100
       - 500
   K:
     values:
-      - 2
-      - 4
       - 8
   F:
     values:
-      - 16
       - 32
-      - 64
-  gnn_layers:
+  L:
     values:
-      - 1
       - 2
-  lr:
-    values:
-      - 1e-3
-      - 1e-4
-      - 1e-5
   cost_weight:
     values:
       - 1.0
+      - 0.01
+      - 0.001
+      - 0.0001

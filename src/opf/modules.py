@@ -142,6 +142,9 @@ class OPFLogBarrier(pl.LightningModule):
         # Parse parameters such as admittance matrix to be used in powerflow calculations.
         self.powerflow_parameters = pf.parameters_from_pm(self.pm)
 
+        # Normalization factor to be applied to the cost function
+        self.cost_normalization = 1.0
+
     def forward(self, load):
         if self.hparams.constraint_features:
             x = torch.cat(
@@ -216,7 +219,6 @@ class OPFLogBarrier(pl.LightningModule):
             self.log_dict(acopf_metrics)
             return dict(**test_metrics, **acopf_metrics)
 
-
     def parse_bus(self, bus: torch.Tensor):
         assert bus.shape[1] == 4
         assert bus.shape[2] == self.powerflow_parameters.n_bus
@@ -243,7 +245,10 @@ class OPFLogBarrier(pl.LightningModule):
             for val in constraints.values()
             if val["loss"] is not None and not torch.isnan(val["loss"])
         ]
-        return cost * self.cost_weight + torch.stack(constraint_losses).sum()
+        return (
+            cost * self.cost_weight * self.cost_normalization
+            + torch.stack(constraint_losses).sum()
+        )
 
     def cost(self, variables: pf.PowerflowVariables) -> torch.Tensor:
         """Compute the cost to produce the active and reactive power."""
