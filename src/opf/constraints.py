@@ -37,12 +37,13 @@ def _compute_mask(mask, constraint):
 
 
 def truncated_log(u, s, t):
+    assert not u.isnan().any() 
     threshold = -1 / (s * t)
-    return torch.where(
-        u <= threshold,
-        -torch.log(-u) / t,
-        (-log(-threshold) / t) + (u - threshold) * s,
-    )
+    below = u <= threshold
+    v = torch.zeros_like(u)
+    v[below] = -torch.log(-u[below]) / t
+    v[~below] = (-log(-threshold) / t) + (u[~below] - threshold) * s
+    return v
 
 
 def equality(x: torch.Tensor, y: torch.Tensor, eps=1e-4, angle=False):
@@ -83,7 +84,7 @@ def inequality(
     mask_lower = _compute_mask(~mask_equality, lower_bound)
     mask_upper = _compute_mask(~mask_equality, upper_bound)
 
-    u_equal = (lower_bound[mask_equality] - value[:, mask_equality]).abs()
+    u_equal = (lower_bound[mask_equality] - value[:, mask_equality])
     u_lower = lower_bound[mask_lower] - value[:, mask_lower]
     u_upper = value[:, mask_upper] - upper_bound[mask_upper]
 
@@ -98,8 +99,7 @@ def inequality(
     # we normalize u_equal by the mean difference between the upper and lower constraints
     # this allows us to compare values of different scales
     u_inequality = torch.cat((u_lower.flatten(), u_upper.flatten()))
-    loss = u_equal.square().sum() + truncated_log(u_inequality, s, t).sum()
-    loss /= value.numel()
+    loss = (u_equal.square().sum() + truncated_log(u_inequality, s, t).sum()) / value.numel()
 
     # The tensor elements should be bounded.
     assert not torch.isinf(u_equal).any()

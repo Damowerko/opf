@@ -13,3 +13,4 @@ figures/
 **/__pycache__/
 **/.ipynb_checkpoints/
 .python-version
+.pytest_cache

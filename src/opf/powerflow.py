@@ -240,6 +240,6 @@ def powerflow(
     Sbus_sh = (
         V * network.Ybus_sh.unsqueeze(0).conj() * V.conj()
     )  # [V][Ybus_shunt*] V* = shunt bus power
-    Sbus_branch = V * (network.Cf.T @ If.conj() + network.Ct.T @ It.conj())
+    Sbus_branch = network.Cf.T @ Sf + network.Ct.T @ St
     Sbus = Sbus_branch + Sbus_sh
     return PowerflowVariables(V, S, Sd, Sg, If, It, Sf, St, Sbus)

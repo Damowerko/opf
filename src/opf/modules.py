@@ -3,95 +3,14 @@ from math import exp
 from typing import List, Dict
 
 import alegnn.utils.graphML as gml
-import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn
-from alegnn.modules.architectures import SelectionGNN
+from alegnn.modules import architectures
 
 import opf.powerflow as pf
 from opf.power import NetWrapper
 from opf.constraints import equality, inequality
-
-
-class LocalGNN(SelectionGNN):
-    """
-    LocalGNN: All operations are local, and the output is extracted at a single
-    node. Note that a last layer MLP, applied to the features of each node,
-    being the same for all nodes, is equivalent to an LSIGF.
-
-    THINGS TO DO:
-        - Is the adding an extra feature the best way of doing this?
-        - Should I separate Local MLP from LSIGF? At least in the inputs for
-          the initialization?
-        - Is this class necessary at all?
-        - How would I do pooling? If I do pooling, this might affect the
-          labeling/ordering of the nodes. And I would need to ensure that the
-          nodes where I want to take the output from where selected during
-          pooling. So, no pooling for now.
-        - I also don't like the idea of having a splitForward() as well.
-
-    There is no coarsening, nor MLP because these two operations kill the
-    locality. So, only local operations are included.
-    """
-
-    def __init__(
-        self,
-        # Graph Filtering,
-        dimNodeSignals=None,
-        nFilterTaps=None,
-        bias=None,
-        # Nonlinearity,
-        nonlinearity=torch.nn.ReLU,
-        # Structure
-        GSO=None,
-        index: List[int] = None,
-    ):
-
-        # We need to compute the values of nSelectedNodes, and poolingSize
-        # so that there is no pooling.
-
-        # First, check the inputs
-
-        # dimNodeSignals should be a list and of size 1 more than nFilter taps.
-        assert len(dimNodeSignals) == len(nFilterTaps) + 1
-        # Check whether the GSO has features or not. After that, always handle
-        # it as a matrix of dimension E x N x N.
-        assert len(GSO.shape) == 2 or len(GSO.shape) == 3
-        if len(GSO.shape) == 2:
-            assert GSO.shape[0] == GSO.shape[1]
-            GSO = GSO.reshape([1, GSO.shape[0], GSO.shape[1]])  # 1 x N x N
-        else:
-            assert GSO.shape[1] == GSO.shape[2]  # E x N x N
-
-        # Get the number of layers
-        self.L = len(nFilterTaps)
-        # Get the number of selected nodes so that there is no pooling
-        nSelectedNodes = [GSO.shape[1]] * self.L
-        # Define the no pooling function
-        poolingFunction = gml.NoPool
-        # And the pooling size, which is one (it doesn't matter)
-        poolingSize = [1] * self.L
-
-        self.index = index
-
-        super().__init__(
-            dimNodeSignals,
-            nFilterTaps,
-            bias,
-            nonlinearity,
-            nSelectedNodes,
-            poolingFunction,
-            poolingSize,
-            [],
-            GSO,
-        )
-
-    def forward(self, x):
-        x = super().forward(x)
-        index = torch.tensor(self.index, dtype=torch.int64, device=x.device)
-        x = torch.index_select(x, 1, index)
-        return x
 
 
 class GNN(pl.LightningModule):
@@ -100,11 +19,11 @@ class GNN(pl.LightningModule):
         self.save_hyperparameters(ignore=["gso"])
 
         n_layers = len(taps)
-        self.gnn = SelectionGNN(
+        self.gnn = architectures.SelectionGNN(
             features,
             taps,
             True,
-            torch.nn.ReLU,
+            torch.nn.Tanh,
             [gso.shape[-1]] * n_layers,
             gml.NoPool,
             [1] * n_layers,
@@ -114,6 +33,42 @@ class GNN(pl.LightningModule):
 
     def forward(self, x):
         return self.gnn(x)
+
+class LocalGNN(pl.LightningModule):
+    def __init__(self, gso, features, taps, output_features):
+        super().__init__()
+        self.save_hyperparameters(ignore=["gso"])
+
+        n_layers = len(taps)
+        self.gnn = architectures.LocalGNN(
+            features,
+            taps,
+            True,
+            torch.nn.Tanh,
+            [gso.shape[-1]] * n_layers,
+            gml.NoPool,
+            [1] * n_layers,
+            output_features,
+            gso,
+        )
+    
+    def forward(self, x):
+        return self.gnn(x)
+
+class MultiReadout(torch.nn.Module):
+    def __init__(self, nodes: int, F_in: int, F_out: int, use_bias: bool = True):
+        super().__init__()
+        self.use_bias = use_bias
+        self.input_dims = (-1, nodes, F_in)
+
+        self.weight = torch.nn.Parameter(torch.zeros(nodes, F_out, F_in))
+        torch.nn.init.xavier_normal_(self.weight)
+        if self.use_bias:
+            self.bias = torch.nn.Parameter(torch.zeros(nodes, F_out))
+
+    def forward(self, x):
+        x = x.reshape(self.input_dims)
+        return torch.einsum("njk,bnk -> bnj", self.weight, x) + self.bias
 
 
 class OPFLogBarrier(pl.LightningModule):
@@ -125,19 +80,17 @@ class OPFLogBarrier(pl.LightningModule):
         s=1000,
         cost_weight=1.0,
         lr=1e-4,
-        constraint_features=False,
         eps=1e-3,
+        constraint_features=False,
+        enforce_constraints=False,
+        **kwargs,
     ):
         super().__init__()
         self.net_wrapper = net_wrapper
         self.pm = self.net_wrapper.to_powermodels()
         self.model = model
-        self.t = t
-        self.s = s
-        self.cost_weight = cost_weight
-        self.eps = eps
         self.detailed_metrics = False
-        self.save_hyperparameters(ignore=["net_wrapper", "model"])
+        self.save_hyperparameters(ignore=["net_wrapper", "model", "kwargs"])
 
         # Parse parameters such as admittance matrix to be used in powerflow calculations.
         self.powerflow_parameters = pf.parameters_from_pm(self.pm)
@@ -160,11 +113,40 @@ class OPFLogBarrier(pl.LightningModule):
             x = load
         bus = self.model(x)
         bus = torch.reshape(bus, (-1, 4, self.powerflow_parameters.n_bus))
-        return bus
-
-    def _step_helper(self, bus, load, project_pandapower=False):
         V, S = self.parse_bus(bus)
         Sd = self.parse_load(load)
+        if self.hparams.enforce_constraints:
+            V, S = self.enforce_constraints(V, S, Sd)
+        return V, S, Sd
+
+    def sigmoid_bound(self, x, lb, ub):
+        scale = ub - lb
+        return scale * torch.sigmoid(x) + lb
+
+    def enforce_constraints(self, V, S, Sd):
+        Sg = S + Sd
+        vm_constraint = self.powerflow_parameters.constraints[
+            "inequality/voltage_magnitude"
+        ]
+        active_constraint = self.powerflow_parameters.constraints[
+            "inequality/active_power"
+        ]
+        reactive_constraint = self.powerflow_parameters.constraints[
+            "inequality/reactive_power"
+        ]
+        vm = self.sigmoid_bound(V.abs(), vm_constraint.min, vm_constraint.max)
+        V = torch.polar(vm, V.angle()) # V * vm / V.abs()
+
+        Sg.real = self.sigmoid_bound(
+            Sg.real, active_constraint.min, active_constraint.max
+        )
+        Sg.imag = self.sigmoid_bound(
+            Sg.imag, reactive_constraint.min, reactive_constraint.max
+        )
+        S = Sg - Sd
+        return V, S
+
+    def _step_helper(self, V, S, Sd, project_pandapower=False):
         if project_pandapower:
             V, S = self.project_pandapower(V, S, Sd)
         variables = pf.powerflow(V, S, Sd, self.powerflow_parameters)
@@ -176,7 +158,7 @@ class OPFLogBarrier(pl.LightningModule):
     def training_step(self, batch, *args):
         load = batch[0] @ self.powerflow_parameters.load_matrix
         _, constraints, cost, loss = self._step_helper(
-            self(load), load, project_pandapower=False
+            *self(load), project_pandapower=False
         )
         self.log("train/loss", loss, prog_bar=True, sync_dist=True)
         self.log_dict(
@@ -189,7 +171,7 @@ class OPFLogBarrier(pl.LightningModule):
         with torch.no_grad():
             load = batch[0] @ self.powerflow_parameters.load_matrix
             _, constraints, cost, loss = self._step_helper(
-                self(load), load, project_pandapower=False
+                *self(load), project_pandapower=False
             )
             self.log("val/loss", loss, prog_bar=True, sync_dist=True)
             self.log_dict(
@@ -202,7 +184,7 @@ class OPFLogBarrier(pl.LightningModule):
             load, acopf_bus = batch
             load @= self.powerflow_parameters.load_matrix
             _, constraints, cost, _ = self._step_helper(
-                self(load), load, project_pandapower=True
+                *self(load), project_pandapower=True
             )
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
@@ -210,8 +192,11 @@ class OPFLogBarrier(pl.LightningModule):
             self.log_dict(test_metrics)
 
             # Test the ACOPF solution for reference.
+            acopf_bus = self.bus_from_polar(acopf_bus)
             _, constraints, cost, _ = self._step_helper(
-                self.bus_from_polar(acopf_bus), load, project_pandapower=False
+                *self.parse_bus(acopf_bus),
+                self.parse_load(load),
+                project_pandapower=False,
             )
             acopf_metrics = self.metrics(
                 cost, constraints, "acopf", self.detailed_metrics
@@ -245,14 +230,16 @@ class OPFLogBarrier(pl.LightningModule):
             for val in constraints.values()
             if val["loss"] is not None and not torch.isnan(val["loss"])
         ]
+        if len(constraint_losses) == 0:
+            constraint_losses = [torch.zeros(1, device=self.device, dtype=self.dtype)]
         return (
-            cost * self.cost_weight * self.cost_normalization
+            cost * self.hparams.cost_weight * self.cost_normalization
             + torch.stack(constraint_losses).sum()
         )
 
     def cost(self, variables: pf.PowerflowVariables) -> torch.Tensor:
         """Compute the cost to produce the active and reactive power."""
-        p = variables.S.real
+        p = variables.Sg.real
         p_coeff = self.powerflow_parameters.cost_coeff
         return (p_coeff[:, 0] + p * p_coeff[:, 1] + (p ** 2) * p_coeff[:, 2]).mean()
 
@@ -267,7 +254,7 @@ class OPFLogBarrier(pl.LightningModule):
                 values[name] = equality(
                     constraint.value(self.powerflow_parameters, variables),
                     constraint.target(self.powerflow_parameters, variables),
-                    self.eps,
+                    self.hparams.eps,
                     constraint.isAngle,
                 )
             elif isinstance(constraint, pf.InequalityConstraint):
@@ -275,9 +262,9 @@ class OPFLogBarrier(pl.LightningModule):
                     constraint.variable(self.powerflow_parameters, variables),
                     constraint.min,
                     constraint.max,
-                    self.s,
-                    self.t,
-                    self.eps,
+                    self.hparams.s,
+                    self.hparams.t,
+                    self.hparams.eps,
                     constraint.isAngle,
                 )
         return values
@@ -359,13 +346,7 @@ class OPFLogBarrier(pl.LightningModule):
                 return self.parse_bus(bus)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), self.hparams.lr)
-        lr_scheduler = {
-            "scheduler": torch.optim.lr_scheduler.MultiStepLR(optimizer, []),
-            "monitor": "val/loss",
-            "name": "scheduler",
-        }
-        return [optimizer], [lr_scheduler]
+        return torch.optim.AdamW(self.parameters(), self.hparams.lr)
 
     @staticmethod
     def bus_from_polar(bus):

@@ -12,7 +12,7 @@ from opf.power import NetWrapper, load_case
 class CaseDataModule(pl.LightningDataModule):
     def __init__(
         self,
-        case_name,
+        case_name="case30",
         data_dir="./data",
         batch_size=32,
         ratio_train=0.95,
@@ -20,6 +20,7 @@ class CaseDataModule(pl.LightningDataModule):
         adj_scale=None,
         adj_threshold=0.01,
         pin_memory=False,
+        **kwargs
     ):
         super().__init__()
         self.case_name = case_name

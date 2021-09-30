@@ -46,16 +46,21 @@ def plot_inequality(title, value, lower, upper):
 
 
 def plot_constraints(
-    vars: pf.PowerflowVariables, constraints: Dict[str, pf.Constraint]
+    vars: pf.PowerflowVariables, params: pf.PowerflowParameters
 ):
+    constraints = params.constraints
     plots = {}
     for name, constraint in constraints.items():
         if isinstance(constraint, pf.EqualityConstraint):
             plots[name] = plot_equality(
-                name, constraint.target(vars), constraint.value(vars)
+                name, constraint.target(params, vars), constraint.value(params, vars)
             )
         elif isinstance(constraint, pf.InequalityConstraint):
             plots[name] = plot_inequality(
-                name, constraint.value(vars), constraint.min, constraint.max
+                name, constraint.variable(params, vars), constraint.min, constraint.max
+            )
+        else:
+            raise ValueError(
+                f"Unknown constraint type: {type(constraint)} with value {constraint}"
             )
     return plots

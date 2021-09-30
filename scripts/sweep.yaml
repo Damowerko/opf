@@ -1,7 +1,13 @@
 program: scripts/train.py
 method: grid
-name: "case30_cost_weight"
+name: "case30_readout"
 project: "opf"
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - ${args}
+  - "--enforce_constraints"
 parameters:
   s:
     values:
@@ -15,12 +21,27 @@ parameters:
   F:
     values:
       - 32
+      - 128
+      - 256
   L:
     values:
       - 2
+  patience:
+    values:
+      - 50
+  max_epochs:
+    values:
+      - 1000
   cost_weight:
     values:
-      - 1.0
       - 0.01
-      - 0.001
-      - 0.0001
+  gradient_clip_val:
+    values:
+      - 0.1
+      - 1.0
+      - 10.0
+  readout:
+    values:
+      - "multi"
+      - "local"
+      - "mlp"

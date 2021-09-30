@@ -1,10 +1,10 @@
 import numpy as np
 import scipy.sparse
 from matplotlib import pyplot as plt
-from opf.modules import GNN, OPFLogBarrier
+from opf.modules import GNN, MultiReadout, OPFLogBarrier, LocalGNN
 from opf.dataset import CaseDataModule
 import pytorch_lightning as pl
-
+import torch
 
 def graph_info(gso, plot=False):
     print(f"Non-zero edges: {np.sum(np.abs(gso) > 0)}")
@@ -22,24 +22,40 @@ def graph_info(gso, plot=False):
         plt.show()
 
 
-def create_model(dm, params, eps=1e-4):
+def create_model(dm, params):
     input_features = 8 if params["constraint_features"] else 2
-    gnn = GNN(
-        dm.gso(),
-        [input_features] + [params["F"]] * params["L"],
-        [params["K"]] * params["L"],
-        [dm.net_wrapper.n_buses * params["F_MLP"]] * params["L_MLP"],
-    )
 
-    barrier: OPFLogBarrier = OPFLogBarrier(
+    if params["readout"] not in ["local", "mlp", "multi"]:
+        raise ValueError()
+
+    modules = []
+    if params["readout"] in ["mlp", "multi"]:
+        modules = [GNN(
+            dm.gso(),
+            [input_features] + [params["F"]] * params["L"],
+            [params["K"]] * params["L"],
+            [dm.net_wrapper.n_buses * 4] if params["readout"] == "mlp" else [],
+        )]
+        if params["readout"] == "multi":
+            modules.append(MultiReadout(dm.net_wrapper.n_buses, params["F"], 4, True))
+    elif params["readout"] == "local":
+        modules = [LocalGNN(
+            dm.gso(),
+            [input_features] + [params["F"]] * params["L"],
+            [params["K"]] * params["L"],
+            [4]
+        )]
+    model = torch.nn.Sequential(*modules)
+    barrier = OPFLogBarrier(
         dm.net_wrapper,
-        gnn,
+        model,
         t=params["t"],
         s=params["s"],
         cost_weight=params["cost_weight"],
         lr=params["lr"],
         constraint_features=params["constraint_features"],
-        eps=eps,
+        enforce_constraints=params["enforce_constraints"],
+        eps=params["eps"],
     )
     return barrier
 
