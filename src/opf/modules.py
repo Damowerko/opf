@@ -1,6 +1,5 @@
-from functools import reduce
-from math import exp
-from typing import List, Dict
+from multiprocessing import Value
+from typing import Dict
 
 import alegnn.utils.graphML as gml
 import pytorch_lightning as pl
@@ -11,64 +10,79 @@ from alegnn.modules import architectures
 import opf.powerflow as pf
 from opf.power import NetWrapper
 from opf.constraints import equality, inequality
+from opf import readout
+import argparse
+import typing
+from distutils.util import strtobool
 
+class SimpleGNN(pl.LightningModule):
+    readout_choices: typing.Dict[str, readout.Readout] = {
+        "mlp": readout.ReadoutMLP,
+        "multi": readout.ReadoutMulti,
+        "local": readout.ReadoutLocal,
+    }
 
-class GNN(pl.LightningModule):
-    def __init__(self, gso, features, taps, mlp):
+    activation_choices: typing.Dict[str, torch.nn.Module] = {
+        "tanh": torch.nn.Tanh,
+        "relu": torch.nn.ReLU,
+        "leaky_relu": torch.nn.LeakyReLU,
+    }
+
+    def __init__(
+        self,
+        gso,
+        F_in: int,
+        L: int = 2,
+        F: int = 32,
+        K: int = 8,
+        activation: typing.Union[torch.nn.Module, str] = torch.nn.Tanh,
+        readout: readout.Readout = readout.ReadoutLocal,
+        **kwargs,
+    ):
         super().__init__()
-        self.save_hyperparameters(ignore=["gso"])
+        if isinstance(activation, str):
+            activation = SimpleGNN.activation_choices[activation]
+        if isinstance(readout, str):
+            readout = SimpleGNN.readout_choices[readout]
 
-        n_layers = len(taps)
-        self.gnn = architectures.SelectionGNN(
-            features,
-            taps,
-            True,
-            torch.nn.Tanh,
-            [gso.shape[-1]] * n_layers,
-            gml.NoPool,
-            [1] * n_layers,
-            mlp,
-            gso,
+        nodes = gso.shape[-1]
+        F_out = 4  # complex voltage and power is the output
+        use_bias = True
+
+        self.gnn = torch.nn.Sequential(
+            architectures.LocalGNN(
+                [F_in] + [F] * L,
+                [K] * L,
+                use_bias,
+                activation,
+                [nodes] * L,
+                gml.NoPool,
+                [1] * L,
+                [],
+                gso,
+            ),
+            readout(nodes, F_in, F_out, use_bias),
         )
+
+    @staticmethod
+    def add_args(parser: argparse.ArgumentParser):
+        group = parser.add_argument_group("SimpleGNN")
+        group.add_argument(
+            "--activation", type=str, default="relu", choices=SimpleGNN.sigma_choices
+        )
+        group.add_argument(
+            "--readout", type=str, default="local", choices=SimpleGNN.readout_choices
+        )
+        group.add_argument(
+            "--K", type=int, default=8, help="Number of filter taps per layer."
+        )
+        group.add_argument(
+            "--F", type=int, default=32, help="Number of hidden features on each layer."
+        )
+        group.add_argument("--L", type=int, default=2, help="Number of GNN layers.")
 
     def forward(self, x):
         return self.gnn(x)
-
-class LocalGNN(pl.LightningModule):
-    def __init__(self, gso, features, taps, output_features):
-        super().__init__()
-        self.save_hyperparameters(ignore=["gso"])
-
-        n_layers = len(taps)
-        self.gnn = architectures.LocalGNN(
-            features,
-            taps,
-            True,
-            torch.nn.Tanh,
-            [gso.shape[-1]] * n_layers,
-            gml.NoPool,
-            [1] * n_layers,
-            output_features,
-            gso,
-        )
-    
-    def forward(self, x):
-        return self.gnn(x)
-
-class MultiReadout(torch.nn.Module):
-    def __init__(self, nodes: int, F_in: int, F_out: int, use_bias: bool = True):
-        super().__init__()
-        self.use_bias = use_bias
-        self.input_dims = (-1, nodes, F_in)
-
-        self.weight = torch.nn.Parameter(torch.zeros(nodes, F_out, F_in))
-        torch.nn.init.xavier_normal_(self.weight)
-        if self.use_bias:
-            self.bias = torch.nn.Parameter(torch.zeros(nodes, F_out))
-
-    def forward(self, x):
-        x = x.reshape(self.input_dims)
-        return torch.einsum("njk,bnk -> bnj", self.weight, x) + self.bias
 
 
 class OPFLogBarrier(pl.LightningModule):
@@ -97,6 +111,25 @@ class OPFLogBarrier(pl.LightningModule):
 
         # Normalization factor to be applied to the cost function
         self.cost_normalization = 1.0
+
+    @classmethod
+    def add_args(parser: argparse.ArgumentParser):
+        group = parser.add_argument_group("OPFLogBarrier")
+        group.add_argument("--s", type=int, default=10)
+        group.add_argument("--t", type=int, default=500)
+        group.add_argument("--cost_weight", type=float, default=0.01)
+        group.add_argument("--lr", type=float, default=1e-4)
+        group.add_argument("--eps", type=float, default=1e-4)
+
+        def str2bool(val):
+            if val in ("True", "true", "1"):
+                return True
+            elif val in ("False", "false", "0"):
+                return False
+            else:
+                raise ValueError(f"{val} is not a valid boolean.")
+        group.add_argument("--constraint_features", type=str2bool, const=True, default=False)
+        group.add_argument("--enforce_constraints", type=str2bool, const=True, default=False)
 
     def forward(self, load):
         if self.hparams.constraint_features:
@@ -135,7 +168,7 @@ class OPFLogBarrier(pl.LightningModule):
             "inequality/reactive_power"
         ]
         vm = self.sigmoid_bound(V.abs(), vm_constraint.min, vm_constraint.max)
-        V = torch.polar(vm, V.angle()) # V * vm / V.abs()
+        V = torch.polar(vm, V.angle())  # V * vm / V.abs()
 
         Sg.real = self.sigmoid_bound(
             Sg.real, active_constraint.min, active_constraint.max

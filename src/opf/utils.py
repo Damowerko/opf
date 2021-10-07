@@ -1,10 +1,9 @@
 import numpy as np
 import scipy.sparse
 from matplotlib import pyplot as plt
-from opf.modules import GNN, MultiReadout, OPFLogBarrier, LocalGNN
+from opf.modules import SimpleGNN, OPFLogBarrier
 from opf.dataset import CaseDataModule
-import pytorch_lightning as pl
-import torch
+
 
 def graph_info(gso, plot=False):
     print(f"Non-zero edges: {np.sum(np.abs(gso) > 0)}")
@@ -22,83 +21,8 @@ def graph_info(gso, plot=False):
         plt.show()
 
 
-def create_model(dm, params):
+def create_model(dm: CaseDataModule, params: dict):
     input_features = 8 if params["constraint_features"] else 2
-
-    if params["readout"] not in ["local", "mlp", "multi"]:
-        raise ValueError()
-
-    modules = []
-    if params["readout"] in ["mlp", "multi"]:
-        modules = [GNN(
-            dm.gso(),
-            [input_features] + [params["F"]] * params["L"],
-            [params["K"]] * params["L"],
-            [dm.net_wrapper.n_buses * 4] if params["readout"] == "mlp" else [],
-        )]
-        if params["readout"] == "multi":
-            modules.append(MultiReadout(dm.net_wrapper.n_buses, params["F"], 4, True))
-    elif params["readout"] == "local":
-        modules = [LocalGNN(
-            dm.gso(),
-            [input_features] + [params["F"]] * params["L"],
-            [params["K"]] * params["L"],
-            [4]
-        )]
-    model = torch.nn.Sequential(*modules)
-    barrier = OPFLogBarrier(
-        dm.net_wrapper,
-        model,
-        t=params["t"],
-        s=params["s"],
-        cost_weight=params["cost_weight"],
-        lr=params["lr"],
-        constraint_features=params["constraint_features"],
-        enforce_constraints=params["enforce_constraints"],
-        eps=params["eps"],
-    )
+    model = SimpleGNN(dm.gso(), input_features, **params)
+    barrier = OPFLogBarrier(dm.net_wrapper, model, **params)
     return barrier
-
-
-def model_from_parameters(
-    params, gpus=-1, debug=False, logger=None, data_dir="./data", patience=10, eps=1e-4
-):
-    dm = CaseDataModule(
-        params["case_name"],
-        data_dir=data_dir,
-        batch_size=params["batch_size"],
-        num_workers=0,  # if debug else cpu_count(),
-        pin_memory=gpus,
-    )
-
-    input_features = 8 if params["constraint_features"] else 2
-    gnn = GNN(
-        dm.gso(),
-        [input_features] + [params["F"]] * params["L"],
-        [params["K"]] * params["L"],
-        [dm.net_wrapper.n_buses * params["F_MLP"]] * params["L_MLP"],
-    )
-
-    barrier: OPFLogBarrier = OPFLogBarrier(
-        dm.net_wrapper,
-        gnn,
-        t=params["t"],
-        s=params["s"],
-        cost_weight=params["cost_weight"],
-        lr=params["lr"],
-        constraint_features=params["constraint_features"],
-        eps=eps,
-    )
-
-    model_checkpoint = pl.callbacks.ModelCheckpoint(monitor="val/loss")
-    early = pl.callbacks.EarlyStopping(monitor="val/loss", patience=patience)
-    trainer = pl.Trainer(
-        logger=logger,
-        gpus=gpus,
-        auto_select_gpus=gpus != 0,
-        max_epochs=params["max_epochs"],
-        callbacks=[early, model_checkpoint],
-        precision=64,
-        auto_lr_find=True,
-    )
-    return barrier, trainer, dm
