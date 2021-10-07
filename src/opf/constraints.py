@@ -52,13 +52,13 @@ def equality(x: torch.Tensor, y: torch.Tensor, eps=1e-4, angle=False):
         u = fix_angle(u)
     loss = u.square().mean()
 
-    # normalize the value to get a sense of stale
-    normalization = torch.mean(torch.stack((x, y)).abs())
-    # Do not divide by zero
-    if normalization > eps:
-        u = u / normalization
-    else:
-        print("Avoided dividing by zero.")
+    # # normalize the value to get a sense of stale
+    # normalization = torch.mean(torch.stack((x, y)).abs())
+    # # Do not divide by zero
+    # if normalization > eps:
+    #     u = u / normalization
+    # else:
+    #     print("Avoided dividing by zero.")
 
     assert not torch.isnan(u).any()
     assert not torch.isinf(u).any()
