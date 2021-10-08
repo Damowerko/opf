@@ -5,13 +5,11 @@ class Readout(torch.nn.Module):
     def __init__(self, nodes: int, F_in: int, F_out: int, use_bias: bool = True):
         super().__init__()
         self.use_bias = use_bias
-        self.input_dims = (-1, nodes, F_in)
-        self.output_dims = (-1, nodes, F_out)
+        self.output_dims = (-1, F_out, nodes)
         if self.use_bias:
-            self.bias = torch.nn.Parameter(torch.empty(nodes, F_out))
+            self.bias = torch.nn.Parameter(torch.empty(F_out, nodes))
 
     def forward(self, x: torch.Tensor):
-        x = x.reshape(self.input_dims)
         x = self._apply_weight(x)
         x = x.reshape(self.output_dims)
         x = self._apply_bias(x)
@@ -27,7 +25,7 @@ class Readout(torch.nn.Module):
 
 class ReadoutMLP(Readout):
     def __init__(self, nodes: int, F_in: int, F_out: int, use_bias: bool = True):
-        super().init(nodes, F_in, F_out, use_bias)
+        super().__init__(nodes, F_in, F_out, use_bias)
         self.weight = torch.nn.Parameter(torch.empty(nodes * F_out, nodes * F_in))
 
     def _apply_weight(self, x: torch.Tensor):
@@ -35,16 +33,16 @@ class ReadoutMLP(Readout):
 
 class ReadoutMulti(Readout):
     def __init__(self, nodes: int, F_in: int, F_out: int, use_bias: bool = True):
-        super().init(nodes, F_in, F_out, use_bias)
+        super().__init__(nodes, F_in, F_out, use_bias)
         self.weight = torch.nn.Parameter(torch.empty(nodes, F_out, F_in))
 
     def _apply_weight(self, x):
-        return torch.einsum("njk,bnk -> bnj", self.weight, x)
+        return torch.einsum("ngf,bfn -> bgn", self.weight, x)
 
 class ReadoutLocal(Readout):
     def __init__(self, nodes: int, F_in: int, F_out: int, use_bias: bool = True):
-        super().init(nodes, F_in, F_out, use_bias)
-        self.weight = torch.nn.Parameter(torch.empty())
-
+        super().__init__(nodes, F_in, F_out, use_bias)
+        self.weight = torch.nn.Parameter(torch.empty(F_out, F_in))
+        
     def _apply_weight(self, x: torch.Tensor):
         return self.weight @ x

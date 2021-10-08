@@ -61,14 +61,14 @@ class SimpleGNN(pl.LightningModule):
                 [],
                 gso,
             ),
-            readout(nodes, F_in, F_out, use_bias),
+            readout(nodes, F, F_out, use_bias),
         )
 
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
         group = parser.add_argument_group("SimpleGNN")
         group.add_argument(
-            "--activation", type=str, default="relu", choices=SimpleGNN.sigma_choices
+            "--activation", type=str, default="relu", choices=SimpleGNN.activation_choices
         )
         group.add_argument(
             "--readout", type=str, default="local", choices=SimpleGNN.readout_choices
@@ -112,7 +112,7 @@ class OPFLogBarrier(pl.LightningModule):
         # Normalization factor to be applied to the cost function
         self.cost_normalization = 1.0
 
-    @classmethod
+    @staticmethod
     def add_args(parser: argparse.ArgumentParser):
         group = parser.add_argument_group("OPFLogBarrier")
         group.add_argument("--s", type=int, default=10)
@@ -128,8 +128,8 @@ class OPFLogBarrier(pl.LightningModule):
                 return False
             else:
                 raise ValueError(f"{val} is not a valid boolean.")
-        group.add_argument("--constraint_features", type=str2bool, const=True, default=False)
-        group.add_argument("--enforce_constraints", type=str2bool, const=True, default=False)
+        group.add_argument("--constraint_features", type=str2bool, const=True, nargs='?', default=False)
+        group.add_argument("--enforce_constraints", type=str2bool, const=True, nargs='?', default=False)
 
     def forward(self, load):
         if self.hparams.constraint_features:

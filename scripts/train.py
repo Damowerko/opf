@@ -17,7 +17,7 @@ def train(params):
     model = create_model(dm, params)
 
     logger = None
-    if not params["no_log"]:
+    if params["log"]:
         logger = WandbLogger(
             project="opf", save_dir=log_dir, config=params, log_model=True
         )
@@ -56,7 +56,7 @@ if __name__ == "__main__":
 
     # program arguments
     parser.add_argument("--root_dir", type=str, default="./")
-    parser.add_argument("--no_log", action="store_true", default=False)
+    parser.add_argument("--no_log", action="store_false", dest="log", default=True)
     parser.add_argument(
         "--hotstart", type=str, default=None, help="ID of run to hotstart with."
     )
@@ -77,5 +77,4 @@ if __name__ == "__main__":
     OPFLogBarrier.add_args(parser)
 
     params = parser.parse_args()
-    print(params)
     train(vars(params))
