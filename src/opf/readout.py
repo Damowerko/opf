@@ -29,7 +29,7 @@ class ReadoutMLP(Readout):
         self.weight = torch.nn.Parameter(torch.empty(nodes * F_out, nodes * F_in))
 
     def _apply_weight(self, x: torch.Tensor):
-        return self.weight @ x.reshape(x.shape[0], -1)
+        return self.weight @ x.reshape(x.shape[0], -1, 1)
 
 class ReadoutMulti(Readout):
     def __init__(self, nodes: int, F_in: int, F_out: int, use_bias: bool = True):

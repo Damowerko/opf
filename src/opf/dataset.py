@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import TensorDataset, random_split, DataLoader
 
 from opf.power import NetWrapper, load_case
-
+from multiprocessing import cpu_count
 
 class CaseDataModule(pl.LightningDataModule):
     def __init__(
@@ -16,7 +16,7 @@ class CaseDataModule(pl.LightningDataModule):
         data_dir="./data",
         batch_size=32,
         ratio_train=0.95,
-        num_workers=0,
+        num_workers=min(cpu_count(), 8),
         adj_scale=None,
         adj_threshold=0.01,
         pin_memory=False,
