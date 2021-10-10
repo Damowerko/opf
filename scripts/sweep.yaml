@@ -1,13 +1,7 @@
 program: scripts/train.py
 method: grid
-name: "case30_readout"
+name: "case30_readout_activation"
 project: "opf"
-command:
-  - ${env}
-  - ${interpreter}
-  - ${program}
-  - ${args}
-  - "--enforce_constraints"
 parameters:
   s:
     values:
@@ -21,27 +15,25 @@ parameters:
   F:
     values:
       - 32
-      - 128
-      - 256
   L:
     values:
       - 2
   patience:
     values:
-      - 50
+      - 1000
   max_epochs:
     values:
       - 1000
   cost_weight:
     values:
       - 0.01
-  gradient_clip_val:
-    values:
-      - 0.1
-      - 1.0
-      - 10.0
   readout:
     values:
       - "multi"
       - "local"
       - "mlp"
+  activation:
+    values:
+      - "relu"
+      - "leaky_relu"
+      - "tanh"
