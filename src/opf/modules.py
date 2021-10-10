@@ -13,7 +13,7 @@ from opf.constraints import equality, inequality
 from opf import readout
 import argparse
 import typing
-from distutils.util import strtobool
+
 
 class SimpleGNN(pl.LightningModule):
     readout_choices: typing.Dict[str, readout.Readout] = {
@@ -68,10 +68,16 @@ class SimpleGNN(pl.LightningModule):
     def add_args(parser: argparse.ArgumentParser):
         group = parser.add_argument_group("SimpleGNN")
         group.add_argument(
-            "--activation", type=str, default="relu", choices=SimpleGNN.activation_choices
+            "--activation",
+            type=str,
+            default="leaky_relu",
+            choices=list(SimpleGNN.activation_choices),
         )
         group.add_argument(
-            "--readout", type=str, default="local", choices=SimpleGNN.readout_choices
+            "--readout",
+            type=str,
+            default="local",
+            choices=list(SimpleGNN.readout_choices),
         )
         group.add_argument(
             "--K", type=int, default=8, help="Number of filter taps per layer."
@@ -118,18 +124,10 @@ class OPFLogBarrier(pl.LightningModule):
         group.add_argument("--s", type=int, default=10)
         group.add_argument("--t", type=int, default=500)
         group.add_argument("--cost_weight", type=float, default=0.01)
-        group.add_argument("--lr", type=float, default=1e-4)
+        group.add_argument("--lr", type=float, default=3e-4)
         group.add_argument("--eps", type=float, default=1e-4)
-
-        def str2bool(val):
-            if val in ("True", "true", "1"):
-                return True
-            elif val in ("False", "false", "0"):
-                return False
-            else:
-                raise ValueError(f"{val} is not a valid boolean.")
-        group.add_argument("--constraint_features", type=str2bool, const=True, nargs='?', default=False)
-        group.add_argument("--enforce_constraints", type=str2bool, const=True, nargs='?', default=False)
+        group.add_argument("--constraint_features", type=int, default=0)
+        group.add_argument("--enforce_constraints", type=int, default=0)
 
     def forward(self, load):
         if self.hparams.constraint_features:
