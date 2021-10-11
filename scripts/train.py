@@ -52,6 +52,7 @@ def train(params):
             save_dir=params["log_dir"],
             name="tensorboard",
             version=run_id,
+            default_hp_metric="test/inequality/error_max"
         )
         loggers.append(tensorboard_logger)
 
