@@ -305,7 +305,7 @@ class OPFLogBarrier(pl.LightningModule):
         """Returns a matrix representing the bus constraints as a graph signal."""
         bus_constraints = []
         for constraint in self.powerflow_parameters.constraints.values():
-            if constraint.isBus:
+            if constraint.isBus and isinstance(constraint, pf.InequalityConstraint):
                 bus_constraints += [constraint.min, constraint.max]
         return torch.cat(bus_constraints, dim=1).to(self.device)
 
@@ -315,7 +315,7 @@ class OPFLogBarrier(pl.LightningModule):
         The matrix size is # branches x # branch constraints"""
         branch_constraints = []
         for constraint in self.powerflow_parameters.constraints.values():
-            if constraint.isBranch:
+            if constraint.isBranch and isinstance(constraint, pf.InequalityConstraint):
                 branch_constraints += [constraint.min, constraint.max]
         return torch.stack(branch_constraints, dim=0)
 
