@@ -7,7 +7,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG, format="%(levelname)s:%(message)s")
 
 from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, model_checkpoint
 from pytorch_lightning import Trainer
 
 from opf.dataset import CaseDataModule
@@ -30,24 +30,26 @@ def train(params):
     dm = CaseDataModule(pin_memory=params["gpus"] != 0, **params)
     model = create_model(dm, params)
 
+    if params["hotstart"]:
+        pass
+
     callbacks = []
     loggers = []
     run_id = os.environ.get("RUN_ID", None)
     if params["log"] and params["wandb"]:
-        wandb_logger = WandbLogger(
-            project="opf",
-            id=run_id,
-            save_dir=params["log_dir"],
-            config=params,
-            log_model=params["wandb"],
-            offline=not params["wandb"],
-        )
-        wandb_logger.log_hyperparams(params)
-        wandb_logger.watch(model)
-        loggers.append(wandb_logger)
-        run_id = wandb_logger.experiment.id
+        if params["wandb"]:
+            wandb_logger = WandbLogger(
+                project="opf",
+                id=run_id,
+                save_dir=params["log_dir"],
+                config=params,
+                model_checkpoint=True
+            )
+            wandb_logger.log_hyperparams(params)
+            wandb_logger.watch(model)
+            loggers.append(wandb_logger)
+            run_id = wandb_logger.experiment.id
 
-    if params["log"]:
         tensorboard_logger = TensorBoardLogger(
             save_dir=params["log_dir"],
             name="tensorboard",

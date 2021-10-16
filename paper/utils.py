@@ -32,6 +32,7 @@ def load_model(dm, id: str):
     assert len(checkpoint_artifacts) <= 1
     with tempfile.TemporaryDirectory() as dir:
         checkpoint_artifacts[0].download(dir)
+        print(os.listdir(dir))
         files = list(glob.glob(os.path.join(dir, "*.ckpt")))
         if len(files) == 1:
             raise RuntimeError(f"Expected one file found {len(files)}:\n {files}")

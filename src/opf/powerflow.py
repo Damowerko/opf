@@ -43,6 +43,7 @@ class PowerflowParameters(torch.nn.Module):
     gen_matrix: torch.Tensor
     load_matrix: torch.Tensor
     constraints: Dict[str, Constraint]
+    rate_a: torch.Tensor
 
     def __post_init__(self):
         super().__init__()
@@ -218,6 +219,7 @@ def parameters_from_pm(pm) -> PowerflowParameters:
         gen_matrix,
         load_matrix,
         constraints,
+        rate_a
     )
 
 

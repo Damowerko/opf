@@ -1,11 +1,14 @@
 - operations:
     train:
       main: scripts/train --data_dir data/ --log_dir .
+      output-scalars: off
       flags-dest: args
       flags-import: all
-      output-scalars: off
+      flags-import-skip:
+        - data_dir
+        - log_dir
       requires:
-        - data
+            - data
       sourcecode:
         select:
           - "*.py"
@@ -13,6 +16,23 @@
               dir: scripts
           - include:
               dir: src
+      compare:
+        - =case_name
+        - epoch
+        - avg test/cost as Cost
+        - avg test/equality/error_max as Equality
+        - avg test/inequality/error_max as Inequality
+        - avg val/loss
+        - avg val/cost
+        - avg val/inequality/error_max
+        - =F
+        - =K
+        - =L
+        - =lr
+        - =enforce_constraints
+        - =constraint_features
+        - =readout
+        - =activation
   resources:
     data:
       - file: data/
