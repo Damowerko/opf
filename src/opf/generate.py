@@ -4,6 +4,7 @@ from functools import partial
 from multiprocessing import Pool
 
 import numpy as np
+from opf import power
 
 from opf.power import NetWrapper, LoadGenerator
 from opf.power import load_case
@@ -19,7 +20,7 @@ def generate_samples(manager: NetWrapper, num_samples, load_scale=1.0, delta=0.1
     return load_samples
 
 
-def label_sample(manager: NetWrapper, load_sample):
+def label_sample(manager: NetWrapper, load_sample, powermodels=False):
     """
     Generate the optimal power flow label.
     :param manager: NetworkManger instance.
@@ -27,10 +28,10 @@ def label_sample(manager: NetWrapper, load_sample):
     :return:
     """
     manager.set_load(*load_sample)
-    return manager.optimal_ac()
+    return manager.optimal_ac(powermodels)
 
 
-def label_samples(manager, load, pool=True):
+def label_samples(manager, load, pool=True, powermodels=False):
     """
     Labels samples using :method:`label_sample`.
     :param manager: NetworkManager instance.
@@ -38,7 +39,7 @@ def label_samples(manager, load, pool=True):
     :param pool: If true then use a process pool.
     :return: A list of tuples (res_bus, res_gen, res_ext_grid) or None if OPF did not converge..
     """
-    f = partial(label_sample, manager)
+    f = partial(label_sample, manager, powermodels=powermodels)
     if pool:
         with Pool() as p:
             labels = list(p.map(f, load))
@@ -68,6 +69,7 @@ def main():
     )
     parser.add_argument("--scale", default=1.0, type=float, help="Scale the load.")
     parser.add_argument("--name", default=None, type=str, help="The filename.")
+    parser.add_argument("--powermodels", default=False, action="store_true", help="If set then will use PowerModels instead of PYPOWER solver.")
     parser.add_argument(
         "--pool",
         default=False,
@@ -84,7 +86,7 @@ def main():
     if args.test_samples > 0:
         test_load = generate_samples(manager, args.test_samples, load_scale=args.scale)
         test_load, test_bus, test_gen, test_ext = label_samples(
-            manager, test_load, pool=args.pool
+            manager, test_load, pool=args.pool, powermodels=args.powermodels
         )
 
     if args.name is None:
