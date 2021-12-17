@@ -43,7 +43,7 @@ def train(params):
                 id=run_id,
                 save_dir=params["log_dir"],
                 config=params,
-                model_checkpoint=True
+                log_model=True
             )
             wandb_logger.log_hyperparams(params)
             wandb_logger.watch(model)
