@@ -36,7 +36,7 @@ def train(params):
     callbacks = []
     loggers = []
     run_id = os.environ.get("RUN_ID", None)
-    if params["log"] and params["wandb"]:
+    if params["log"]:
         if params["wandb"]:
             wandb_logger = WandbLogger(
                 project="opf",
