@@ -1,13 +1,34 @@
 # OPF
 
 ## Installation
-This project uses [poetry](https://python-poetry.org/) for dependency managemnt. To install the project and all
-the dependencies simply call use `poetry install`. Poetry will create a virtualenv for you.
 
-If your GPU needs CUDA 11 then you will need to change the pytroch version manually. Each time 
-after calling `poetry install` you will need to to the following.
-1. Activate the virtualenv using `poetry shell`.
-2. Run `poe cuda11`.
+### Python
+
+You will need to have a python version installed that is not statically linked.
+You can install such a version using `pyenv`.
+```PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install 3.9.9```
+This will create a python version linked to a shared library.
+
+This project uses [poetry](https://python-poetry.org/) for dependency managemnt. To install the project and all
+the dependencies simply call use `poetry install`. Poetry will create a virtualenv for you or alternatively you can use,
+```
+poetry config virtualenvs.create false --local
+```
+to supress virtualenv creation for the project.
+
+### Julia
+
+You will need to install Julia. Follow the instructions on the (pandapower docs)[https://pandapower.readthedocs.io/en/develop/opf/powermodels.html#].
+Instead of step 2, run the following in the python version installed above. This will install and configure PyCall in the julia installation. 
+```
+import julia
+julia.install()
+```
+
+Make sure you install all the required packages in julia.
+```
+add Ipopt PowerModels PandaModels JSON Cbc Juniper JuMP
+```
 
 ## Code Overview
 ### Files
@@ -46,6 +67,8 @@ OPF computation, others just fail to converge using PYPOWER. Below is a list of 
 Working:
 * case6ww
 * case30
+* case57
+* case118
 
 Broken:
 * case4gs
@@ -54,21 +77,6 @@ Broken:
 ## Load profiles
 Though currently unused, data for generating "realistic" load profile based on historical data is available 
 [here](https://openei.org/doe-opendata/dataset/commercial-and-residential-hourly-load-profiles-for-all-tmy3-locations-in-the-united-states).
-
-## Julia Dependencies (Optional)
-PandaPower offers two backends for optimization: PYPOWER and Powermodels.jl. The latter is more reliable, but is
-implemented in Julia and uses PyCall to execute Julia functions from Python. 
-If you want to run dataset generation using PowerModels.jl as a backend for PandaPower you will need to install
-the following Julia dependencies using the Julia package manager (press `]` in Julia REPL).
-```
-add Ipopt PowerModels PyCall JSON Cbc Juniper JuMP
-``` 
-Then, in a desired Python REPL you will need to run.
-```
-import julia
-julia.install()
-```
-Now you can use PowerModels.jl as a Julia backend.
 
 
 
