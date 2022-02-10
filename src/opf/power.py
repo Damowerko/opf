@@ -113,7 +113,9 @@ class NetWrapper:
         )
         # Check that node indices matrch the network bus indices.
         assert set(graph.nodes) == set(self.bus_indices)
-        return nx.linalg.graphmatrix.adjacency_matrix(graph, weight=f"z_{unit}", nodelist=self.bus_indices)
+        return nx.linalg.graphmatrix.adjacency_matrix(
+            graph, weight=f"z_{unit}", nodelist=self.bus_indices
+        )
 
     @property
     def n_buses(self):
@@ -168,7 +170,9 @@ class NetWrapper:
         """
         try:
             if powermodels:
-                pp.runpm_ac_opf(self.net, calculate_voltage_angles=True, trafo_model="pi")
+                pp.runpm_ac_opf(
+                    self.net, calculate_voltage_angles=True, trafo_model="pi"
+                )
             else:
                 pp.runopp(self.net, calculate_voltage_angles=True)
         except pp.OPFNotConverged:

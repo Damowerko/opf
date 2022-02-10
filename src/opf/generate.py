@@ -69,7 +69,12 @@ def main():
     )
     parser.add_argument("--scale", default=1.0, type=float, help="Scale the load.")
     parser.add_argument("--name", default=None, type=str, help="The filename.")
-    parser.add_argument("--powermodels", default=False, action="store_true", help="If set then will use PowerModels instead of PYPOWER solver.")
+    parser.add_argument(
+        "--powermodels",
+        default=False,
+        action="store_true",
+        help="If set then will use PowerModels instead of PYPOWER solver.",
+    )
     parser.add_argument(
         "--pool",
         default=False,
