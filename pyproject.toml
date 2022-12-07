@@ -6,18 +6,16 @@ authors = ["Damian Owerko <owerko@seas.upenn.edu>"]
 license = "MIT"
 
 [[tool.poetry.source]]
-name = "pytorch"
-url = "https://eternalphane.github.io/pytorch-pypi/"
+name = "geometric"
+url = "https://data.pyg.org/whl/torch-1.13.0+cu117.html"
 
 [tool.poetry.dependencies]
 python = "^3.8,<3.10"
-alegnn = {path = "graph-neural-networks", develop = true}
 pandapower = "^2.10.1"
 pandas = "^1.5.2"
 julia = "^0.6.0"
 pytorch-lightning = "^1.8.3.post1"
 numpy = "^1.23.5"
-torch = "1.10.1+cu113"
 jupyter = "^1.0.0"
 black = "^22.10.0"
 wandb = "^0.13.6"
@@ -25,6 +23,13 @@ pytest = "^7.2.0"
 seaborn = "^0.12.1"
 pandoc = "^2.3"
 guildai = "^0.8.2"
+torch = "1.13.0"
+pyg-lib = "^0.1.0+pt113cu117"
+torch-scatter = "^2.1.0+pt113cu117"
+torch-sparse = "^0.6.15+pt113cu117"
+torch-cluster = "^1.6.0+pt113cu117"
+torch-spline-conv = "^1.2.1+pt113cu117"
+torch-geometric = "^2.2.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
