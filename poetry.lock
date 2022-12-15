@@ -1048,6 +1048,21 @@ python-versions = ">=3.5"
 traitlets = "*"
 
 [[package]]
+name = "matpowercaseframes"
+version = "1.0.4"
+description = "Parse MATPOWER case into pandas DataFrame"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[package.dependencies]
+numpy = ">=1.12"
+pandas = ">=1.0.0"
+
+[package.extras]
+matpower = ["matpower (>=7.1.0.2.1.4)"]
+
+[[package]]
 name = "mistune"
 version = "2.0.4"
 description = "A sane Markdown parser with useful plugins and renderers"
@@ -2633,7 +2648,7 @@ testing = ["flake8 (<5)", "func-timeout", "jaraco.functools", "jaraco.itertools"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8,<3.10"
-content-hash = "a794f4b4fdcec5067f43ef2e3638ced2e7e493f5e6c9ed823a39433ef05a0495"
+content-hash = "d01b26694bff270bf33678f161929322356fc7baa529e83d109e19c7c9a259ee"
 
 [metadata.files]
 absl-py = [
@@ -3468,6 +3483,9 @@ matplotlib = [
 matplotlib-inline = [
     {file = "matplotlib-inline-0.1.6.tar.gz", hash = "sha256:f887e5f10ba98e8d2b150ddcf4702c1e5f8b3a20005eb0f74bfdbd360ee6f304"},
     {file = "matplotlib_inline-0.1.6-py3-none-any.whl", hash = "sha256:f1f41aab5328aa5aaea9b16d083b128102f8712542f819fe7e6a420ff581b311"},
+]
+matpowercaseframes = [
+    {file = "matpowercaseframes-1.0.4.tar.gz", hash = "sha256:ae9c6b160f1749daea22f596e015fc1c4df0a18c7e03bc66b9f2a4f8cc2dd0e6"},
 ]
 mistune = [
     {file = "mistune-2.0.4-py2.py3-none-any.whl", hash = "sha256:182cc5ee6f8ed1b807de6b7bb50155df7b66495412836b9a74c8fbdfc75fe36d"},
