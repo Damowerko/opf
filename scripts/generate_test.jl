@@ -31,7 +31,7 @@ function label_network(network_data::Dict{String,Any}, load::Dict{String,Any})::
     network_data["load"] = load
     result = solve_ac_opf(network_data, JuMP.with_optimizer(Ipopt.Optimizer, print_level=0))
     solved = result["termination_status"] == LOCALLY_SOLVED
-    return result["solution"], solved
+    return result, solved
 end
 
 """
@@ -45,11 +45,11 @@ function generate_samples(network_data, n_samples, width=0.2)::Array{Dict,1}
         solved = false
         while !solved
             load = sample_load(network_data, width)
-            solution, solved = label_network(network_data, load)
+            result, solved = label_network(network_data, load)
             if !solved
                 continue
             end
-            samples[i] = Dict("load" => load, "solution" => solution)
+            samples[i] = Dict("load" => load, "result" => result)
         end
         next!(progress)
     end
@@ -61,7 +61,7 @@ end
 # arguments
 casefile = "data/pglib-opf-21.07/api/pglib_opf_case300_ieee__api.m"
 out_dir = "data/"
-n_samples = 1000
+n_samples = 100
 
 PowerModels.silence()
 # load case file
@@ -77,7 +77,7 @@ casename = splitext(basename(casefile))[1]
 
 # save network data
 open(joinpath(out_dir, casename * ".json"), "w") do f
-    JSON.print(f, network_data)
+    JSON.print(f, network_data, 4)
 end
 # save samples
 open(joinpath(out_dir, casename * ".test.json"), "w") do f
