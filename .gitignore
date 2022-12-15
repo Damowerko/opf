@@ -1,5 +1,6 @@
 # Project
 data/
+data
 logs/
 scripts/latest.ckpt
 **/wandb
