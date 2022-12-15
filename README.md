@@ -18,17 +18,15 @@ to supress virtualenv creation for the project.
 
 ### Julia
 
-You will need to install Julia. Follow the instructions on the (pandapower docs)[https://pandapower.readthedocs.io/en/develop/opf/powermodels.html#].
-Instead of step 2, run the following in the python version installed above. This will install and configure PyCall in the julia installation. 
+You will need to install Julia 1.6 (as of December 2022). Run the following in the python version installed above.
 ```
-import julia
-julia.install()
+python -c "import julia; julia.install()"
 ```
-
-Make sure you install all the required packages in julia.
+This will install and configure PyCall in the julia installation. There are couple dependencies for PandaPower-PowerModels.jl integration. Open up julia REPL and press `]` to manage the packages. Then run the following.
 ```
-add Ipopt PowerModels PandaModels JSON Cbc Juniper JuMP
+add Ipopt PowerModels PandaModels JSON Cbc Juniper JuMP ProgressMeter
 ```
+You might want to run `test PandaModels` in the julia pakcage manager to test the installation.
 
 ## Code Overview
 ### Files
