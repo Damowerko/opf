@@ -28,6 +28,21 @@ add Ipopt PowerModels PandaModels JSON Cbc Juniper JuMP ProgressMeter ArgParse
 ```
 You might want to run `test PandaModels` in the julia pakcage manager to test the installation.
 
+### HSL Solver (Optional)
+The HSL linear solver for IPOPT dramatically speeds up solving the problem by taking advantage of BLAS and LAPACK. PowerModels.jl (benchmarks)[https://lanl-ansi.github.io/PowerModels.jl/stable/experiment-results/] use the HSL_MA57 solver, which I will use as well.
+
+What I do is compile the (Coin-HSL Full)[https://www.hsl.rl.ac.uk/ipopt/] solver archive. You need a license to do so, but it is free for academic use.
+Installing the dependencies can be simplified by using (HSL.jl)[https://github.com/JuliaSmoothOptimizers/HSL.jl].
+Note that HSL.jl depends on the `gfortran` compiler.
+To build HSL.jl you will need to run the following in julia.
+```
+ENV["HSL_ARCHIVES_PATH"] = "PATH_TO_FOLDER_CONTAINING_ARCHIVE"
+import Pkg
+Pkg.build("HSL")
+Pkg.test("HSL")  # If needed
+```
+
+
 ## Code Overview
 ### Files
    * `train.py` is the main file used for experiments. It uses Weights and Biases for cloud based logging. You can

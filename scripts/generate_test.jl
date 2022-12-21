@@ -1,10 +1,44 @@
+using ArgParse
+
+# parse arguments
+s = ArgParseSettings()
+@add_arg_table s begin
+    "--casefile"
+    arg_type = String
+    help = "MATPOWER case file path."
+    required = true
+    "--out"
+    help = "Output directory path."
+    arg_type = String
+    default = "./data"
+    "--samples"
+    help = "Number of (labeled) samples to generate."
+    arg_type = Int
+    required = true
+    "--width"
+    help = "Width of the uniform distribution to sample the load."
+    arg_type = Float64
+    default = 0.2
+end
+args = parse_args(ARGS, s)
+
+# now the real script begins (so --help is fast)
 using PowerModels
 using Ipopt
 using Random
 using JuMP
 using ProgressMeter
 using JSON
-using ArgParse
+using Pkg
+
+# load HSL if available
+try
+    using HSL
+    global use_hsl = true
+catch
+    global use_hsl = false
+end
+
 
 """
 Sample a network model based on the reference case.
@@ -30,7 +64,11 @@ Get the solution to the OPF problem defined by the PowerModels.jl `network_data`
 function label_network(network_data::Dict{String,Any}, load::Dict{String,Any})::Tuple{Dict{String,Any},Bool}
     network_data = deepcopy(network_data)
     network_data["load"] = load
-    solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0)
+    if use_hsl
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 1, "linear_solver" => "ma57", "hsllib" => HSL.libcoinhsl)
+    else
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 1)
+    end
     result = solve_ac_opf(network_data, solver)
     solved = result["termination_status"] == LOCALLY_SOLVED
     return result, solved
@@ -77,29 +115,8 @@ function check_assumptions(network_data)
 end
 
 function main()
-    s = ArgParseSettings()
-    @add_arg_table s begin
-        "--casefile"
-        arg_type = String
-        help = "MATPOWER case file path."
-        required = true
-        "--out"
-        help = "Output directory path."
-        arg_type = String
-        default = "./data"
-        "--samples"
-        help = "Number of (labeled) samples to generate."
-        arg_type = Int
-        required = true
-        "--width"
-        help = "Width of the uniform distribution to sample the load."
-        arg_type = Float64
-        default = 0.2
-    end
-
-    args = parse_args(ARGS, s)
     casefile = args["casefile"]
-    casename = splitext(basename(casefile))[1]
+    casename = replace(splitext(basename(casefile))[1], "pglib_opf_" => "")
     out_dir = args["out"]
     n_samples = args["samples"]
     width = args["width"]
