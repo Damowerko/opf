@@ -2,8 +2,8 @@
 
 If you found this work useful you can cite our two papers.
 
-```
-@inproceedings{9053140,
+```bibtex
+@inproceedings{owerko2020opf,
   author={Owerko, Damian and Gama, Fernando and Ribeiro, Alejandro},
   booktitle={ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)}, 
   title={Optimal Power Flow Using Graph Neural Networks}, 
@@ -12,8 +12,7 @@ If you found this work useful you can cite our two papers.
   doi={10.1109/ICASSP40776.2020.9053140}
 }
 
-
-@misc{https://doi.org/10.48550/arxiv.2210.09277,
+@misc{owerko2022opf,
   doi = {10.48550/ARXIV.2210.09277},
   url = {https://arxiv.org/abs/2210.09277},
   author = {Owerko, Damian and Gama, Fernando and Ribeiro, Alejandro},
