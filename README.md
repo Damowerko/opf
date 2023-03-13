@@ -1,6 +1,6 @@
 # OPF
 
-If you found this work useful you can cite our conference paper and preprint.
+Code used in [Optimal Power Flow Using Graph Neural Networks](https://doi.org/10.1109/ICASSP40776.2020.9053140) and [Unsupervised Optimal Power Flow Using Graph Neural Networks](https://arxiv.org/abs/2210.09277). To cite our work please use the following biblatex citation. The version used for ICASSP is archived in a different branch.
 
 ```bibtex
 @inproceedings{owerko2020opf,
