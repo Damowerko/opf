@@ -1,5 +1,29 @@
 # OPF
 
+If you found this work useful you can cite our two papers.
+
+```
+@inproceedings{9053140,
+  author={Owerko, Damian and Gama, Fernando and Ribeiro, Alejandro},
+  booktitle={ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)}, 
+  title={Optimal Power Flow Using Graph Neural Networks}, 
+  year={2020},
+  pages={5930-5934},
+  doi={10.1109/ICASSP40776.2020.9053140}
+}
+
+
+@misc{https://doi.org/10.48550/arxiv.2210.09277,
+  doi = {10.48550/ARXIV.2210.09277},
+  url = {https://arxiv.org/abs/2210.09277},
+  author = {Owerko, Damian and Gama, Fernando and Ribeiro, Alejandro},
+  title = {Unsupervised Optimal Power Flow Using Graph Neural Networks},
+  publisher = {arXiv},
+  year = {2022},
+  copyright = {arXiv.org perpetual, non-exclusive license}
+}
+```
+
 ## Installation
 
 ### Python
