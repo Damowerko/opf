@@ -1,6 +1,6 @@
 # OPF
 
-If you found this work useful you can cite our two papers.
+If you found this work useful you can cite our conference paper and preprint.
 
 ```bibtex
 @inproceedings{owerko2020opf,
