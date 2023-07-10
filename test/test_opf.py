@@ -1,9 +1,14 @@
-from opf.dataset import CaseDataModule
-from opf.modules import OPFLogBarrier, GNN
-import torch
-import numpy as np
 from itertools import islice
+
+import numpy as np
+import pandapower as pp
+import pandapower.networks
 import pytest
+import torch
+
+from opf.dataset import CaseDataModule
+from opf.modules import OPFLogBarrier, SimpleGNN
+from opf.power import NetWrapper, simplify_net
 
 
 class Modules:
@@ -14,11 +19,6 @@ class Modules:
             adj_threshold=0.01,
             batch_size=1024,
             max_epochs=100,
-            K=8,
-            F=16,
-            gnn_layers=4,
-            MLP=4,
-            mlp_layers=1,
             t=10,
             s=500,
             cost_weight=0.1,
@@ -34,11 +34,12 @@ class Modules:
             pin_memory=False,
         )
 
-        gnn = GNN(
-            dm.gso(),
-            [2] + [param["F"]] * param["gnn_layers"],
-            [param["K"]] * param["gnn_layers"],
-            [dm.net_wrapper.n_buses * param["MLP"]] * param["mlp_layers"],
+        gnn = SimpleGNN(
+            F_in=2,
+            F_out=16,
+            F=16,
+            K=8,
+            L=4,
         )
 
         barrier: OPFLogBarrier = OPFLogBarrier(
@@ -63,6 +64,25 @@ class Modules:
 @pytest.fixture
 def modules():
     return Modules()
+
+
+def test_simplify_net():
+    networks = [
+        pandapower.networks.case30(),
+        # pandapower.networks.case57(),
+        # pandapower.networks.case118(),
+        # pandapower.networks.case300(),
+    ]
+    for net in networks:
+        wrapper = NetWrapper(net)
+        wrapper_simple = NetWrapper(simplify_net(net))
+
+        # run opf on both networks
+        result = wrapper.optimal_ac()
+        result_simple = wrapper_simple.optimal_ac()
+        assert result is not None
+        assert result_simple is not None
+        assert np.allclose(result[1], result_simple[1], atol=1e-8)
 
 
 def test_pandapower_reference(modules):
@@ -125,15 +145,12 @@ def test_powerflow(modules):
             ["p_to_mw", "q_to_mvar"]
         ].to_numpy()
 
-        errors = (
-            torch.stack(
-                (
-                    torch.view_as_real(Sf.squeeze()) - res_from,
-                    torch.view_as_real(St.squeeze()) - res_to,
-                )
-            ).abs()
-            / torch.max(Sf.abs().max(), St.abs().max())
-        )
+        errors = torch.stack(
+            (
+                torch.view_as_real(Sf.squeeze()) - res_from,
+                torch.view_as_real(St.squeeze()) - res_to,
+            )
+        ).abs() / torch.max(Sf.abs().max(), St.abs().max())
 
         assert errors.max() <= 1e-3
         assert (S - Sbus).abs().max() < 1e-8
@@ -146,6 +163,7 @@ def test_acopf_feasible(modules):
         _, constraints = modules.barrier.optimal_power_flow(acopf_bus, load)
         for constraint, values in constraints.items():
             assert values["rate"] < 1e-8
+
 
 def test_cost(modules):
     for load, acopf_bus in islice(modules.dataloader, 10):

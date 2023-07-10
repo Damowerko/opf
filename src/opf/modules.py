@@ -1,28 +1,18 @@
-from multiprocessing import Value
-from typing import Dict
-
-import alegnn.utils.graphML as gml
-import pytorch_lightning as pl
-import torch
-import torch.nn
-from alegnn.modules import architectures
-
-import opf.powerflow as pf
-from opf.power import NetWrapper
-from opf.constraints import equality, inequality
-from opf import readout
 import argparse
 import typing
+from typing import Dict, Type
+
+import pytorch_lightning as pl
+import torch
+import torch_geometric.nn as gnn
+
+import opf.powerflow as pf
+from opf.constraints import equality, inequality
+from opf.power import NetWrapper
 
 
 class SimpleGNN(pl.LightningModule):
-    readout_choices: typing.Dict[str, readout.Readout] = {
-        "mlp": readout.ReadoutMLP,
-        "multi": readout.ReadoutMulti,
-        "local": readout.ReadoutLocal,
-    }
-
-    activation_choices: typing.Dict[str, torch.nn.Module] = {
+    activation_choices: typing.Dict[str, Type[torch.nn.Module]] = {
         "tanh": torch.nn.Tanh,
         "relu": torch.nn.ReLU,
         "leaky_relu": torch.nn.LeakyReLU,
@@ -30,39 +20,45 @@ class SimpleGNN(pl.LightningModule):
 
     def __init__(
         self,
-        gso,
         F_in: int,
+        F_out: int,
         L: int = 2,
         F: int = 32,
         K: int = 8,
-        activation: typing.Union[torch.nn.Module, str] = torch.nn.Tanh,
-        readout: readout.Readout = readout.ReadoutLocal,
+        mlp_layers_per_gnn_layer: int = 0,
+        activation: typing.Union[Type[torch.nn.Module], str] = torch.nn.Tanh,
         **kwargs,
     ):
         super().__init__()
         if isinstance(activation, str):
             activation = SimpleGNN.activation_choices[activation]
-        if isinstance(readout, str):
-            readout = SimpleGNN.readout_choices[readout]
+        # mlp readin layer
+        gnn_layers = [(gnn.Linear(F_in, F), "x -> x"), (activation(), "x -> x")]
+        for _ in range(L):
+            # make MLP layer
+            if mlp_layers_per_gnn_layer > 0:
+                mlp_layers = [
+                    (gnn.Linear(F, F), "x -> x"),
+                    (activation(), "x -> x"),
+                ] * mlp_layers_per_gnn_layer
+                mlp = gnn.Sequential(*mlp_layers)
+                gnn_layers += [(mlp, "x -> x")]
 
-        nodes = gso.shape[-1]
-        F_out = 4  # complex voltage and power is the output
-        use_bias = True
-
-        self.gnn = torch.nn.Sequential(
-            architectures.LocalGNN(
-                [F_in] + [F] * L,
-                [K] * L,
-                use_bias,
-                activation,
-                [nodes] * L,
-                gml.NoPool,
-                [1] * L,
-                [],
-                gso,
-            ),
-            readout(nodes, F, F_out, use_bias),
-        )
+            # add gnn layer
+            gnn_layers += [
+                (
+                    gnn.TAGConv(
+                        in_channels=F,
+                        out_channels=F,
+                        K=K,
+                    ),
+                    "x, edge_index, edge_weights -> x",
+                ),
+                activation(),
+            ]
+        # mlp readout layer (no activation)
+        gnn_layers += [(gnn.Linear(F, F_out), "x -> x")]
+        self.gnn = gnn.Sequential("x, edge_index, edge_weights", gnn_layers)
 
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
@@ -74,12 +70,6 @@ class SimpleGNN(pl.LightningModule):
             choices=list(SimpleGNN.activation_choices),
         )
         group.add_argument(
-            "--readout",
-            type=str,
-            default="local",
-            choices=list(SimpleGNN.readout_choices),
-        )
-        group.add_argument(
             "--K", type=int, default=8, help="Number of filter taps per layer."
         )
         group.add_argument(
@@ -87,8 +77,8 @@ class SimpleGNN(pl.LightningModule):
         )
         group.add_argument("--L", type=int, default=2, help="Number of GNN layers.")
 
-    def forward(self, x):
-        return self.gnn(x)
+    def forward(self, x, edge_index, edge_weights):
+        return self.gnn(x, edge_index, edge_weights)
 
 
 class OPFLogBarrier(pl.LightningModule):
@@ -110,6 +100,13 @@ class OPFLogBarrier(pl.LightningModule):
         self.pm = self.net_wrapper.to_powermodels()
         self.model = model
         self.detailed_metrics = False
+        self.t = t
+        self.s = s
+        self.cost_weight = cost_weight
+        self.lr = lr
+        self.eps = eps
+        self.constraint_features = constraint_features
+        self._enforce_constraints = enforce_constraints
         self.save_hyperparameters(ignore=["net_wrapper", "model", "kwargs"])
 
         # Parse parameters such as admittance matrix to be used in powerflow calculations.
@@ -129,8 +126,8 @@ class OPFLogBarrier(pl.LightningModule):
         group.add_argument("--constraint_features", type=int, default=0)
         group.add_argument("--enforce_constraints", type=int, default=0)
 
-    def forward(self, load):
-        if self.hparams.constraint_features:
+    def forward(self, load, edge_index, edge_weights):
+        if self.constraint_features:
             x = torch.cat(
                 (
                     load,
@@ -142,11 +139,11 @@ class OPFLogBarrier(pl.LightningModule):
             )
         else:
             x = load
-        bus = self.model(x)
+        bus = self.model(x, edge_index, edge_weights)
         bus = torch.reshape(bus, (-1, 4, self.powerflow_parameters.n_bus))
         V, S = self.parse_bus(bus)
         Sd = self.parse_load(load)
-        if self.hparams.enforce_constraints:
+        if self._enforce_constraints:
             V, S = self.enforce_constraints(V, S, Sd)
         return V, S, Sd
 
@@ -262,9 +259,9 @@ class OPFLogBarrier(pl.LightningModule):
             if val["loss"] is not None and not torch.isnan(val["loss"])
         ]
         if len(constraint_losses) == 0:
-            constraint_losses = [torch.zeros(1, device=self.device, dtype=self.dtype)]
+            constraint_losses = [torch.zeros(1, device=self.device, dtype=self.dtype)]  # type: ignore
         return (
-            cost * self.hparams.cost_weight * self.cost_normalization
+            cost * self.cost_weight * self.cost_normalization
             + torch.stack(constraint_losses).sum()
         )
 
@@ -272,7 +269,7 @@ class OPFLogBarrier(pl.LightningModule):
         """Compute the cost to produce the active and reactive power."""
         p = variables.Sg.real
         p_coeff = self.powerflow_parameters.cost_coeff
-        return (p_coeff[:, 0] + p * p_coeff[:, 1] + (p ** 2) * p_coeff[:, 2]).mean()
+        return (p_coeff[:, 0] + p * p_coeff[:, 1] + (p**2) * p_coeff[:, 2]).mean()
 
     def constraints(self, variables) -> Dict[str, Dict[str, torch.Tensor]]:
         """
@@ -285,24 +282,24 @@ class OPFLogBarrier(pl.LightningModule):
                 values[name] = equality(
                     constraint.value(self.powerflow_parameters, variables),
                     constraint.target(self.powerflow_parameters, variables),
-                    self.hparams.eps,
+                    self.eps,
                     constraint.isAngle,
                 )
             elif isinstance(constraint, pf.InequalityConstraint):
                 values[name] = inequality(
                     constraint.variable(self.powerflow_parameters, variables),
-                    constraint.min,
-                    constraint.max,
-                    self.hparams.s,
-                    self.hparams.t,
-                    self.hparams.eps,
+                    constraint.min(self.powerflow_parameters, variables),
+                    constraint.max(self.powerflow_parameters, variables),
+                    self.s,
+                    self.t,
+                    self.eps,
                     constraint.isAngle,
                 )
         return values
 
     @property
     def bus_constraints_matrix(self):
-        """Returns a matrix representing the bus constraints as a graph signal."""
+        """Returns a matrix representing the bus constraints as a    signal."""
         bus_constraints = []
         for constraint in self.powerflow_parameters.constraints.values():
             if constraint.isBus and isinstance(constraint, pf.InequalityConstraint):
@@ -372,12 +369,12 @@ class OPFLogBarrier(pl.LightningModule):
                 return V, S
             else:
                 bus, _, _ = res_powerflow
-                bus = torch.as_tensor(bus, device=self.device, dtype=self.dtype)
+                bus = torch.as_tensor(bus, device=self.device, dtype=self.dtype)  # type: ignore
                 bus = self.bus_from_polar(bus.unsqueeze(0))
                 return self.parse_bus(bus)
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), self.hparams.lr)
+        return torch.optim.AdamW(self.parameters(), self.lr)
 
     @staticmethod
     def bus_from_polar(bus):

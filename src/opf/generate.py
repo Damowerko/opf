@@ -4,10 +4,9 @@ from functools import partial
 from multiprocessing import Pool
 
 import numpy as np
-from opf import power
+import pandapower as pp
 
-from opf.power import NetWrapper, LoadGenerator
-from opf.power import load_case
+from opf.power import LoadGenerator, NetWrapper, load_case, simplify_net
 
 
 def generate_samples(manager: NetWrapper, num_samples, load_scale=1.0, delta=0.1):
@@ -52,7 +51,11 @@ def label_samples(manager, load, pool=True, powermodels=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate OPF dataset.")
-    parser.add_argument("case", type=str, help="Test case to use.")
+    parser.add_argument(
+        "case",
+        type=str,
+        help="Test case to use. Either specify a pandapower casename or a test case file ending with *.m",
+    )
     parser.add_argument(
         "train_samples", type=int, help="Number of unlabeled samples to generate."
     )
@@ -68,7 +71,7 @@ def main():
         default="./data",
     )
     parser.add_argument("--scale", default=1.0, type=float, help="Scale the load.")
-    parser.add_argument("--name", default=None, type=str, help="The filename.")
+    parser.add_argument("--name", default=None, type=str, help="Output filename.")
     parser.add_argument(
         "--powermodels",
         default=False,
@@ -83,7 +86,10 @@ def main():
     )
     args = parser.parse_args()
 
-    case = load_case(args.case, args.data)
+    # load matpower case
+    case = load_case(args.case)
+    # simplify case so that there is one generator per bus
+    case = simplify_net(case)
     manager = NetWrapper(case, per_unit=True)
     train_load = generate_samples(manager, args.train_samples, load_scale=args.scale)
 
@@ -95,9 +101,13 @@ def main():
         )
 
     if args.name is None:
-        args.name = args.case
+        # get the filename without extension
+        args.name = os.path.basename(os.path.splitext(args.case)[0])
 
-    filename = os.path.join(args.data, args.case + ".npz")
+    # save pandapower test case
+    pp.to_pickle(case, os.path.join(args.data, f"{args.name}.pkl"))
+    # save numpy dataset
+    filename = os.path.join(args.data, args.name, "train.npz")
     np.savez(
         filename,
         train_load=train_load,

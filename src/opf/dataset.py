@@ -1,18 +1,50 @@
 import os
-from typing import Optional
+from multiprocessing import cpu_count
+from typing import Optional, Tuple
+from tempfile import TemporaryDirectory
 
 import numpy as np
+import json
 import pytorch_lightning as pl
 import torch
-from torch.utils.data import TensorDataset, random_split, DataLoader
+from torch.utils.data import DataLoader, TensorDataset, random_split
+from torch_geometric.data import Data, download_url, extract_tar
+from torch_geometric.utils import dense_to_sparse
 
-from opf.power import NetWrapper, load_case
-from multiprocessing import cpu_count
+from opf.powerflow import PowerflowParameters
+
+PGLIB_VERSION = "21.07"
+
+
+def create_graph(
+    params: PowerflowParameters,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Convert a PowerflowParameters object to a torch_geometric.data.Data object.
+
+    Args:
+        powerflow_parameters (PowerflowParameters): Powerflow parameters.
+
+    Returns:
+        torch_geometric.data.Data: Graph object.
+    """
+    Ybus = (
+        params.Cf.T @ params.Yf
+        + params.Ct.T @ params.Yt
+        + params.Ybus_sh
+    )
+    edge_index, edge_admittance = dense_to_sparse(Ybus)
+    Smax 
+
+    edge_powerlimit = params.rate_a[edge_index[0, :]]
+    edge_attr = torch.stack([edge_admittance.real, edge_admittance.imag], dim=1)
+
+    return edge_index, edge_attr
+
 
 class CaseDataModule(pl.LightningDataModule):
     def __init__(
         self,
-        case_name="case30",
+        case_name="pglib_opf_case300_ieee__api",
         data_dir="./data",
         batch_size=32,
         ratio_train=0.95,
@@ -20,11 +52,12 @@ class CaseDataModule(pl.LightningDataModule):
         adj_scale=None,
         adj_threshold=0.01,
         pin_memory=False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.case_name = case_name
         self.data_dir = data_dir
+        self.pglib_dir = os.path.join(self.data_dir, f"pglib-opf-{PGLIB_VERSION}")
         self.batch_size = batch_size
         self.ratio_train = ratio_train
         self.num_workers = num_workers
@@ -32,15 +65,31 @@ class CaseDataModule(pl.LightningDataModule):
         self.adj_scale = adj_scale
         self.adj_threshold = adj_threshold
 
-        self.net_wrapper = NetWrapper(load_case(case_name))
         self.dims = (1, self.net_wrapper.n_buses, 2)
+
+        self.net = self.load_network()
 
         self.train_data = None
         self.val_data = None
         self.test_data = None
 
+    def prepare_data(self):
+        if not os.path.exists(self.pglib_dir):
+            with TemporaryDirectory() as tmp_dir:
+                download_url(
+                    f"https://github.com/power-grid-lib/pglib-opf/archive/refs/tags/v{PGLIB_VERSION}.tar.gz",
+                    tmp_dir,
+                )
+                extract_tar(
+                    os.path.join(tmp_dir, f"v{PGLIB_VERSION}.tar.gz"), self.data_dir
+                )
+
+    def load_network(self):
+        with open(os.path.join(self.pglib_dir, f"{self.case_name}.json")) as f:
+            return json.load(f)
+
     def setup(self, stage: Optional[str] = None):
-        data = np.load(os.path.join(self.data_dir, f"{self.case_name}.npz"))
+        data = np.load(os.path.join(self.data_dir, f"old/{self.case_name}.npz"))
 
         if stage in (None, "fit"):
             train_data = TensorDataset(torch.from_numpy(data["train_load"]).float())
@@ -93,5 +142,5 @@ class CaseDataModule(pl.LightningDataModule):
             self.test_data,
             batch_size=1,
             num_workers=self.num_workers,
-             pin_memory=self.pin_memory
+            pin_memory=self.pin_memory,
         )

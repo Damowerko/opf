@@ -44,6 +44,9 @@ class PowerflowParameters(torch.nn.Module):
     load_matrix: torch.Tensor
     constraints: Dict[str, Constraint]
     rate_a: torch.Tensor
+    fr_bus: torch.Tensor
+    to_bus: torch.Tensor
+    base_kv: torch.Tensor
 
     def __post_init__(self):
         super().__init__()
@@ -98,7 +101,6 @@ def parameters_from_pm(pm) -> PowerflowParameters:
     vm_min = torch.zeros((n_bus, 1))
     vm_max = torch.zeros((n_bus, 1))
     base_kv = torch.zeros((n_bus, 1))
-    base_mva = pm["baseMVA"]
     reference_buses = []
     for bus in pm["bus"].values():
         i = bus["bus_i"] - 1
@@ -139,6 +141,8 @@ def parameters_from_pm(pm) -> PowerflowParameters:
 
     # init branch
     n_branch = len(pm["branch"])
+    fr_bus = torch.zeros((n_branch,), dtype=torch.long)
+    to_bus = torch.zeros((n_branch,), dtype=torch.long)
     rate_a = torch.full((n_branch, 1), float("inf"))
     vad_max = torch.full((n_branch, 1), float("inf"))
     vad_min = torch.full((n_branch, 1), -float("inf"))
@@ -151,8 +155,8 @@ def parameters_from_pm(pm) -> PowerflowParameters:
     Ct = np.zeros((n_branch, n_bus), dtype=np.cdouble)
     for branch in pm["branch"].values():
         index = branch["index"] - 1
-        fr_bus = branch["f_bus"] - 1
-        to_bus = branch["t_bus"] - 1
+        fr_bus[index] = branch["f_bus"] - 1
+        to_bus[index] = branch["t_bus"] - 1
         y = 1 / (branch["br_r"] + 1j * branch["br_x"])
         yc_fr = branch["g_fr"] + 1j * branch["b_fr"]
         yc_to = branch["g_to"] + 1j * branch["b_to"]
@@ -161,11 +165,11 @@ def parameters_from_pm(pm) -> PowerflowParameters:
         Yft[index] = -y / np.conj(ratio)
         Ytt[index] = y + yc_to
         Ytf[index] = -y / ratio
-        Cf[index, fr_bus] = 1
-        Ct[index, to_bus] = 1
+        Cf[index, fr_bus[index]] = 1
+        Ct[index, to_bus[index]] = 1
         rate_a[index] = branch["rate_a"]
-        vad_min[index] = branch["angmin"]
         vad_max[index] = branch["angmax"]
+        vad_min[index] = branch["angmin"]
     Yf = torch.from_numpy(np.diag(Yff).dot(Cf) + np.diag(Yft).dot(Ct))
     Yt = torch.from_numpy(np.diag(Ytf).dot(Cf) + np.diag(Ytt).dot(Ct))
     Cf = torch.from_numpy(Cf)
@@ -219,7 +223,10 @@ def parameters_from_pm(pm) -> PowerflowParameters:
         gen_matrix,
         load_matrix,
         constraints,
-        rate_a
+        rate_a,
+        fr_bus,
+        to_bus,
+        base_kv,
     )
 
 

@@ -1,4 +1,6 @@
 import glob
+import os
+import re
 from copy import deepcopy
 
 import networkx as nx
@@ -7,14 +9,19 @@ import pandapower as pp
 import pandapower.networks
 import pandapower.topology
 import pandas as pd
+from pandapower.converter import from_mpc
 from pandapower.converter.matpower.to_mpc import _ppc2mpc
 from pandapower.converter.powermodels.to_pm import convert_pp_to_pm
 from pandapower.converter.pypower.to_ppc import to_ppc
 
 
 def load_case(case_name, reindex=True):
-    if hasattr(pp.networks, case_name):
-        net = getattr(pp.networks, case_name)()
+    if re.match(r".*\.m", case_name):
+        if not os.path.isfile(case_name):
+            raise ValueError(f"File {case_name} does not exist.")
+        net = from_mpc(case_name)
+    elif hasattr(pandapower.networks, case_name):
+        net = getattr(pandapower.networks, case_name)()
     else:
         raise ValueError("Network name {} is undefined.".format(case_name))
     if reindex:
@@ -59,10 +66,10 @@ def simplify_net(net):
                 net,
                 bus_index,
                 new_bus_index,
-                0.01,
-                1,
-                1,
-                0.01,
+                0.001,
+                1e-4,
+                1e-4,
+                1e-4,
                 1e8,
                 r0_ohm_per_km=1,
                 x0_ohm_per_km=1,
@@ -75,12 +82,12 @@ def simplify_net(net):
 
 class NetWrapper:
     def __init__(self, net, per_unit=True):
-        """
+        """w
         Wrapper around a PandaPower network.
         :param net: PandaPower network.
         :param per_unit: Should the input/output values be in the per unit system?
         """
-        self.net = simplify_net(net)
+        self.net = net  # simplify_net(net)
         self.per_unit = per_unit
 
         self.bus_indices = self.net.bus.index.to_numpy()
