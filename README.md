@@ -1,5 +1,28 @@
 # OPF
 
+Code used in [Optimal Power Flow Using Graph Neural Networks](https://doi.org/10.1109/ICASSP40776.2020.9053140) and [Unsupervised Optimal Power Flow Using Graph Neural Networks](https://arxiv.org/abs/2210.09277). To cite our work please use the following biblatex citation. The version used for ICASSP is archived in a different branch.
+
+```bibtex
+@inproceedings{owerko2020opf,
+  author={Owerko, Damian and Gama, Fernando and Ribeiro, Alejandro},
+  booktitle={ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)}, 
+  title={Optimal Power Flow Using Graph Neural Networks}, 
+  year={2020},
+  pages={5930-5934},
+  doi={10.1109/ICASSP40776.2020.9053140}
+}
+
+@misc{owerko2022opf,
+  doi = {10.48550/ARXIV.2210.09277},
+  url = {https://arxiv.org/abs/2210.09277},
+  author = {Owerko, Damian and Gama, Fernando and Ribeiro, Alejandro},
+  title = {Unsupervised Optimal Power Flow Using Graph Neural Networks},
+  publisher = {arXiv},
+  year = {2022},
+  copyright = {arXiv.org perpetual, non-exclusive license}
+}
+```
+
 ## Installation
 
 ### Python
