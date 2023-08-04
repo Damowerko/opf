@@ -1,17 +1,17 @@
+import json
 import os
 from multiprocessing import cpu_count
-from typing import Optional, Tuple
 from tempfile import TemporaryDirectory
+from typing import Optional, Tuple
 
 import numpy as np
-import json
 import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader, TensorDataset, random_split
 from torch_geometric.data import Data, download_url, extract_tar
 from torch_geometric.utils import dense_to_sparse
 
-from opf.powerflow import PowerflowParameters
+from opf.powerflow import EqualityConstraint, InequalityConstraint, PowerflowParameters
 
 PGLIB_VERSION = "21.07"
 
@@ -25,19 +25,39 @@ def create_graph(
         powerflow_parameters (PowerflowParameters): Powerflow parameters.
 
     Returns:
-        torch_geometric.data.Data: Graph object.
+        edge_index (torch.Tensor): Edge index of the graph.
+        edge_attr (torch.Tensor): Edge attributes of the graph:
+            - Real part of admittance
+            - Imaginary part of admittance
+            - Power limit
+            - Any other branch constraints in `params.constraints`.
     """
-    Ybus = (
-        params.Cf.T @ params.Yf
-        + params.Ct.T @ params.Yt
-        + params.Ybus_sh
-    )
+    Ybus = params.Cf.T @ params.Yf + params.Ct.T @ params.Yt + params.Ybus_sh
     edge_index, edge_admittance = dense_to_sparse(Ybus)
-    Smax 
-
     edge_powerlimit = params.rate_a[edge_index[0, :]]
-    edge_attr = torch.stack([edge_admittance.real, edge_admittance.imag], dim=1)
 
+    # parse the constraints, do not include any None valued constraints
+    edge_constraints = []
+    for constraint in params.constraints.values():
+        if not constraint.isBranch:
+            continue
+        if isinstance(constraint, InequalityConstraint):
+            if constraint.min is not None:
+                edge_constraints += [constraint.min]
+            if constraint.max is not None:
+                edge_constraints += [constraint.max]
+        elif isinstance(constraint, EqualityConstraint):
+            raise NotImplementedError()
+
+    edge_attr = torch.stack(
+        [
+            edge_admittance.real,
+            edge_admittance.imag,
+            edge_powerlimit,
+            *edge_constraints,
+        ],
+        dim=1,
+    )
     return edge_index, edge_attr
 
 
