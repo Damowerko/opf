@@ -1,5 +1,7 @@
 using ArgParse
 
+# Script to generate test data for the ACOPF problem.
+
 # parse arguments
 s = ArgParseSettings()
 @add_arg_table s begin
