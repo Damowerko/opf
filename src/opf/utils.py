@@ -1,10 +1,10 @@
 import numpy as np
 import scipy.sparse
-import torch.nn
 from matplotlib import pyplot as plt
+from torchcps.gnn import ParametricGNN
 
 from opf.dataset import CaseDataModule
-from opf.modules import OPFLogBarrier, SimpleGNN
+from opf.modules import OPFLogBarrier
 
 
 def graph_info(gso, plot=False):
@@ -23,9 +23,10 @@ def graph_info(gso, plot=False):
         plt.show()
 
 
-def create_model(dm: CaseDataModule, params: dict):
-    input_features = 8 if params["constraint_features"] else 2
-    output_features = 2
-    model = SimpleGNN(input_features, output_features, **params)
-    barrier = OPFLogBarrier(dm.net_wrapper, model, **params)
+def create_model(params: dict):
+    input_features = 14
+    output_features = 4
+    n_edges = 7
+    model = ParametricGNN(input_features, output_features, n_edges, **params).float()
+    barrier = OPFLogBarrier(model, **params)
     return barrier

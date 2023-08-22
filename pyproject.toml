@@ -5,32 +5,24 @@ description = ""
 authors = ["Damian Owerko <owerko@seas.upenn.edu>"]
 license = "MIT"
 
-[[tool.poetry.source]]
-name = "geometric"
-url = "https://data.pyg.org/whl/torch-1.13.0+cu117.html"
-
 [tool.poetry.dependencies]
-python = "^3.8,<3.10"
+python = "^3.11,<3.12"
 pandapower = "^2.10.1"
-pandas = "^1.5.2"
+pandas = ">1.5.2"
 julia = "^0.6.0"
-pytorch-lightning = "^1.8.3.post1"
+pytorch-lightning = "^2.0.6"
 numpy = "^1.23.5"
 jupyter = "^1.0.0"
 black = "^22.10.0"
-wandb = "^0.13.6"
+wandb = "^0.15.8"
 pytest = "^7.2.0"
 seaborn = "^0.12.1"
 pandoc = "^2.3"
 guildai = "^0.8.2"
-torch = "1.13.0"
-pyg-lib = "^0.1.0+pt113cu117"
-torch-scatter = "^2.1.0+pt113cu117"
-torch-sparse = "^0.6.15+pt113cu117"
-torch-cluster = "^1.6.0+pt113cu117"
-torch-spline-conv = "^1.2.1+pt113cu117"
-torch-geometric = "^2.2.0"
+torch = "^2.0.1"
+torch-geometric = "^2.3.1"
 matpowercaseframes = "^1.0.4"
+torchcps = {path = "../torchcps", develop = true}
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

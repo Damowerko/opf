@@ -1,18 +1,16 @@
 #!/usr/bin/python
 
 import argparse
-import logging
 import os
 
-logging.basicConfig(level=logging.DEBUG, format="%(levelname)s:%(message)s")
-
+import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.loggers.wandb import WandbLogger
+from torchcps.gnn import ParametricGNN
 
 from opf.dataset import CaseDataModule
-from opf.modules import OPFLogBarrier, SimpleGNN
+from opf.modules import OPFLogBarrier
 from opf.utils import create_model
 
 
@@ -28,8 +26,8 @@ def train(params):
         else params["log_dir"]
     )
 
-    dm = CaseDataModule(pin_memory=params["gpus"] != 0, **params)
-    model = create_model(dm, params)
+    dm = CaseDataModule(pin_memory=params["gpu"], **params)
+    model = create_model(params)
 
     if params["hotstart"]:
         pass
@@ -41,8 +39,8 @@ def train(params):
         if params["wandb"]:
             wandb_logger = WandbLogger(
                 project="opf",
-                id=run_id,`
-                save_dir=params["log_dir"],`
+                id=run_id,
+                save_dir=params["log_dir"],
                 config=params,
                 log_model=True,
             )
@@ -50,13 +48,6 @@ def train(params):
             wandb_logger.watch(model)
             loggers.append(wandb_logger)
             run_id = wandb_logger.experiment.id
-
-        tensorboard_logger = TensorBoardLogger(
-            save_dir=params["log_dir"],
-            name="tensorboard",
-            version=run_id,
-        )
-        loggers.append(tensorboard_logger)
 
         # logger specific callbacks
         callbacks += [
@@ -73,23 +64,22 @@ def train(params):
     trainer = Trainer(
         logger=loggers,
         callbacks=callbacks,
-        auto_lr_find=True,
-        precision=64,
-        gpus=params["gpus"],
+        accelerator="gpu" if params["gpu"] else "cpu",
         max_epochs=params["max_epochs"],
         default_root_dir=params["log_dir"],
         fast_dev_run=params["fast_dev_run"],
     )
 
+    # TODO: Add back once we can run ACOPF examples.
     # figure out the cost weight normalization factor
     # it is chosen so that for any network the IPOPT (ACOPF) cost is 1.0
-    if not params["fast_dev_run"]:
-        print("Performing cost normalization.")
-        calibration_result = trainer.test(model, datamodule=dm, verbose=False)[0]
-        model.cost_normalization = 1.0 / calibration_result["acopf/cost"]
-        print(f"Cost normalization: {model.cost_normalization}")
-    else:
-        logging.warning("fast_dev_run is True! Skipping calibration.")
+    # if not params["fast_dev_run"]:
+    #     print("Performing cost normalization.")
+    #     calibration_result = trainer.test(model, datamodule=dm, verbose=False)[0]
+    #     model.cost_normalization = 1.0 / calibration_result["acopf/cost"]
+    #     print(f"Cost normalization: {model.cost_normalization}")
+    # else:
+    #     logging.warning("fast_dev_run is True! Skipping calibration.")
 
     # trainer.tune(model, dm)
     trainer.fit(model, dm)
@@ -98,7 +88,7 @@ def train(params):
         logger.finalize("finished")
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
 
     # program arguments
@@ -112,23 +102,30 @@ if __name__ == "__main__":
     )
 
     # data arguments
-    parser.add_argument("--case_name", type=str, default="case30")
-    parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--adj_threshold", type=float, default=0.01)
+    parser.add_argument("--case_name", type=str, default="case1354_pegase__api")
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--fast_dev_run", action="store_true", default=False)
+    parser.add_argument("--num_workers", type=int, default=0)
 
     # trainer arguments
     group = parser.add_argument_group("Trainer")
+    group.add_argument("--gpu", type=bool, default=True)
     group.add_argument("--max_epochs", type=int, default=1000)
     group.add_argument("--patience", type=int, default=50)
     group.add_argument("--gradient_clip_val", type=float, default=0)
-    group.add_argument("--gpus", type=int, default=1)
 
-    SimpleGNN.add_args(parser)
+    # the gnn being used
+    ParametricGNN.add_args(parser)
     OPFLogBarrier.add_args(parser)
 
-    import sys
-
-    print(sys.argv)
     params = parser.parse_args()
+    torch.set_float32_matmul_precision("medium")
     train(vars(params))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    finally:
+        # exit or the MPS server might be in an undefined state
+        torch.cuda.synchronize()

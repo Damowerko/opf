@@ -102,18 +102,30 @@ function generate_samples(network_data, n_samples, width=0.2)::Array{Dict,1}
     return samples
 end
 
-function check_assumptions(network_data)
+function check_assumptions!(network_data)
     # we assume that the data is in per unit
     @assert network_data["per_unit"] == true
     # ensure one generator per bus
     gen_buses = Set{Int}()
     for (k, v) in network_data["gen"]
         @assert !(v["gen_bus"] in gen_buses)
+        @assert v["model"] == 2 # only consider the quadratic cost model
         push!(gen_buses, v["gen_bus"])
     end
     @assert length(network_data["storage"]) == 0
     @assert length(network_data["switch"]) == 0
     @assert length(network_data["dcline"]) == 0
+end
+
+function reindex_bus(data::Dict{String,Any})
+    data = deepcopy(data)
+    bus_ordered = sort([bus for (i,bus) in data["bus"]], by=(x) -> x["index"])
+    bus_id_map = Dict{Int,Int}()
+    for (i,bus) in enumerate(bus_ordered)
+        bus_id_map[bus["index"]] = i
+    end
+    update_bus_ids!(data, bus_id_map)
+    return data
 end
 
 function main()
@@ -127,7 +139,10 @@ function main()
 
     # load case file
     network_data = PowerModels.parse_file(casefile)
-    check_assumptions(network_data)
+    # reindex bus ids to be contiguous from 1 to N
+    network_data = reindex_bus(network_data)
+    
+    check_assumptions!(network_data)
 
     # save network data in JSON format
     open(joinpath(out_dir, casename * ".json"), "w") do f

@@ -1,103 +1,28 @@
 import argparse
-import typing
-from typing import Dict, Type
+from typing import Dict
 
 import pytorch_lightning as pl
 import torch
-import torch_geometric.nn as gnn
+from torch_geometric.data import Data
 
 import opf.powerflow as pf
 from opf.constraints import equality, inequality
-from opf.power import NetWrapper
-
-
-class SimpleGNN(pl.LightningModule):
-    activation_choices: typing.Dict[str, Type[torch.nn.Module]] = {
-        "tanh": torch.nn.Tanh,
-        "relu": torch.nn.ReLU,
-        "leaky_relu": torch.nn.LeakyReLU,
-    }
-
-    def __init__(
-        self,
-        F_in: int,
-        F_out: int,
-        L: int = 2,
-        F: int = 32,
-        K: int = 8,
-        mlp_layers_per_gnn_layer: int = 0,
-        activation: typing.Union[Type[torch.nn.Module], str] = torch.nn.Tanh,
-        **kwargs,
-    ):
-        super().__init__()
-        if isinstance(activation, str):
-            activation = SimpleGNN.activation_choices[activation]
-        # mlp readin layer
-        gnn_layers = [(gnn.Linear(F_in, F), "x -> x"), (activation(), "x -> x")]
-        for _ in range(L):
-            # make MLP layer
-            if mlp_layers_per_gnn_layer > 0:
-                mlp_layers = [
-                    (gnn.Linear(F, F), "x -> x"),
-                    (activation(), "x -> x"),
-                ] * mlp_layers_per_gnn_layer
-                mlp = gnn.Sequential(*mlp_layers)
-                gnn_layers += [(mlp, "x -> x")]
-
-            # add gnn layer
-            gnn_layers += [
-                (
-                    gnn.TAGConv(
-                        in_channels=F,
-                        out_channels=F,
-                        K=K,
-                    ),
-                    "x, edge_index, edge_weights -> x",
-                ),
-                activation(),
-            ]
-        # mlp readout layer (no activation)
-        gnn_layers += [(gnn.Linear(F, F_out), "x -> x")]
-        self.gnn = gnn.Sequential("x, edge_index, edge_weights", gnn_layers)
-
-    @staticmethod
-    def add_args(parser: argparse.ArgumentParser):
-        group = parser.add_argument_group("SimpleGNN")
-        group.add_argument(
-            "--activation",
-            type=str,
-            default="leaky_relu",
-            choices=list(SimpleGNN.activation_choices),
-        )
-        group.add_argument(
-            "--K", type=int, default=8, help="Number of filter taps per layer."
-        )
-        group.add_argument(
-            "--F", type=int, default=32, help="Number of hidden features on each layer."
-        )
-        group.add_argument("--L", type=int, default=2, help="Number of GNN layers.")
-
-    def forward(self, x, edge_index, edge_weights):
-        return self.gnn(x, edge_index, edge_weights)
+from opf.dataset import PowerflowBatch, PowerflowData
 
 
 class OPFLogBarrier(pl.LightningModule):
     def __init__(
         self,
-        net_wrapper: NetWrapper,
         model,
         t=10,
         s=1000,
         cost_weight=1.0,
         lr=1e-4,
         eps=1e-3,
-        constraint_features=False,
         enforce_constraints=False,
         **kwargs,
     ):
         super().__init__()
-        self.net_wrapper = net_wrapper
-        self.pm = self.net_wrapper.to_powermodels()
         self.model = model
         self.detailed_metrics = False
         self.t = t
@@ -105,12 +30,8 @@ class OPFLogBarrier(pl.LightningModule):
         self.cost_weight = cost_weight
         self.lr = lr
         self.eps = eps
-        self.constraint_features = constraint_features
         self._enforce_constraints = enforce_constraints
         self.save_hyperparameters(ignore=["net_wrapper", "model", "kwargs"])
-
-        # Parse parameters such as admittance matrix to be used in powerflow calculations.
-        self.powerflow_parameters = pf.parameters_from_pm(self.pm)
 
         # Normalization factor to be applied to the cost function
         self.cost_normalization = 1.0
@@ -123,118 +44,91 @@ class OPFLogBarrier(pl.LightningModule):
         group.add_argument("--cost_weight", type=float, default=0.01)
         group.add_argument("--lr", type=float, default=3e-4)
         group.add_argument("--eps", type=float, default=1e-4)
-        group.add_argument("--constraint_features", type=int, default=0)
-        group.add_argument("--enforce_constraints", type=int, default=0)
+        group.add_argument("--enforce_constraints", action="store_true", default=False)
 
-    def forward(self, load, edge_index, edge_weights):
-        if self.constraint_features:
-            x = torch.cat(
-                (
-                    load,
-                    self.bus_constraints_matrix.T.unsqueeze(0).repeat(
-                        load.shape[0], 1, 1
-                    ),
-                ),
-                dim=1,
-            )
-        else:
-            x = load
-        bus = self.model(x, edge_index, edge_weights)
-        bus = torch.reshape(bus, (-1, 4, self.powerflow_parameters.n_bus))
+    def forward(
+        self,
+        input: PowerflowBatch | PowerflowData,
+    ):
+        data, powerflow_parameters = input
+        assert isinstance(data, Data)
+        n_batch = data.x.shape[0] // powerflow_parameters.n_bus
+        bus = self.model(data.x, data.edge_index, data.edge_attr)
+
+        # Reshape the output to (batch_size, n_features, n_bus)
+        # Where n_features is 4 and 2 for bus and load respectively.
+        bus = bus.view(n_batch, powerflow_parameters.n_bus, 4).mT
+        # assume that the first two features are the active and reactive load
+        load = data.x[:, :2].view(n_batch, powerflow_parameters.n_bus, 2).mT
         V, S = self.parse_bus(bus)
         Sd = self.parse_load(load)
         if self._enforce_constraints:
-            V, S = self.enforce_constraints(V, S, Sd)
+            V, S = self.enforce_constraints(V, S, Sd, powerflow_parameters)
         return V, S, Sd
 
     def sigmoid_bound(self, x, lb, ub):
         scale = ub - lb
         return scale * torch.sigmoid(x) + lb
 
-    def enforce_constraints(self, V, S, Sd):
+    def enforce_constraints(self, V, S, Sd, params: pf.PowerflowParameters):
         Sg = S + Sd
-        vm_constraint = self.powerflow_parameters.constraints[
-            "inequality/voltage_magnitude"
-        ]
-        active_constraint = self.powerflow_parameters.constraints[
-            "inequality/active_power"
-        ]
-        reactive_constraint = self.powerflow_parameters.constraints[
-            "inequality/reactive_power"
-        ]
-        vm = self.sigmoid_bound(V.abs(), vm_constraint.min, vm_constraint.max)
+        vm = self.sigmoid_bound(V.abs(), params.vm_min, params.vm_max)
         V = torch.polar(vm, V.angle())  # V * vm / V.abs()
-
-        Sg.real = self.sigmoid_bound(
-            Sg.real, active_constraint.min, active_constraint.max
-        )
-        Sg.imag = self.sigmoid_bound(
-            Sg.imag, reactive_constraint.min, reactive_constraint.max
-        )
+        Sg.real = self.sigmoid_bound(Sg.real, params.Sg_min.real, params.Sg_max.real)
+        Sg.imag = self.sigmoid_bound(Sg.imag, params.Sg_min.imag, params.Sg_max.imag)
         S = Sg - Sd
         return V, S
 
-    def _step_helper(self, V, S, Sd, project_pandapower=False):
-        if project_pandapower:
-            V, S = self.project_pandapower(V, S, Sd)
-        variables = pf.powerflow(V, S, Sd, self.powerflow_parameters)
-        constraints = self.constraints(variables)
-        cost = self.cost(variables)
+    def _step_helper(self, V, S, Sd, parameters: pf.PowerflowParameters):
+        variables = pf.powerflow(V, S, Sd, parameters)
+        constraints = self.constraints(variables, parameters)
+        cost = self.cost(variables, parameters)
         loss = self.loss(cost, constraints)
         return variables, constraints, cost, loss
 
-    def training_step(self, batch, *args):
-        load = batch[0] @ self.powerflow_parameters.load_matrix
+    def training_step(self, batch: PowerflowBatch):
         _, constraints, cost, loss = self._step_helper(
-            *self(load), project_pandapower=False
+            *self.forward(batch), batch.powerflow_parameters
         )
-        self.log("train/loss", loss, prog_bar=True, sync_dist=True)
-        self.log_dict(
-            self.metrics(cost, constraints, "train", self.detailed_metrics),
-            sync_dist=True,
-        )
+        self.log("train/loss", loss, prog_bar=True)
+        self.log_dict(self.metrics(cost, constraints, "train", self.detailed_metrics))
         return loss
 
-    def validation_step(self, batch, *args):
+    def validation_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
-            load = batch[0] @ self.powerflow_parameters.load_matrix
             _, constraints, cost, loss = self._step_helper(
-                *self(load), project_pandapower=False
+                *self.forward(batch), batch.powerflow_parameters
             )
-            self.log("val/loss", loss, prog_bar=True, sync_dist=True)
-            self.log_dict(
-                self.metrics(cost, constraints, "val", self.detailed_metrics),
-                sync_dist=True,
-            )
+            self.log("val/loss", loss, prog_bar=True)
+            self.log_dict(self.metrics(cost, constraints, "val", self.detailed_metrics))
 
-    def test_step(self, batch, *args):
+    def test_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
-            load, acopf_bus = batch
-            load @= self.powerflow_parameters.load_matrix
-            _, constraints, cost, _ = self._step_helper(
-                *self(load), project_pandapower=True
+            _, constraints, cost, loss = self._step_helper(
+                *self.forward(batch), batch.powerflow_parameters
             )
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
             )
             self.log_dict(test_metrics)
 
+            # TODO: rethink how to do comparison against ACOPF
             # Test the ACOPF solution for reference.
-            acopf_bus = self.bus_from_polar(acopf_bus)
-            _, constraints, cost, _ = self._step_helper(
-                *self.parse_bus(acopf_bus),
-                self.parse_load(load),
-                project_pandapower=False,
-            )
-            acopf_metrics = self.metrics(
-                cost, constraints, "acopf", self.detailed_metrics
-            )
-            self.log_dict(acopf_metrics)
-            return dict(**test_metrics, **acopf_metrics)
+            # acopf_bus = self.bus_from_polar(acopf_bus)
+            # _, constraints, cost, _ = self._step_helper(
+            #     *self.parse_bus(acopf_bus),
+            #     self.parse_load(load),
+            #     project_pandapower=False,
+            # )
+            # acopf_metrics = self.metrics(
+            #     cost, constraints, "acopf", self.detailed_metrics
+            # )
+            # self.log_dict(acopf_metrics)
+            # return dict(**test_metrics, **acopf_metrics)
+            return test_metrics
 
     def parse_bus(self, bus: torch.Tensor):
         assert bus.shape[1] == 4
-        assert bus.shape[2] == self.powerflow_parameters.n_bus
 
         # Convert voltage and power to per unit
         vr = bus[:, 0, :]
@@ -242,14 +136,19 @@ class OPFLogBarrier(pl.LightningModule):
         p = bus[:, 2, :]
         q = bus[:, 3, :]
 
-        V = torch.complex(vr, vi).unsqueeze(-1)
-        S = torch.complex(p, q).unsqueeze(-1)
+        V = torch.complex(vr, vi)
+        S = torch.complex(p, q)
         return V, S
 
     def parse_load(self, load: torch.Tensor):
-        assert load.shape[1] == 2
-        assert load.shape[2] == self.powerflow_parameters.n_bus
-        Sd = torch.complex(load[:, 0, :], load[:, 1, :]).unsqueeze(-1)
+        """
+        Converts the load data to the format required by the powerflow module (complex tensor).
+
+        Args:
+            load: A tensor of shape (batch_size, n_features, n_bus). The first two features should contain the active and reactive load.
+
+        """
+        Sd = torch.complex(load[:, 0, :], load[:, 1, :])
         return Sd
 
     def loss(self, cost, constraints):
@@ -265,56 +164,50 @@ class OPFLogBarrier(pl.LightningModule):
             + torch.stack(constraint_losses).sum()
         )
 
-    def cost(self, variables: pf.PowerflowVariables) -> torch.Tensor:
+    def cost(
+        self,
+        variables: pf.PowerflowVariables,
+        powerflow_parameters: pf.PowerflowParameters,
+    ) -> torch.Tensor:
         """Compute the cost to produce the active and reactive power."""
         p = variables.Sg.real
-        p_coeff = self.powerflow_parameters.cost_coeff
-        return (p_coeff[:, 0] + p * p_coeff[:, 1] + (p**2) * p_coeff[:, 2]).mean()
+        p_coeff = powerflow_parameters.cost_coeff
+        cost = torch.zeros_like(p)
+        for i in range(p_coeff.shape[1]):
+            cost += p_coeff[:, i] * p.squeeze() ** i
+        # normalize the cost by the number of generators
+        return cost.mean(0).sum() / powerflow_parameters.gen_matrix.shape[0]
 
-    def constraints(self, variables) -> Dict[str, Dict[str, torch.Tensor]]:
+    def constraints(
+        self,
+        variables: pf.PowerflowVariables,
+        powerflow_parameters: pf.PowerflowParameters,
+    ) -> Dict[str, Dict[str, torch.Tensor]]:
         """
         Calculates the powerflow constraints.
         :returns: Nested map from constraint name => (value name => tensor value)
         """
+        constraints = pf.build_constraints(variables, powerflow_parameters)
         values = {}
-        for name, constraint in self.powerflow_parameters.constraints.items():
+        for name, constraint in constraints.items():
             if isinstance(constraint, pf.EqualityConstraint):
                 values[name] = equality(
-                    constraint.value(self.powerflow_parameters, variables),
-                    constraint.target(self.powerflow_parameters, variables),
+                    constraint.value,
+                    constraint.target,
                     self.eps,
                     constraint.isAngle,
                 )
             elif isinstance(constraint, pf.InequalityConstraint):
                 values[name] = inequality(
-                    constraint.variable(self.powerflow_parameters, variables),
-                    constraint.min(self.powerflow_parameters, variables),
-                    constraint.max(self.powerflow_parameters, variables),
+                    constraint.variable,
+                    constraint.min,
+                    constraint.max,
                     self.s,
                     self.t,
                     self.eps,
                     constraint.isAngle,
                 )
         return values
-
-    @property
-    def bus_constraints_matrix(self):
-        """Returns a matrix representing the bus constraints as a    signal."""
-        bus_constraints = []
-        for constraint in self.powerflow_parameters.constraints.values():
-            if constraint.isBus and isinstance(constraint, pf.InequalityConstraint):
-                bus_constraints += [constraint.min, constraint.max]
-        return torch.cat(bus_constraints, dim=1).to(self.device)
-
-    @property
-    def branch_constraints_matrix(self):
-        """Returns a matrix representing the branch constraint features.
-        The matrix size is # branches x # branch constraints"""
-        branch_constraints = []
-        for constraint in self.powerflow_parameters.constraints.values():
-            if constraint.isBranch and isinstance(constraint, pf.InequalityConstraint):
-                branch_constraints += [constraint.min, constraint.max]
-        return torch.stack(branch_constraints, dim=0)
 
     def metrics(self, cost, constraints, prefix, detailed=False):
         aggregate_metrics = {
@@ -354,24 +247,6 @@ class OPFLogBarrier(pl.LightningModule):
                 torch.stack(aggregate_metrics[aggregate_name])
             )
         return {**aggregate_metrics, **detailed_metrics}
-
-    def project_pandapower(self, V: torch.Tensor, S: torch.Tensor, Sd: torch.Tensor):
-        with torch.no_grad():
-            Sg = S + Sd
-            self.net_wrapper.set_gen_sparse(
-                Sg.real.squeeze().cpu().numpy(), Sg.imag.squeeze().cpu().numpy()
-            )
-            self.net_wrapper.set_load_sparse(
-                Sd.real.squeeze().cpu().numpy(), Sd.imag.squeeze().cpu().numpy()
-            )
-            res_powerflow = self.net_wrapper.powerflow()
-            if res_powerflow is None:
-                return V, S
-            else:
-                bus, _, _ = res_powerflow
-                bus = torch.as_tensor(bus, device=self.device, dtype=self.dtype)  # type: ignore
-                bus = self.bus_from_polar(bus.unsqueeze(0))
-                return self.parse_bus(bus)
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), self.lr)
