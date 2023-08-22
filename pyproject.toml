@@ -19,7 +19,7 @@ pytest = "^7.2.0"
 seaborn = "^0.12.1"
 pandoc = "^2.3"
 guildai = "^0.8.2"
-torch = "^2.0.1"
+torch = {version = ">=2.0.0, !=2.0.1"}
 torch-geometric = "^2.3.1"
 matpowercaseframes = "^1.0.4"
 torchcps = {path = "../torchcps", develop = true}
