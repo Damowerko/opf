@@ -1,26 +1,28 @@
+import base64
+import glob
+import io
+import os
+import tempfile
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import pytorch_lightning as pl
+import torch
 import wandb
 import wandb.apis.public
+from IPython.display import HTML
+from pytorch_lightning.callbacks import Callback
+
 from opf.modules import OPFLogBarrier
 from opf.utils import create_model
-import torch
-import glob
-import pytorch_lightning as pl
-import pandas as pd
-import tempfile
-import glob
-import os
-from IPython.display import HTML
-import io
-import base64
-import matplotlib.pyplot as plt
 
 
-class CacheOutputs(pl.callbacks.Callback):
+class CacheOutputs(Callback):
     def on_test_epoch_start(self, trainer, module):
         self.outputs = []
 
     def on_test_batch_end(
-        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0
     ):
         self.outputs.append(outputs)
 
@@ -55,7 +57,9 @@ def load_checkpoint(barrier: OPFLogBarrier, id: str, log_dir: str):
 
 def test(barrier, dm):
     cache = CacheOutputs()
-    trainer = pl.Trainer(precision=64, callbacks=[cache], logger=False, gpus=0)
+    trainer = pl.Trainer(
+        precision=32, callbacks=[cache], logger=False, accelerator="cpu"
+    )
     trainer.test(barrier, datamodule=dm, verbose=False)
     return pd.DataFrame(cache.outputs).applymap(torch.Tensor.item)
 
@@ -95,7 +99,7 @@ class FlowLayout(object):
             self.add_plot(fig)
             plt.close(i)
         return self
-            
+
     def _repr_html_(self):
         return self.sHtml
 

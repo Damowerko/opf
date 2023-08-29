@@ -188,16 +188,16 @@ class CaseDataModule(pl.LightningDataModule):
             reference_load = pf.powermodels_to_tensor(
                 powermodels_dict["load"], ["pd", "qd"]
             )
-            # For self.load_distribution_width = eps, the load is sampled from U(1-eps, 1+eps) * reference_load
-            scale = 1 + self.load_distribution_width * (
-                2 * torch.rand(self.n_train, *reference_load.shape) - 1
+            # For self.load_distribution_width = eps, the load is sampled from U(1-eps, 1) * reference_load
+            scale = 1 - self.load_distribution_width * torch.rand(
+                self.n_train, *reference_load.shape
             )
             train_load = scale * reference_load[None, ...]
             self.train_dataset = dataset_from_load(train_load)
 
             # For validation, load the load from the validation json file
             # The file contains a list of dicts, each dict contains the load, solution to a case
-            with open(self.data_dir / f"{self.case_name}.valid.json") as f:
+            with open(self.data_dir / f"{self.case_name}.train.json") as f:
                 validation_dicts: list[dict] = json.load(f)
                 validation_load = torch.stack(
                     [

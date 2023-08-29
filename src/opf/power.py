@@ -11,8 +11,15 @@ import pandapower.topology
 import pandas as pd
 from pandapower.converter import from_mpc
 from pandapower.converter.matpower.to_mpc import _ppc2mpc
-from pandapower.converter.powermodels.to_pm import convert_pp_to_pm
+
+# from pandapower.converter.powermodels.to_pm import convert_pp_to_pm
 from pandapower.converter.pypower.to_ppc import to_ppc
+
+
+def convert_pp_to_pm(*args, **kwargs):
+    raise NotImplementedError(
+        "This function is not implemented in the current version of pandapower."
+    )
 
 
 def load_case(case_name, reindex=True):

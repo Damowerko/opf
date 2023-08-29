@@ -17,21 +17,28 @@ class OPFLogBarrier(pl.LightningModule):
         t=10,
         s=1000,
         cost_weight=1.0,
+        equality_weight=1.0,
+        inequality_weight=1.0,
         lr=1e-4,
+        weight_decay=0.0,
         eps=1e-3,
         enforce_constraints=False,
+        detailed_metrics=False,
         **kwargs,
     ):
         super().__init__()
         self.model = model
-        self.detailed_metrics = False
+        self.detailed_metrics = detailed_metrics
         self.t = t
         self.s = s
         self.cost_weight = cost_weight
+        self.equality_weight = equality_weight
+        self.inequality_weight = inequality_weight
         self.lr = lr
+        self.weight_decay = weight_decay
         self.eps = eps
         self._enforce_constraints = enforce_constraints
-        self.save_hyperparameters(ignore=["net_wrapper", "model", "kwargs"])
+        self.save_hyperparameters(ignore=["model", "kwargs"])
 
         # Normalization factor to be applied to the cost function
         self.cost_normalization = 1.0
@@ -42,9 +49,13 @@ class OPFLogBarrier(pl.LightningModule):
         group.add_argument("--s", type=int, default=10)
         group.add_argument("--t", type=int, default=500)
         group.add_argument("--cost_weight", type=float, default=0.01)
+        group.add_argument("--equality_weight", type=float, default=1.0)
+        group.add_argument("--inequality_weight", type=float, default=0.1)
         group.add_argument("--lr", type=float, default=3e-4)
-        group.add_argument("--eps", type=float, default=1e-4)
+        group.add_argument("--weight_decay", type=float, default=0.0)
+        group.add_argument("--eps", type=float, default=1e-3)
         group.add_argument("--enforce_constraints", action="store_true", default=False)
+        group.add_argument("--detailed_metrics", action="store_true", default=False)
 
     def forward(
         self,
@@ -175,6 +186,8 @@ class OPFLogBarrier(pl.LightningModule):
         cost = torch.zeros_like(p)
         for i in range(p_coeff.shape[1]):
             cost += p_coeff[:, i] * p.squeeze() ** i
+        # cost cannot be negative
+        cost = torch.clamp(cost, min=0)
         # normalize the cost by the number of generators
         return cost.mean(0).sum() / powerflow_parameters.gen_matrix.shape[0]
 
@@ -197,6 +210,8 @@ class OPFLogBarrier(pl.LightningModule):
                     self.eps,
                     constraint.isAngle,
                 )
+                # apply weight
+                values[name]["loss"] *= self.equality_weight
             elif isinstance(constraint, pf.InequalityConstraint):
                 values[name] = inequality(
                     constraint.variable,
@@ -207,6 +222,8 @@ class OPFLogBarrier(pl.LightningModule):
                     self.eps,
                     constraint.isAngle,
                 )
+                # apply weight
+                values[name]["loss"] *= self.inequality_weight
         return values
 
     def metrics(self, cost, constraints, prefix, detailed=False):
@@ -249,7 +266,9 @@ class OPFLogBarrier(pl.LightningModule):
         return {**aggregate_metrics, **detailed_metrics}
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), self.lr)
+        return torch.optim.AdamW(
+            self.parameters(), self.lr, weight_decay=self.weight_decay
+        )
 
     @staticmethod
     def bus_from_polar(bus):

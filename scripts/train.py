@@ -7,6 +7,7 @@ import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers.wandb import WandbLogger
+from pytorch_lightning.tuner.tuning import Tuner
 from torchcps.gnn import ParametricGNN
 
 from opf.dataset import CaseDataModule
@@ -65,6 +66,7 @@ def train(params):
         logger=loggers,
         callbacks=callbacks,
         accelerator="gpu" if params["gpu"] else "cpu",
+        devices=1,
         max_epochs=params["max_epochs"],
         default_root_dir=params["log_dir"],
         fast_dev_run=params["fast_dev_run"],
@@ -81,7 +83,10 @@ def train(params):
     # else:
     #     logging.warning("fast_dev_run is True! Skipping calibration.")
 
-    # trainer.tune(model, dm)
+    # find the 'optimal' learning rate
+    # tuner = Tuner(trainer)
+    # tuner.lr_find(model, dm)
+
     trainer.fit(model, dm)
     trainer.test(model, dm)
     for logger in loggers:

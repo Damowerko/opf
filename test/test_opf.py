@@ -5,9 +5,10 @@ import pandapower as pp
 import pandapower.networks
 import pytest
 import torch
+from torchcps.gnn import ParametricGNN
 
 from opf.dataset import CaseDataModule
-from opf.modules import OPFLogBarrier, SimpleGNN
+from opf.modules import OPFLogBarrier
 from opf.power import NetWrapper, simplify_net
 
 
@@ -34,12 +35,11 @@ class Modules:
             pin_memory=False,
         )
 
-        gnn = SimpleGNN(
-            F_in=2,
-            F_out=16,
-            F=16,
-            K=8,
-            L=4,
+        gnn = ParametricGNN(
+            in_channels=2,
+            out_channels=16,
+            n_channels=16,
+            n_layers=4,
         )
 
         barrier: OPFLogBarrier = OPFLogBarrier(

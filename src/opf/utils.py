@@ -3,7 +3,6 @@ import scipy.sparse
 from matplotlib import pyplot as plt
 from torchcps.gnn import ParametricGNN
 
-from opf.dataset import CaseDataModule
 from opf.modules import OPFLogBarrier
 
 
@@ -26,7 +25,7 @@ def graph_info(gso, plot=False):
 def create_model(params: dict):
     input_features = 14
     output_features = 4
-    n_edges = 7
+    n_edges = 10
     model = ParametricGNN(input_features, output_features, n_edges, **params).float()
     barrier = OPFLogBarrier(model, **params)
     return barrier

@@ -1,0 +1,1875 @@
+{
+    "bus": {
+        "24": {
+            "zone": 1,
+            "bus_i": 24,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                24
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 24,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "4": {
+            "zone": 1,
+            "bus_i": 4,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                4
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 4,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 132.0
+        },
+        "1": {
+            "zone": 1,
+            "bus_i": 1,
+            "bus_type": 3,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                1
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 1,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 132.0
+        },
+        "12": {
+            "zone": 1,
+            "bus_i": 12,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                12
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 12,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "29": {
+            "zone": 1,
+            "bus_i": 29,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                29
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 29,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "20": {
+            "zone": 1,
+            "bus_i": 20,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                20
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 20,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "2": {
+            "zone": 1,
+            "bus_i": 2,
+            "bus_type": 2,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                2
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 2,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 132.0
+        },
+        "6": {
+            "zone": 1,
+            "bus_i": 6,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                6
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 6,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 132.0
+        },
+        "25": {
+            "zone": 1,
+            "bus_i": 25,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                25
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 25,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "23": {
+            "zone": 1,
+            "bus_i": 23,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                23
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 23,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "22": {
+            "zone": 1,
+            "bus_i": 22,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                22
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 22,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "11": {
+            "zone": 1,
+            "bus_i": 11,
+            "bus_type": 2,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                11
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 11,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 11.0
+        },
+        "13": {
+            "zone": 1,
+            "bus_i": 13,
+            "bus_type": 2,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                13
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 13,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 11.0
+        },
+        "5": {
+            "zone": 1,
+            "bus_i": 5,
+            "bus_type": 2,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                5
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 5,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 132.0
+        },
+        "15": {
+            "zone": 1,
+            "bus_i": 15,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                15
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 15,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "27": {
+            "zone": 1,
+            "bus_i": 27,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                27
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 27,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "28": {
+            "zone": 1,
+            "bus_i": 28,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                28
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 28,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 132.0
+        },
+        "16": {
+            "zone": 1,
+            "bus_i": 16,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                16
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 16,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "14": {
+            "zone": 1,
+            "bus_i": 14,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                14
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 14,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "21": {
+            "zone": 1,
+            "bus_i": 21,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                21
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 21,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "7": {
+            "zone": 1,
+            "bus_i": 7,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                7
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 7,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 132.0
+        },
+        "8": {
+            "zone": 1,
+            "bus_i": 8,
+            "bus_type": 2,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                8
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 8,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 132.0
+        },
+        "26": {
+            "zone": 1,
+            "bus_i": 26,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                26
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 26,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "17": {
+            "zone": 1,
+            "bus_i": 17,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                17
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 17,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "10": {
+            "zone": 1,
+            "bus_i": 10,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                10
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 10,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "19": {
+            "zone": 1,
+            "bus_i": 19,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                19
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 19,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "9": {
+            "zone": 1,
+            "bus_i": 9,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                9
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 9,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 1.0
+        },
+        "18": {
+            "zone": 1,
+            "bus_i": 18,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                18
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 18,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "30": {
+            "zone": 1,
+            "bus_i": 30,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                30
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 30,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 33.0
+        },
+        "3": {
+            "zone": 1,
+            "bus_i": 3,
+            "bus_type": 1,
+            "vmax": 1.06,
+            "source_id": [
+                "bus",
+                3
+            ],
+            "area": 1,
+            "vmin": 0.94,
+            "index": 3,
+            "va": 0.0,
+            "vm": 1.0,
+            "base_kv": 132.0
+        }
+    },
+    "source_type": "matpower",
+    "name": "pglib_opf_case30_ieee",
+    "dcline": {},
+    "source_version": "2",
+    "gen": {
+        "4": {
+            "pg": 0.0,
+            "model": 2,
+            "shutdown": 0.0,
+            "startup": 0.0,
+            "qg": 0.15,
+            "gen_bus": 8,
+            "pmax": 0.0,
+            "vg": 1.0,
+            "mbase": 100.0,
+            "source_id": [
+                "gen",
+                4
+            ],
+            "index": 4,
+            "cost": [],
+            "qmax": 0.4,
+            "gen_status": 1,
+            "qmin": -0.1,
+            "pmin": 0.0,
+            "ncost": 0
+        },
+        "1": {
+            "pg": 1.355,
+            "model": 2,
+            "shutdown": 0.0,
+            "startup": 0.0,
+            "qg": 0.05,
+            "gen_bus": 1,
+            "pmax": 2.71,
+            "vg": 1.0,
+            "mbase": 100.0,
+            "source_id": [
+                "gen",
+                1
+            ],
+            "index": 1,
+            "cost": [
+                1842.1527999999998,
+                0.0
+            ],
+            "qmax": 0.1,
+            "gen_status": 1,
+            "qmin": 0.0,
+            "pmin": 0.0,
+            "ncost": 2
+        },
+        "5": {
+            "pg": 0.0,
+            "model": 2,
+            "shutdown": 0.0,
+            "startup": 0.0,
+            "qg": 0.09,
+            "gen_bus": 11,
+            "pmax": 0.0,
+            "vg": 1.0,
+            "mbase": 100.0,
+            "source_id": [
+                "gen",
+                5
+            ],
+            "index": 5,
+            "cost": [],
+            "qmax": 0.24,
+            "gen_status": 1,
+            "qmin": -0.06,
+            "pmin": 0.0,
+            "ncost": 0
+        },
+        "2": {
+            "pg": 0.46,
+            "model": 2,
+            "shutdown": 0.0,
+            "startup": 0.0,
+            "qg": 0.03,
+            "gen_bus": 2,
+            "pmax": 0.92,
+            "vg": 1.0,
+            "mbase": 100.0,
+            "source_id": [
+                "gen",
+                2
+            ],
+            "index": 2,
+            "cost": [
+                5218.2254,
+                0.0
+            ],
+            "qmax": 0.46,
+            "gen_status": 1,
+            "qmin": -0.4,
+            "pmin": 0.0,
+            "ncost": 2
+        },
+        "6": {
+            "pg": 0.0,
+            "model": 2,
+            "shutdown": 0.0,
+            "startup": 0.0,
+            "qg": 0.09,
+            "gen_bus": 13,
+            "pmax": 0.0,
+            "vg": 1.0,
+            "mbase": 100.0,
+            "source_id": [
+                "gen",
+                6
+            ],
+            "index": 6,
+            "cost": [],
+            "qmax": 0.24,
+            "gen_status": 1,
+            "qmin": -0.06,
+            "pmin": 0.0,
+            "ncost": 0
+        },
+        "3": {
+            "pg": 0.0,
+            "model": 2,
+            "shutdown": 0.0,
+            "startup": 0.0,
+            "qg": 0.0,
+            "gen_bus": 5,
+            "pmax": 0.0,
+            "vg": 1.0,
+            "mbase": 100.0,
+            "source_id": [
+                "gen",
+                3
+            ],
+            "index": 3,
+            "cost": [],
+            "qmax": 0.4,
+            "gen_status": 1,
+            "qmin": -0.4,
+            "pmin": 0.0,
+            "ncost": 0
+        }
+    },
+    "branch": {
+        "24": {
+            "br_r": 0.034,
+            "rate_a": 0.29,
+            "shift": 0.0,
+            "rate_b": 0.29,
+            "br_x": 0.068,
+            "rate_c": 0.29,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                24
+            ],
+            "b_fr": 0.0,
+            "f_bus": 19,
+            "br_status": 1,
+            "t_bus": 20,
+            "b_to": 0.0,
+            "index": 24,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "4": {
+            "br_r": 0.0132,
+            "rate_a": 1.35,
+            "shift": 0.0,
+            "rate_b": 1.35,
+            "br_x": 0.0379,
+            "rate_c": 1.35,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                4
+            ],
+            "b_fr": 0.0042,
+            "f_bus": 3,
+            "br_status": 1,
+            "t_bus": 4,
+            "b_to": 0.0042,
+            "index": 4,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "1": {
+            "br_r": 0.0192,
+            "rate_a": 1.38,
+            "shift": 0.0,
+            "rate_b": 1.38,
+            "br_x": 0.0575,
+            "rate_c": 1.38,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                1
+            ],
+            "b_fr": 0.0264,
+            "f_bus": 1,
+            "br_status": 1,
+            "t_bus": 2,
+            "b_to": 0.0264,
+            "index": 1,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "12": {
+            "br_r": 0.0,
+            "rate_a": 0.53,
+            "shift": 0.0,
+            "rate_b": 0.53,
+            "br_x": 0.556,
+            "rate_c": 0.53,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                12
+            ],
+            "b_fr": 0.0,
+            "f_bus": 6,
+            "br_status": 1,
+            "t_bus": 10,
+            "b_to": 0.0,
+            "index": 12,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": true,
+            "tap": 0.969
+        },
+        "29": {
+            "br_r": 0.0116,
+            "rate_a": 0.29,
+            "shift": 0.0,
+            "rate_b": 0.29,
+            "br_x": 0.0236,
+            "rate_c": 0.29,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                29
+            ],
+            "b_fr": 0.0,
+            "f_bus": 21,
+            "br_status": 1,
+            "t_bus": 22,
+            "b_to": 0.0,
+            "index": 29,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "20": {
+            "br_r": 0.221,
+            "rate_a": 0.2,
+            "shift": 0.0,
+            "rate_b": 0.2,
+            "br_x": 0.1997,
+            "rate_c": 0.2,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                20
+            ],
+            "b_fr": 0.0,
+            "f_bus": 14,
+            "br_status": 1,
+            "t_bus": 15,
+            "b_to": 0.0,
+            "index": 20,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "32": {
+            "br_r": 0.132,
+            "rate_a": 0.29,
+            "shift": 0.0,
+            "rate_b": 0.29,
+            "br_x": 0.27,
+            "rate_c": 0.29,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                32
+            ],
+            "b_fr": 0.0,
+            "f_bus": 23,
+            "br_status": 1,
+            "t_bus": 24,
+            "b_to": 0.0,
+            "index": 32,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "2": {
+            "br_r": 0.0452,
+            "rate_a": 1.52,
+            "shift": 0.0,
+            "rate_b": 1.52,
+            "br_x": 0.1652,
+            "rate_c": 1.52,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                2
+            ],
+            "b_fr": 0.0204,
+            "f_bus": 1,
+            "br_status": 1,
+            "t_bus": 3,
+            "b_to": 0.0204,
+            "index": 2,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "6": {
+            "br_r": 0.0581,
+            "rate_a": 1.39,
+            "shift": 0.0,
+            "rate_b": 1.39,
+            "br_x": 0.1763,
+            "rate_c": 1.39,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                6
+            ],
+            "b_fr": 0.0187,
+            "f_bus": 2,
+            "br_status": 1,
+            "t_bus": 6,
+            "b_to": 0.0187,
+            "index": 6,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "25": {
+            "br_r": 0.0936,
+            "rate_a": 0.3,
+            "shift": 0.0,
+            "rate_b": 0.3,
+            "br_x": 0.209,
+            "rate_c": 0.3,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                25
+            ],
+            "b_fr": 0.0,
+            "f_bus": 10,
+            "br_status": 1,
+            "t_bus": 20,
+            "b_to": 0.0,
+            "index": 25,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "23": {
+            "br_r": 0.0639,
+            "rate_a": 0.29,
+            "shift": 0.0,
+            "rate_b": 0.29,
+            "br_x": 0.1292,
+            "rate_c": 0.29,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                23
+            ],
+            "b_fr": 0.0,
+            "f_bus": 18,
+            "br_status": 1,
+            "t_bus": 19,
+            "b_to": 0.0,
+            "index": 23,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "22": {
+            "br_r": 0.1073,
+            "rate_a": 0.29,
+            "shift": 0.0,
+            "rate_b": 0.29,
+            "br_x": 0.2185,
+            "rate_c": 0.29,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                22
+            ],
+            "b_fr": 0.0,
+            "f_bus": 15,
+            "br_status": 1,
+            "t_bus": 18,
+            "b_to": 0.0,
+            "index": 22,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "11": {
+            "br_r": 0.0,
+            "rate_a": 1.42,
+            "shift": 0.0,
+            "rate_b": 1.42,
+            "br_x": 0.208,
+            "rate_c": 1.42,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                11
+            ],
+            "b_fr": 0.0,
+            "f_bus": 6,
+            "br_status": 1,
+            "t_bus": 9,
+            "b_to": 0.0,
+            "index": 11,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": true,
+            "tap": 0.978
+        },
+        "35": {
+            "br_r": 0.1093,
+            "rate_a": 0.28,
+            "shift": 0.0,
+            "rate_b": 0.28,
+            "br_x": 0.2087,
+            "rate_c": 0.28,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                35
+            ],
+            "b_fr": 0.0,
+            "f_bus": 25,
+            "br_status": 1,
+            "t_bus": 27,
+            "b_to": 0.0,
+            "index": 35,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "13": {
+            "br_r": 0.0,
+            "rate_a": 1.42,
+            "shift": 0.0,
+            "rate_b": 1.42,
+            "br_x": 0.208,
+            "rate_c": 1.42,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                13
+            ],
+            "b_fr": 0.0,
+            "f_bus": 9,
+            "br_status": 1,
+            "t_bus": 11,
+            "b_to": 0.0,
+            "index": 13,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": true,
+            "tap": 1.0
+        },
+        "41": {
+            "br_r": 0.0169,
+            "rate_a": 1.49,
+            "shift": 0.0,
+            "rate_b": 1.49,
+            "br_x": 0.0599,
+            "rate_c": 1.49,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                41
+            ],
+            "b_fr": 0.0065,
+            "f_bus": 6,
+            "br_status": 1,
+            "t_bus": 28,
+            "b_to": 0.0065,
+            "index": 41,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "5": {
+            "br_r": 0.0472,
+            "rate_a": 1.44,
+            "shift": 0.0,
+            "rate_b": 1.44,
+            "br_x": 0.1983,
+            "rate_c": 1.44,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                5
+            ],
+            "b_fr": 0.0209,
+            "f_bus": 2,
+            "br_status": 1,
+            "t_bus": 5,
+            "b_to": 0.0209,
+            "index": 5,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "15": {
+            "br_r": 0.0,
+            "rate_a": 1.15,
+            "shift": 0.0,
+            "rate_b": 1.15,
+            "br_x": 0.256,
+            "rate_c": 1.15,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                15
+            ],
+            "b_fr": 0.0,
+            "f_bus": 4,
+            "br_status": 1,
+            "t_bus": 12,
+            "b_to": 0.0,
+            "index": 15,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": true,
+            "tap": 0.932
+        },
+        "27": {
+            "br_r": 0.0348,
+            "rate_a": 0.3,
+            "shift": 0.0,
+            "rate_b": 0.3,
+            "br_x": 0.0749,
+            "rate_c": 0.3,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                27
+            ],
+            "b_fr": 0.0,
+            "f_bus": 10,
+            "br_status": 1,
+            "t_bus": 21,
+            "b_to": 0.0,
+            "index": 27,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "31": {
+            "br_r": 0.115,
+            "rate_a": 0.26,
+            "shift": 0.0,
+            "rate_b": 0.26,
+            "br_x": 0.179,
+            "rate_c": 0.26,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                31
+            ],
+            "b_fr": 0.0,
+            "f_bus": 22,
+            "br_status": 1,
+            "t_bus": 24,
+            "b_to": 0.0,
+            "index": 31,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "33": {
+            "br_r": 0.1885,
+            "rate_a": 0.27,
+            "shift": 0.0,
+            "rate_b": 0.27,
+            "br_x": 0.3292,
+            "rate_c": 0.27,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                33
+            ],
+            "b_fr": 0.0,
+            "f_bus": 24,
+            "br_status": 1,
+            "t_bus": 25,
+            "b_to": 0.0,
+            "index": 33,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "28": {
+            "br_r": 0.0727,
+            "rate_a": 0.29,
+            "shift": 0.0,
+            "rate_b": 0.29,
+            "br_x": 0.1499,
+            "rate_c": 0.29,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                28
+            ],
+            "b_fr": 0.0,
+            "f_bus": 10,
+            "br_status": 1,
+            "t_bus": 22,
+            "b_to": 0.0,
+            "index": 28,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "16": {
+            "br_r": 0.0,
+            "rate_a": 2.1,
+            "shift": 0.0,
+            "rate_b": 2.1,
+            "br_x": 0.14,
+            "rate_c": 2.1,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                16
+            ],
+            "b_fr": 0.0,
+            "f_bus": 12,
+            "br_status": 1,
+            "t_bus": 13,
+            "b_to": 0.0,
+            "index": 16,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": true,
+            "tap": 1.0
+        },
+        "14": {
+            "br_r": 0.0,
+            "rate_a": 2.67,
+            "shift": 0.0,
+            "rate_b": 2.67,
+            "br_x": 0.11,
+            "rate_c": 2.67,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                14
+            ],
+            "b_fr": 0.0,
+            "f_bus": 9,
+            "br_status": 1,
+            "t_bus": 10,
+            "b_to": 0.0,
+            "index": 14,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": true,
+            "tap": 1.0
+        },
+        "39": {
+            "br_r": 0.2399,
+            "rate_a": 0.28,
+            "shift": 0.0,
+            "rate_b": 0.28,
+            "br_x": 0.4533,
+            "rate_c": 0.28,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                39
+            ],
+            "b_fr": 0.0,
+            "f_bus": 29,
+            "br_status": 1,
+            "t_bus": 30,
+            "b_to": 0.0,
+            "index": 39,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "40": {
+            "br_r": 0.0636,
+            "rate_a": 1.4,
+            "shift": 0.0,
+            "rate_b": 1.4,
+            "br_x": 0.2,
+            "rate_c": 1.4,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                40
+            ],
+            "b_fr": 0.0214,
+            "f_bus": 8,
+            "br_status": 1,
+            "t_bus": 28,
+            "b_to": 0.0214,
+            "index": 40,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "21": {
+            "br_r": 0.0524,
+            "rate_a": 0.38,
+            "shift": 0.0,
+            "rate_b": 0.38,
+            "br_x": 0.1923,
+            "rate_c": 0.38,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                21
+            ],
+            "b_fr": 0.0,
+            "f_bus": 16,
+            "br_status": 1,
+            "t_bus": 17,
+            "b_to": 0.0,
+            "index": 21,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "38": {
+            "br_r": 0.3202,
+            "rate_a": 0.28,
+            "shift": 0.0,
+            "rate_b": 0.28,
+            "br_x": 0.6027,
+            "rate_c": 0.28,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                38
+            ],
+            "b_fr": 0.0,
+            "f_bus": 27,
+            "br_status": 1,
+            "t_bus": 30,
+            "b_to": 0.0,
+            "index": 38,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "7": {
+            "br_r": 0.0119,
+            "rate_a": 1.48,
+            "shift": 0.0,
+            "rate_b": 1.48,
+            "br_x": 0.0414,
+            "rate_c": 1.48,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                7
+            ],
+            "b_fr": 0.0045,
+            "f_bus": 4,
+            "br_status": 1,
+            "t_bus": 6,
+            "b_to": 0.0045,
+            "index": 7,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "34": {
+            "br_r": 0.2544,
+            "rate_a": 0.25,
+            "shift": 0.0,
+            "rate_b": 0.25,
+            "br_x": 0.38,
+            "rate_c": 0.25,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                34
+            ],
+            "b_fr": 0.0,
+            "f_bus": 25,
+            "br_status": 1,
+            "t_bus": 26,
+            "b_to": 0.0,
+            "index": 34,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "8": {
+            "br_r": 0.046,
+            "rate_a": 1.27,
+            "shift": 0.0,
+            "rate_b": 1.27,
+            "br_x": 0.116,
+            "rate_c": 1.27,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                8
+            ],
+            "b_fr": 0.0102,
+            "f_bus": 5,
+            "br_status": 1,
+            "t_bus": 7,
+            "b_to": 0.0102,
+            "index": 8,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "36": {
+            "br_r": 0.0,
+            "rate_a": 0.75,
+            "shift": 0.0,
+            "rate_b": 0.75,
+            "br_x": 0.396,
+            "rate_c": 0.75,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                36
+            ],
+            "b_fr": 0.0,
+            "f_bus": 28,
+            "br_status": 1,
+            "t_bus": 27,
+            "b_to": 0.0,
+            "index": 36,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": true,
+            "tap": 0.968
+        },
+        "26": {
+            "br_r": 0.0324,
+            "rate_a": 0.33,
+            "shift": 0.0,
+            "rate_b": 0.33,
+            "br_x": 0.0845,
+            "rate_c": 0.33,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                26
+            ],
+            "b_fr": 0.0,
+            "f_bus": 10,
+            "br_status": 1,
+            "t_bus": 17,
+            "b_to": 0.0,
+            "index": 26,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "17": {
+            "br_r": 0.1231,
+            "rate_a": 0.29,
+            "shift": 0.0,
+            "rate_b": 0.29,
+            "br_x": 0.2559,
+            "rate_c": 0.29,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                17
+            ],
+            "b_fr": 0.0,
+            "f_bus": 12,
+            "br_status": 1,
+            "t_bus": 14,
+            "b_to": 0.0,
+            "index": 17,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "10": {
+            "br_r": 0.012,
+            "rate_a": 1.48,
+            "shift": 0.0,
+            "rate_b": 1.48,
+            "br_x": 0.042,
+            "rate_c": 1.48,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                10
+            ],
+            "b_fr": 0.0045,
+            "f_bus": 6,
+            "br_status": 1,
+            "t_bus": 8,
+            "b_to": 0.0045,
+            "index": 10,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "19": {
+            "br_r": 0.0945,
+            "rate_a": 0.3,
+            "shift": 0.0,
+            "rate_b": 0.3,
+            "br_x": 0.1987,
+            "rate_c": 0.3,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                19
+            ],
+            "b_fr": 0.0,
+            "f_bus": 12,
+            "br_status": 1,
+            "t_bus": 16,
+            "b_to": 0.0,
+            "index": 19,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "37": {
+            "br_r": 0.2198,
+            "rate_a": 0.28,
+            "shift": 0.0,
+            "rate_b": 0.28,
+            "br_x": 0.4153,
+            "rate_c": 0.28,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                37
+            ],
+            "b_fr": 0.0,
+            "f_bus": 27,
+            "br_status": 1,
+            "t_bus": 29,
+            "b_to": 0.0,
+            "index": 37,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "9": {
+            "br_r": 0.0267,
+            "rate_a": 1.4,
+            "shift": 0.0,
+            "rate_b": 1.4,
+            "br_x": 0.082,
+            "rate_c": 1.4,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                9
+            ],
+            "b_fr": 0.0085,
+            "f_bus": 6,
+            "br_status": 1,
+            "t_bus": 7,
+            "b_to": 0.0085,
+            "index": 9,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "18": {
+            "br_r": 0.0662,
+            "rate_a": 0.29,
+            "shift": 0.0,
+            "rate_b": 0.29,
+            "br_x": 0.1304,
+            "rate_c": 0.29,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                18
+            ],
+            "b_fr": 0.0,
+            "f_bus": 12,
+            "br_status": 1,
+            "t_bus": 15,
+            "b_to": 0.0,
+            "index": 18,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "30": {
+            "br_r": 0.1,
+            "rate_a": 0.29,
+            "shift": 0.0,
+            "rate_b": 0.29,
+            "br_x": 0.202,
+            "rate_c": 0.29,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                30
+            ],
+            "b_fr": 0.0,
+            "f_bus": 15,
+            "br_status": 1,
+            "t_bus": 23,
+            "b_to": 0.0,
+            "index": 30,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        },
+        "3": {
+            "br_r": 0.057,
+            "rate_a": 1.39,
+            "shift": 0.0,
+            "rate_b": 1.39,
+            "br_x": 0.1737,
+            "rate_c": 1.39,
+            "g_to": 0.0,
+            "g_fr": 0.0,
+            "source_id": [
+                "branch",
+                3
+            ],
+            "b_fr": 0.0184,
+            "f_bus": 2,
+            "br_status": 1,
+            "t_bus": 4,
+            "b_to": 0.0184,
+            "index": 3,
+            "angmin": -0.5235987755982988,
+            "angmax": 0.5235987755982988,
+            "transformer": false,
+            "tap": 1.0
+        }
+    },
+    "storage": {},
+    "switch": {},
+    "baseMVA": 100.0,
+    "per_unit": true,
+    "shunt": {
+        "1": {
+            "source_id": [
+                "bus",
+                10
+            ],
+            "shunt_bus": 10,
+            "status": 1,
+            "gs": 0.0,
+            "bs": 0.19,
+            "index": 1
+        },
+        "2": {
+            "source_id": [
+                "bus",
+                24
+            ],
+            "shunt_bus": 24,
+            "status": 1,
+            "gs": 0.0,
+            "bs": 0.043,
+            "index": 2
+        }
+    },
+    "load": {
+        "4": {
+            "source_id": [
+                "bus",
+                5
+            ],
+            "load_bus": 5,
+            "status": 1,
+            "qd": 0.19,
+            "pd": 0.9420000000000001,
+            "index": 4
+        },
+        "1": {
+            "source_id": [
+                "bus",
+                2
+            ],
+            "load_bus": 2,
+            "status": 1,
+            "qd": 0.127,
+            "pd": 0.217,
+            "index": 1
+        },
+        "12": {
+            "source_id": [
+                "bus",
+                17
+            ],
+            "load_bus": 17,
+            "status": 1,
+            "qd": 0.057999999999999996,
+            "pd": 0.09,
+            "index": 12
+        },
+        "20": {
+            "source_id": [
+                "bus",
+                29
+            ],
+            "load_bus": 29,
+            "status": 1,
+            "qd": 0.009000000000000001,
+            "pd": 0.024,
+            "index": 20
+        },
+        "2": {
+            "source_id": [
+                "bus",
+                3
+            ],
+            "load_bus": 3,
+            "status": 1,
+            "qd": 0.012,
+            "pd": 0.024,
+            "index": 2
+        },
+        "6": {
+            "source_id": [
+                "bus",
+                8
+            ],
+            "load_bus": 8,
+            "status": 1,
+            "qd": 0.3,
+            "pd": 0.3,
+            "index": 6
+        },
+        "11": {
+            "source_id": [
+                "bus",
+                16
+            ],
+            "load_bus": 16,
+            "status": 1,
+            "qd": 0.018000000000000002,
+            "pd": 0.035,
+            "index": 11
+        },
+        "13": {
+            "source_id": [
+                "bus",
+                18
+            ],
+            "load_bus": 18,
+            "status": 1,
+            "qd": 0.009000000000000001,
+            "pd": 0.032,
+            "index": 13
+        },
+        "5": {
+            "source_id": [
+                "bus",
+                7
+            ],
+            "load_bus": 7,
+            "status": 1,
+            "qd": 0.109,
+            "pd": 0.228,
+            "index": 5
+        },
+        "15": {
+            "source_id": [
+                "bus",
+                20
+            ],
+            "load_bus": 20,
+            "status": 1,
+            "qd": 0.006999999999999999,
+            "pd": 0.022000000000000002,
+            "index": 15
+        },
+        "16": {
+            "source_id": [
+                "bus",
+                21
+            ],
+            "load_bus": 21,
+            "status": 1,
+            "qd": 0.11199999999999999,
+            "pd": 0.175,
+            "index": 16
+        },
+        "14": {
+            "source_id": [
+                "bus",
+                19
+            ],
+            "load_bus": 19,
+            "status": 1,
+            "qd": 0.034,
+            "pd": 0.095,
+            "index": 14
+        },
+        "21": {
+            "source_id": [
+                "bus",
+                30
+            ],
+            "load_bus": 30,
+            "status": 1,
+            "qd": 0.019,
+            "pd": 0.106,
+            "index": 21
+        },
+        "7": {
+            "source_id": [
+                "bus",
+                10
+            ],
+            "load_bus": 10,
+            "status": 1,
+            "qd": 0.02,
+            "pd": 0.057999999999999996,
+            "index": 7
+        },
+        "8": {
+            "source_id": [
+                "bus",
+                12
+            ],
+            "load_bus": 12,
+            "status": 1,
+            "qd": 0.075,
+            "pd": 0.11199999999999999,
+            "index": 8
+        },
+        "17": {
+            "source_id": [
+                "bus",
+                23
+            ],
+            "load_bus": 23,
+            "status": 1,
+            "qd": 0.016,
+            "pd": 0.032,
+            "index": 17
+        },
+        "10": {
+            "source_id": [
+                "bus",
+                15
+            ],
+            "load_bus": 15,
+            "status": 1,
+            "qd": 0.025,
+            "pd": 0.08199999999999999,
+            "index": 10
+        },
+        "19": {
+            "source_id": [
+                "bus",
+                26
+            ],
+            "load_bus": 26,
+            "status": 1,
+            "qd": 0.023,
+            "pd": 0.035,
+            "index": 19
+        },
+        "9": {
+            "source_id": [
+                "bus",
+                14
+            ],
+            "load_bus": 14,
+            "status": 1,
+            "qd": 0.016,
+            "pd": 0.062,
+            "index": 9
+        },
+        "18": {
+            "source_id": [
+                "bus",
+                24
+            ],
+            "load_bus": 24,
+            "status": 1,
+            "qd": 0.067,
+            "pd": 0.087,
+            "index": 18
+        },
+        "3": {
+            "source_id": [
+                "bus",
+                4
+            ],
+            "load_bus": 4,
+            "status": 1,
+            "qd": 0.016,
+            "pd": 0.076,
+            "index": 3
+        }
+    }
+}
