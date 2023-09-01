@@ -170,7 +170,7 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         activation="leaky_relu",
         cost_weight=1e-6,
         equality_weight=1e6,
-        mlp_per_gnn_layers=trial.suggest_int("mlp_per_gnn_layers", 0, 4),
+        mlp_per_gnn_layers=trial.suggest_int("mlp_per_gnn_layers", 1, 4),
     )
     params = {**default_params, **params}
 
