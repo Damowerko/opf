@@ -22,7 +22,9 @@ guildai = "^0.8.2"
 torch = {version = ">=2.0.0, !=2.0.1"}
 torch-geometric = "^2.3.1"
 matpowercaseframes = "^1.0.4"
-torchcps = {path = "../torchcps", develop = true}
+torchcps = {git = "https://github.com/Damowerko/torchcps"}
+optuna = "^3.3.0"
+psycopg2-binary = "^2.9.7"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
