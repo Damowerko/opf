@@ -28,11 +28,11 @@ def test_powerflow(execution_number):
     data = dataset[execution_number]
     solution = data["result"]["solution"]
 
-    V, S, Sd = pf.power_from_solution(data["load"], solution, parameters)
+    V, Sg, Sd = pf.power_from_solution(data["load"], solution, parameters)
     V = V.to(dtype)
-    S = S.to(dtype)
+    Sg = Sg.to(dtype)
     Sd = Sd.to(dtype)
-    variables = pf.powerflow(V, S, Sd, parameters)
+    variables = pf.powerflow(V, Sg, Sd, parameters)
 
     # branch current
     Sf = torch.complex(
