@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: optuna-job
+  namespace: owerko
+spec:
+  completions: 100
+  parallelism: 4
+  template:
+    spec:
+      hostIPC: true
+      securityContext:
+        runAsUser: 1000
+      restartPolicy: Never
+      volumes:
+      - name: opf-data
+        nfs:
+          server: 158.130.113.30
+          path: /nfs/general/opf_data
+      containers:
+      - name: opf-trial
+        image: docker.io/damowerko/opf
+        imagePullPolicy: Always
+        command: ["bash", "-c", "python -u scripts/main.py study --data_dir /nfs/general/opf_data && sleep 1"]
+        env:
+        - name: OPTUNA_STORAGE
+          value: postgresql://optuna:optuna@optuna.owerko.svc.cluster.local:5432/optuna
+        - name: WANDB_USERNAME
+          value: damowerko
+        - name: WANDB_PROJECT
+          value: opf
+        - name: WANDB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wandb
+              key: api_key
+        resources:
+          limits:
+            nvidia.com/gpu-12gb: 1
+            cpu: 16
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /nfs/general/opf_data
+          name: opf-data
+          readOnly: true
+    
