@@ -25,7 +25,7 @@ def graph_info(gso, plot=False):
 def create_model(params: dict):
     input_features = 14
     output_features = 4
-    n_edges = 10
+    n_edges = 12
     model = ParametricGNN(input_features, output_features, n_edges, **params).float()
     barrier = OPFLogBarrier(model, **params)
     return barrier

@@ -14,8 +14,8 @@ class OPFLogBarrier(pl.LightningModule):
     def __init__(
         self,
         model,
-        t=10,
-        s=1000,
+        t=500,
+        s=100,
         cost_weight=1.0,
         equality_weight=1.0,
         inequality_weight=1.0,
@@ -46,7 +46,7 @@ class OPFLogBarrier(pl.LightningModule):
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
         group = parser.add_argument_group("OPFLogBarrier")
-        group.add_argument("--s", type=int, default=10)
+        group.add_argument("--s", type=int, default=100)
         group.add_argument("--t", type=int, default=500)
         group.add_argument("--cost_weight", type=float, default=0.01)
         group.add_argument("--equality_weight", type=float, default=1.0)
@@ -71,27 +71,31 @@ class OPFLogBarrier(pl.LightningModule):
         bus = bus.view(n_batch, powerflow_parameters.n_bus, 4).mT
         # assume that the first two features are the active and reactive load
         load = data.x[:, :2].view(n_batch, powerflow_parameters.n_bus, 2).mT
-        V, S = self.parse_bus(bus)
+        V, Sg = self.parse_bus(bus)
         Sd = self.parse_load(load)
         if self._enforce_constraints:
-            V, S = self.enforce_constraints(V, S, Sd, powerflow_parameters)
-        return V, S, Sd
+            V, Sg = self.enforce_constraints(V, Sg, powerflow_parameters)
+        return V, Sg, Sd
 
     def sigmoid_bound(self, x, lb, ub):
         scale = ub - lb
         return scale * torch.sigmoid(x) + lb
 
-    def enforce_constraints(self, V, S, Sd, params: pf.PowerflowParameters):
-        Sg = S + Sd
+    def enforce_constraints(self, V, Sg, params: pf.PowerflowParameters):
         vm = self.sigmoid_bound(V.abs(), params.vm_min, params.vm_max)
         V = torch.polar(vm, V.angle())  # V * vm / V.abs()
         Sg.real = self.sigmoid_bound(Sg.real, params.Sg_min.real, params.Sg_max.real)
         Sg.imag = self.sigmoid_bound(Sg.imag, params.Sg_min.imag, params.Sg_max.imag)
-        S = Sg - Sd
-        return V, S
+        return V, Sg
 
-    def _step_helper(self, V, S, Sd, parameters: pf.PowerflowParameters):
-        variables = pf.powerflow(V, S, Sd, parameters)
+    def _step_helper(
+        self,
+        V: torch.Tensor,
+        Sg: torch.Tensor,
+        Sd: torch.Tensor,
+        parameters: pf.PowerflowParameters,
+    ):
+        variables = pf.powerflow(V, Sg, Sd, parameters)
         constraints = self.constraints(variables, parameters)
         cost = self.cost(variables, parameters)
         loss = self.loss(cost, constraints)
@@ -144,12 +148,12 @@ class OPFLogBarrier(pl.LightningModule):
         # Convert voltage and power to per unit
         vr = bus[:, 0, :]
         vi = bus[:, 1, :]
-        p = bus[:, 2, :]
-        q = bus[:, 3, :]
+        pg = bus[:, 2, :]
+        qg = bus[:, 3, :]
 
         V = torch.complex(vr, vi)
-        S = torch.complex(p, q)
-        return V, S
+        Sg = torch.complex(pg, qg)
+        return V, Sg
 
     def parse_load(self, load: torch.Tensor):
         """
@@ -189,7 +193,7 @@ class OPFLogBarrier(pl.LightningModule):
         # cost cannot be negative
         cost = torch.clamp(cost, min=0)
         # normalize the cost by the number of generators
-        return cost.mean(0).sum() / powerflow_parameters.gen_matrix.shape[0]
+        return cost.mean(0).sum()
 
     def constraints(
         self,

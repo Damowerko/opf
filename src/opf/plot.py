@@ -1,7 +1,9 @@
 from typing import Dict
-from matplotlib import pyplot as plt
+
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
+
 import opf.powerflow as pf
 
 
@@ -45,19 +47,14 @@ def plot_inequality(title, value, lower, upper):
     return fig
 
 
-def plot_constraints(
-    vars: pf.PowerflowVariables, params: pf.PowerflowParameters
-):
-    constraints = params.constraints
+def plot_constraints(constraints: Dict[str, pf.Constraint]):
     plots = {}
     for name, constraint in constraints.items():
         if isinstance(constraint, pf.EqualityConstraint):
-            plots[name] = plot_equality(
-                name, constraint.target(params, vars), constraint.value(params, vars)
-            )
+            plots[name] = plot_equality(name, constraint.target, constraint.value)
         elif isinstance(constraint, pf.InequalityConstraint):
             plots[name] = plot_inequality(
-                name, constraint.variable(params, vars), constraint.min, constraint.max
+                name, constraint.variable, constraint.min, constraint.max
             )
         else:
             raise ValueError(

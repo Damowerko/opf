@@ -119,12 +119,12 @@ class PowerflowParameters(torch.nn.Module):
             dim=1,
         )
 
-    def forward_branch_parameters(self) -> torch.Tensor:
+    def branch_parameters(self) -> torch.Tensor:
         """
         Return a list of graph edge signals for the forward direction.
 
         Returns:
-            (n_branch, 10) tensor.
+            (n_branch, 12) tensor.
         """
         return torch.stack(
             [
@@ -132,27 +132,6 @@ class PowerflowParameters(torch.nn.Module):
                 self.Y.imag,
                 self.Yc_fr.real,
                 self.Yc_fr.imag,
-                self.ratio.real,
-                self.ratio.imag,
-                self.vad_min,
-                self.vad_max,
-                self.rate_a,
-                torch.ones((self.n_branch,)),
-            ],
-            dim=1,
-        )
-
-    def backward_branch_parameters(self) -> torch.Tensor:
-        """
-        Return a list of graph edge signals for the backward direction.
-
-        Returns:
-            (n_branch, 10) tensor.
-        """
-        return torch.stack(
-            [
-                self.Y.real,
-                self.Y.imag,
                 self.Yc_to.real,
                 self.Yc_to.imag,
                 self.ratio.real,
@@ -160,7 +139,6 @@ class PowerflowParameters(torch.nn.Module):
                 self.vad_min,
                 self.vad_max,
                 self.rate_a,
-                -torch.ones((self.n_branch,)),
             ],
             dim=1,
         )
@@ -220,8 +198,7 @@ def power_from_solution(load: dict, solution: dict, parameters: PowerflowParamet
     Sg = torch.complex(
         *powermodels_to_tensor(solution["gen"], ["pg", "qg"]).T @ parameters.gen_matrix
     )
-    S = Sg - Sd
-    return V, S, Sd
+    return V, Sg, Sd
 
 
 def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
@@ -357,7 +334,7 @@ def parameters_from_powermodels(pm, precision=32) -> PowerflowParameters:
 
 
 def powerflow(
-    V: torch.Tensor, S: torch.Tensor, Sd: torch.Tensor, params: PowerflowParameters
+    V: torch.Tensor, Sg: torch.Tensor, Sd: torch.Tensor, params: PowerflowParameters
 ) -> PowerflowVariables:
     """
     Find the branch variables given the bus voltages. The inputs and outputs should both be
@@ -383,5 +360,5 @@ def powerflow(
     #     Sbus_branch[i] += torch.sum(Sf[params.fr_bus == i])
     #     Sbus_branch[i] += torch.sum(St[params.to_bus == i])
     Sbus = Sbus_branch + Sbus_sh
-    Sg = S + Sd
+    S = Sg - Sd
     return PowerflowVariables(V, S, Sd, Sg, Sf, St, Sbus)
