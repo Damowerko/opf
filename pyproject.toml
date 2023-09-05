@@ -25,6 +25,7 @@ matpowercaseframes = "^1.0.4"
 torchcps = {git = "https://github.com/Damowerko/torchcps"}
 optuna = "^3.3.0"
 psycopg2-binary = "^2.9.7"
+plotly = "^5.16.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
