@@ -4,8 +4,9 @@ metadata:
   name: optuna-job
   namespace: owerko
 spec:
-  completions: 100
-  parallelism: 4
+  completions: 500
+  parallelism: 8
+  ttlSecondsAfterFinished: 3600
   template:
     spec:
       hostIPC: true
@@ -21,10 +22,10 @@ spec:
       - name: opf-trial
         image: docker.io/damowerko/opf
         imagePullPolicy: Always
-        command: ["bash", "-c", "python -u scripts/main.py study --data_dir /nfs/general/opf_data && sleep 1"]
+        command: ["bash", "-c", "python -u scripts/main.py study && sleep 1"]
         env:
         - name: OPTUNA_STORAGE
-          value: postgresql://optuna:optuna@optuna.owerko.svc.cluster.local:5432/optuna
+          value: postgresql://optuna:optuna@optuna-db.owerko.svc.cluster.local:5432/optuna
         - name: WANDB_USERNAME
           value: damowerko
         - name: WANDB_PROJECT
@@ -36,11 +37,11 @@ spec:
               key: api_key
         resources:
           limits:
-            nvidia.com/gpu-12gb: 1
+            nvidia.com/gpu-8gb: 1
             cpu: 16
             memory: 12Gi
         volumeMounts:
-        - mountPath: /nfs/general/opf_data
+        - mountPath: /home/default/opf/data
           name: opf-data
           readOnly: true
     
