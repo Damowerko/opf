@@ -122,10 +122,10 @@ def train(trainer: Trainer, params):
 
 def study(params: dict):
     torch.set_float32_matmul_precision("medium")
-    study_name = "opf-1"
+    study_name = "opf-2"
     storage = os.environ["OPTUNA_STORAGE"]
     pruner = optuna.pruners.HyperbandPruner(
-        min_resource=5, max_resource=200, reduction_factor=3
+        min_resource=10, max_resource="auto", reduction_factor=3
     )
     study = optuna.create_study(
         study_name=study_name,
