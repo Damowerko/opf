@@ -61,7 +61,7 @@ def test(barrier, dm):
         precision=32, callbacks=[cache], logger=False, accelerator="cpu"
     )
     trainer.test(barrier, datamodule=dm, verbose=False)
-    return pd.DataFrame(cache.outputs).applymap(torch.Tensor.item)
+    return pd.DataFrame(cache.outputs).map(torch.Tensor.item)
 
 
 class FlowLayout(object):
