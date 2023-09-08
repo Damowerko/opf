@@ -156,9 +156,7 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         mlp_hidden_channels=256,
         mlp_read_layers=trial.suggest_int("mlp_read_layers", 1, 4),
         mlp_per_gnn_layers=trial.suggest_int("mlp_per_gnn_layers", 0, 4),
-        enforce_constraints=trial.suggest_categorical(
-            "enforce_constraints", [True, False]
-        ),
+        enforce_constraints=True,
     )
     params = {**default_params, **params}
     trainer = make_trainer(
