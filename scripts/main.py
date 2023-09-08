@@ -115,7 +115,7 @@ def train(trainer: Trainer, params):
     # tuner.lr_find(model, dm)
 
     trainer.fit(model, dm)
-    trainer.test(model, dm)
+    # trainer.test(model, dm)
     for logger in trainer.loggers:
         logger.finalize("finished")
 
