@@ -257,9 +257,13 @@ class CaseDataModule(pl.LightningDataModule):
                     self.data_dir.as_posix(),
                 )
 
+    @property
+    def case_path(self):
+        return Path(self.data_dir / f"{self.case_name}.json")
+
     def setup(self, stage: Optional[str] = None):
         # load from json
-        with open(self.data_dir / f"{self.case_name}.json") as f:
+        with open(self.case_path) as f:
             powermodels_dict = json.load(f)
 
         # parse the powermodels dict
