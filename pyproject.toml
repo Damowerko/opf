@@ -16,7 +16,7 @@ jupyter = "^1.0.0"
 black = "^22.10.0"
 wandb = "^0.15.8"
 pytest = "^7.2.0"
-seaborn = "^0.12.1"
+seaborn = "^0.12.2"
 pandoc = "^2.3"
 guildai = "^0.8.2"
 torch = {version = ">=2.0.0, !=2.0.1"}

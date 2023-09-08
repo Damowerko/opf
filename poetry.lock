@@ -4703,7 +4703,7 @@ tqdm = "^4.65.0"
 type = "git"
 url = "https://github.com/Damowerko/torchcps"
 reference = "HEAD"
-resolved_reference = "f6eba7814e6e3aef67d5f3b6c2c6948c2cdedd78"
+resolved_reference = "fd747779cd40524a26d24b75ec0185286b4da36a"
 
 [[package]]
 name = "torchmetrics"
@@ -5142,4 +5142,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11,<3.12"
-content-hash = "e57399823c1fd8f89a5144446f5b2474f688ed93c6f6d932bfa7a9e4260198a7"
+content-hash = "80a7939dd41d15f244b2204ab5416b83c85eeafcc038c27ec728f01d27838943"
