@@ -94,8 +94,13 @@ class OPFLogBarrier(pl.LightningModule):
         Sg: torch.Tensor,
         Sd: torch.Tensor,
         parameters: pf.PowerflowParameters,
+        substitute_equality=False,
     ):
         variables = pf.powerflow(V, Sg, Sd, parameters)
+        if substitute_equality:
+            # Make a substitution to enforce equality constraints
+            Sg = variables.Sbus + Sd
+            variables = pf.powerflow(V, Sg, Sd, parameters)
         constraints = self.constraints(variables, parameters)
         cost = self.cost(variables, parameters)
         loss = self.loss(cost, constraints)
@@ -120,13 +125,14 @@ class OPFLogBarrier(pl.LightningModule):
     def test_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
             _, constraints, cost, loss = self._step_helper(
-                *self.forward(batch), batch.powerflow_parameters
+                *self.forward(batch),
+                batch.powerflow_parameters,
+                substitute_equality=True,
             )
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
             )
             self.log_dict(test_metrics)
-
             # TODO: rethink how to do comparison against ACOPF
             # Test the ACOPF solution for reference.
             # acopf_bus = self.bus_from_polar(acopf_bus)
