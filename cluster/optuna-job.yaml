@@ -37,7 +37,7 @@ spec:
               key: api_key
         resources:
           limits:
-            nvidia.com/gpu-8gb: 1
+            nvidia.com/gpu-12gb: 1
             cpu: 16
             memory: 12Gi
         volumeMounts:
