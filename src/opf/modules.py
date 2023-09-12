@@ -40,9 +40,6 @@ class OPFLogBarrier(pl.LightningModule):
         self._enforce_constraints = enforce_constraints
         self.save_hyperparameters(ignore=["model", "kwargs"])
 
-        # Normalization factor to be applied to the cost function
-        self.cost_normalization = 1.0
-
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
         group = parser.add_argument_group("OPFLogBarrier")
@@ -103,7 +100,7 @@ class OPFLogBarrier(pl.LightningModule):
             variables = pf.powerflow(V, Sg, Sd, parameters)
         constraints = self.constraints(variables, parameters)
         cost = self.cost(variables, parameters)
-        loss = self.loss(cost, constraints)
+        loss = self.loss(cost, constraints, parameters.reference_cost)
         return variables, constraints, cost, loss
 
     def training_step(self, batch: PowerflowBatch):
@@ -127,7 +124,6 @@ class OPFLogBarrier(pl.LightningModule):
             _, constraints, cost, loss = self._step_helper(
                 *self.forward(batch),
                 batch.powerflow_parameters,
-                substitute_equality=True,
             )
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
@@ -172,7 +168,7 @@ class OPFLogBarrier(pl.LightningModule):
         Sd = torch.complex(load[:, 0, :], load[:, 1, :])
         return Sd
 
-    def loss(self, cost, constraints):
+    def loss(self, cost, constraints, reference_cost):
         constraint_losses = [
             val["loss"]
             for val in constraints.values()
@@ -181,7 +177,7 @@ class OPFLogBarrier(pl.LightningModule):
         if len(constraint_losses) == 0:
             constraint_losses = [torch.zeros(1, device=self.device, dtype=self.dtype)]  # type: ignore
         return (
-            cost * self.cost_weight * self.cost_normalization
+            cost * self.cost_weight * reference_cost
             + torch.stack(constraint_losses).sum()
         )
 

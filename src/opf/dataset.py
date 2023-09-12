@@ -303,15 +303,21 @@ class CaseDataModule(pl.LightningDataModule):
             # The file contains a list of dicts, each dict contains the load, solution to a case
             # they are guaranteed to be feasible this way
             with open(self.data_dir / f"{self.case_name}.train.json") as f:
-                dicts: list[dict] = json.load(f)
-                n_samples = len(dicts)
+                train_dicts: list[dict] = json.load(f)
+                n_samples = len(train_dicts)
                 n_train = int(self.ratio_trian * n_samples)
+                n_val = n_samples - n_train
+
+                # average objective value for the validation set
+                powerflow_parameters.reference_cost = sum(
+                    [d["result"]["objective"] / n_val for d in train_dicts[n_train:]]
+                )
 
                 # convert training data to torch tensors
                 train_load = torch.stack(
                     [
                         pf.powermodels_to_tensor(d["load"], ["pd", "qd"])
-                        for d in dicts[:n_train]
+                        for d in train_dicts[:n_train]
                     ]
                 )
                 self.train_dataset = dataset_from_load(train_load)
@@ -320,7 +326,7 @@ class CaseDataModule(pl.LightningDataModule):
                 validation_load = torch.stack(
                     [
                         pf.powermodels_to_tensor(d["load"], ["pd", "qd"])
-                        for d in dicts[n_train:]
+                        for d in train_dicts[n_train:]
                     ]
                 )
                 self.val_dataset = dataset_from_load(validation_load)
@@ -328,6 +334,13 @@ class CaseDataModule(pl.LightningDataModule):
         if stage in (None, "test"):
             with open(self.data_dir / f"{self.case_name}.test.json") as f:
                 test_dicts: list[dict] = json.load(f)
+                n_test = len(test_dicts)
+
+                # average objective value for the test set
+                powerflow_parameters.reference_cost = sum(
+                    [d["result"]["objective"] / n_test for d in test_dicts]
+                )
+
                 test_load = torch.stack(
                     [
                         pf.powermodels_to_tensor(d["load"], ["pd", "qd"])

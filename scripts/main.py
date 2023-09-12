@@ -29,7 +29,7 @@ def main():
     )
 
     # data arguments
-    parser.add_argument("--case_name", type=str, default="case30_ieee")
+    parser.add_argument("--case_name", type=str, default="case179_goc__api")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--fast_dev_run", action="store_true", default=False)
     parser.add_argument("--num_workers", type=int, default=0)
@@ -122,7 +122,7 @@ def train(trainer: Trainer, params):
 
 def study(params: dict):
     torch.set_float32_matmul_precision("medium")
-    study_name = "opf-2"
+    study_name = "opf-3"
     storage = os.environ["OPTUNA_STORAGE"]
     pruner = optuna.pruners.HyperbandPruner(
         min_resource=10, max_resource="auto", reduction_factor=3
