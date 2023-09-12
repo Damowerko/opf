@@ -100,7 +100,7 @@ class OPFLogBarrier(pl.LightningModule):
             variables = pf.powerflow(V, Sg, Sd, parameters)
         constraints = self.constraints(variables, parameters)
         cost = self.cost(variables, parameters)
-        loss = self.loss(cost, constraints, parameters.reference_cost)
+        loss = self.loss(cost, constraints)
         return variables, constraints, cost, loss
 
     def training_step(self, batch: PowerflowBatch):
@@ -168,7 +168,7 @@ class OPFLogBarrier(pl.LightningModule):
         Sd = torch.complex(load[:, 0, :], load[:, 1, :])
         return Sd
 
-    def loss(self, cost, constraints, reference_cost):
+    def loss(self, cost, constraints):
         constraint_losses = [
             val["loss"]
             for val in constraints.values()
@@ -176,10 +176,7 @@ class OPFLogBarrier(pl.LightningModule):
         ]
         if len(constraint_losses) == 0:
             constraint_losses = [torch.zeros(1, device=self.device, dtype=self.dtype)]  # type: ignore
-        return (
-            cost * self.cost_weight * reference_cost
-            + torch.stack(constraint_losses).sum()
-        )
+        return cost * self.cost_weight + torch.stack(constraint_losses).sum()
 
     def cost(
         self,
@@ -195,7 +192,7 @@ class OPFLogBarrier(pl.LightningModule):
         # cost cannot be negative
         cost = torch.clamp(cost, min=0)
         # normalize the cost by the number of generators
-        return cost.mean(0).sum()
+        return cost.mean(0).sum() / powerflow_parameters.reference_cost
 
     def constraints(
         self,
