@@ -1,18 +1,18 @@
 #!/usr/bin/python
 
-import os
 import argparse
 import logging
+import os
 
-logging.basicConfig(level=logging.DEBUG, format="%(levelname)s:%(message)s")
-
-from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, model_checkpoint
 from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, model_checkpoint
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 
 from opf.dataset import CaseDataModule
+from opf.modules import OPFLogBarrier, SimpleGNN
 from opf.utils import create_model
-from opf.modules import SimpleGNN, OPFLogBarrier
+
+# logging.basicConfig(level=logging.DEBUG, format="%(levelname)s:%(message)s")
 
 
 def train(params):
@@ -26,7 +26,7 @@ def train(params):
         if params["log_dir"] is None
         else params["log_dir"]
     )
-    
+
     dm = CaseDataModule(pin_memory=params["gpus"] != 0, **params)
     model = create_model(dm, params)
 
@@ -43,7 +43,7 @@ def train(params):
                 id=run_id,
                 save_dir=params["log_dir"],
                 config=params,
-                log_model=True
+                log_model=True,
             )
             wandb_logger.log_hyperparams(params)
             wandb_logger.watch(model)
@@ -54,7 +54,7 @@ def train(params):
             save_dir=params["log_dir"],
             name="tensorboard",
             version=run_id,
-            default_hp_metric="test/inequality/error_max"
+            default_hp_metric="test/inequality/error_max",
         )
         loggers.append(tensorboard_logger)
 
@@ -128,6 +128,7 @@ if __name__ == "__main__":
     OPFLogBarrier.add_args(parser)
 
     import sys
+
     print(sys.argv)
     params = parser.parse_args()
     train(vars(params))
