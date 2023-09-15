@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 
+import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, model_checkpoint
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
@@ -16,6 +17,9 @@ from opf.utils import create_model
 
 
 def train(params):
+    # use tensorcores
+    torch.set_float32_matmul_precision("medium")
+
     params["data_dir"] = (
         os.path.join(params["root_dir"], "data")
         if params["data_dir"] is None
