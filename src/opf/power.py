@@ -8,7 +8,7 @@ import pandapower.networks
 import pandapower.topology
 import pandas as pd
 from pandapower.converter.matpower.to_mpc import _ppc2mpc
-from pandapower.converter.powermodels.to_pm import convert_pp_to_pm
+from pandapower.converter.pandamodels.to_pm import convert_pp_to_pm
 from pandapower.converter.pypower.to_ppc import to_ppc
 
 
