@@ -11,7 +11,7 @@ url = "https://data.pyg.org/whl/torch-1.13.0+cu117.html"
 
 [tool.poetry.dependencies]
 python = "^3.8,<3.10"
-pandapower = "^2.10.1"
+pandapower = "^2.13.1"
 pandas = "^1.5.2"
 julia = "^0.6.0"
 pytorch-lightning = "^1.8.3.post1"
@@ -31,6 +31,8 @@ torch-cluster = "^1.6.0+pt113cu117"
 torch-spline-conv = "^1.2.1+pt113cu117"
 torch-geometric = "^2.2.0"
 matpowercaseframes = "^1.0.4"
+alegnn = {git = "https://github.com/Damowerko/graph-neural-networks"}
+numba = "^0.57.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
