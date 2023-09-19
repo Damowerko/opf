@@ -154,11 +154,7 @@ class NetWrapper:
 
     def powerflow(self):
         try:
-            pp.runpp(
-                self.net,
-                calculate_voltage_angles=True,
-                trafo_model="pi",
-            )
+            pp.runpp(self.net, calculate_voltage_angles=True, trafo_model="pi")  # type: ignore
             return self._results()
         except pp.LoadflowNotConverged:
             pp.diagnostic(net=self.net, report_style="detailed")
