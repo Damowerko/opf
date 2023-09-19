@@ -1,6 +1,6 @@
 import argparse
 import typing
-from multiprocessing import Value
+import warnings
 from typing import Dict
 
 import alegnn.utils.graphML as gml
@@ -373,6 +373,7 @@ class OPFLogBarrier(pl.LightningModule):
             )
             res_powerflow = self.net_wrapper.powerflow()
             if res_powerflow is None:
+                warnings.warn("Powerflow failed to converge at least once!")
                 return V, S
             else:
                 bus, _, _ = res_powerflow
