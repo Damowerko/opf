@@ -8,7 +8,7 @@ import pandapower.networks
 import pandapower.topology
 import pandas as pd
 from pandapower.converter.matpower.to_mpc import _ppc2mpc
-from pandapower.converter.pandamodels.to_pm import convert_pp_to_pm
+from pandapower.converter.powermodels.to_pm import convert_pp_to_pm
 from pandapower.converter.pypower.to_ppc import to_ppc
 
 
@@ -154,9 +154,14 @@ class NetWrapper:
 
     def powerflow(self):
         try:
-            pp.runpp(self.net, calculate_voltage_angles=True, trafo_model="pi")
+            pp.runpp(
+                self.net,
+                calculate_voltage_angles=True,
+                trafo_model="pi",
+            )
             return self._results()
         except pp.LoadflowNotConverged:
+            pp.diagnostic(net=self.net, report_style="detailed")
             return None
 
     def optimal_ac(self, powermodels=True):

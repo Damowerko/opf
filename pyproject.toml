@@ -11,8 +11,8 @@ url = "https://data.pyg.org/whl/torch-1.13.0+cu117.html"
 
 [tool.poetry.dependencies]
 python = "^3.8,<3.10"
-pandapower = "^2.13.1"
-pandas = "^1.5.2"
+pandapower = "==2.6.*"
+pandas = "<1.4"
 julia = "^0.6.0"
 pytorch-lightning = "^1.8.3.post1"
 numpy = "^1.23.5"
