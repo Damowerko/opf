@@ -1,3 +1,5 @@
+import argparse
+import typing
 from multiprocessing import Value
 from typing import Dict
 
@@ -8,11 +10,9 @@ import torch.nn
 from alegnn.modules import architectures
 
 import opf.powerflow as pf
-from opf.power import NetWrapper
-from opf.constraints import equality, inequality
 from opf import readout
-import argparse
-import typing
+from opf.constraints import equality, inequality
+from opf.power import NetWrapper
 
 
 class SimpleGNN(pl.LightningModule):
@@ -272,7 +272,7 @@ class OPFLogBarrier(pl.LightningModule):
         """Compute the cost to produce the active and reactive power."""
         p = variables.Sg.real
         p_coeff = self.powerflow_parameters.cost_coeff
-        return (p_coeff[:, 0] + p * p_coeff[:, 1] + (p ** 2) * p_coeff[:, 2]).mean()
+        return (p_coeff[:, 0] + p * p_coeff[:, 1] + (p**2) * p_coeff[:, 2]).mean()
 
     def constraints(self, variables) -> Dict[str, Dict[str, torch.Tensor]]:
         """
@@ -304,7 +304,9 @@ class OPFLogBarrier(pl.LightningModule):
     def bus_constraints_matrix(self):
         """Returns a matrix representing the bus constraints as a graph signal."""
         bus_constraints = []
-        for constraint in self.powerflow_parameters.constraints.values():
+        constraint_names = sorted(self.powerflow_parameters.constraints)
+        for constraint_name in constraint_names:
+            constraint = self.powerflow_parameters.constraints[constraint_name]
             if constraint.isBus and isinstance(constraint, pf.InequalityConstraint):
                 bus_constraints += [constraint.min, constraint.max]
         return torch.cat(bus_constraints, dim=1).to(self.device)
@@ -314,7 +316,9 @@ class OPFLogBarrier(pl.LightningModule):
         """Returns a matrix representing the branch constraint features.
         The matrix size is # branches x # branch constraints"""
         branch_constraints = []
-        for constraint in self.powerflow_parameters.constraints.values():
+        constraint_names = sorted(self.powerflow_parameters.constraints)
+        for constraint_name in constraint_names:
+            constraint = self.powerflow_parameters.constraints[constraint_name]
             if constraint.isBranch and isinstance(constraint, pf.InequalityConstraint):
                 branch_constraints += [constraint.min, constraint.max]
         return torch.stack(branch_constraints, dim=0)
