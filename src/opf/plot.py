@@ -16,9 +16,9 @@ def plot_equality(title, target, value):
     value = np.squeeze(value)
 
     fig = plt.figure()
-    plt.stairs(target, baseline=None)
-    plt.stairs(value, baseline=None)
-    plt.legend(("Target", "Value"))
+    plt.stairs(target - value, baseline=None)
+    # plt.stairs(value, baseline=None)
+    plt.legend(["Target - Value"])
     plt.title(title)
     return fig
 
@@ -51,7 +51,16 @@ def plot_constraints(constraints: Dict[str, pf.Constraint]):
     plots = {}
     for name, constraint in constraints.items():
         if isinstance(constraint, pf.EqualityConstraint):
-            plots[name] = plot_equality(name, constraint.target, constraint.value)
+            if torch.is_complex(constraint.target):
+                suffix = [" real", " imag"]
+                plots[name + suffix[0]] = plot_equality(
+                    name + suffix[0], constraint.target.real, constraint.value.real
+                )
+                plots[name + suffix[1]] = plot_equality(
+                    name + suffix[1], constraint.target.imag, constraint.value.imag
+                )
+            else:
+                plots[name] = plot_equality(name, constraint.target, constraint.value)
         elif isinstance(constraint, pf.InequalityConstraint):
             plots[name] = plot_inequality(
                 name, constraint.variable, constraint.min, constraint.max
