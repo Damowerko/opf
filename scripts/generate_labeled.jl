@@ -21,10 +21,14 @@ s = ArgParseSettings()
     help = "Number of (labeled) samples to generate."
     arg_type = Int
     required = true
-    "--width"
+    "--min_load"
     help = "Width of the uniform distribution to sample the load."
     arg_type = Float64
-    default = 0.2
+    default = 0.8
+    "--max_load"
+    help = "Width of the uniform distribution to sample the load."
+    arg_type = Float64
+    default = 1.2
 end
 args = parse_args(ARGS, s)
 
@@ -51,12 +55,13 @@ Sample a network model based on the reference case.
 
 Currently we only sample the load uniformly +- `width` around the reference case.
 """
-function sample_load(network_data::Dict{String,Any}, width=0.2)::Dict{String,Any}
+function sample_load(network_data::Dict{String,Any}, min_load=0.8, max_load=1.2)::Dict{String,Any}
     load = deepcopy(network_data["load"])
     for (k, v) in load
-        # sample load around [REF * (1 - width), REF * (1 + width)]
-        v["pd"] = v["pd"] * (1 + width * (2 * rand() - 1))
-        v["qd"] = v["qd"] * (1 + width * (2 * rand() - 1))
+        # sample load around [REF * min_load, REF * max_load]
+        width = max_load - min_load
+        v["pd"] = v["pd"] * (width * rand() + min_load)
+        v["qd"] = v["qd"] * (width * rand() + min_load)
     end
     return load
 end
@@ -84,7 +89,7 @@ end
 Generate `n_samples` from the power system network. Each sample is labeled with the optimal solution.
 Samples that did not converge are discarded.
 """
-function generate_samples(network_data, n_samples, width=0.2)::Array{Dict,1}
+function generate_samples(network_data, n_samples, min_load=0.8, max_load=1.2)::Array{Dict,1}
     count_atomic = Threads.Atomic{Int}(0)
     samples = Array{Dict,1}(undef, n_samples)
     progress = Progress(n_samples)
@@ -92,7 +97,7 @@ function generate_samples(network_data, n_samples, width=0.2)::Array{Dict,1}
         solved = false
         while !solved
             Threads.atomic_add!(count_atomic, 1) # count the number of samples taken
-            load = sample_load(network_data, width)
+            load = sample_load(network_data, min_load, max_load)
             result, solved = label_network(network_data, load)
             if !solved
                 continue
@@ -123,9 +128,9 @@ end
 
 function reindex_bus(data::Dict{String,Any})
     data = deepcopy(data)
-    bus_ordered = sort([bus for (i,bus) in data["bus"]], by=(x) -> x["index"])
+    bus_ordered = sort([bus for (i, bus) in data["bus"]], by=(x) -> x["index"])
     bus_id_map = Dict{Int,Int}()
-    for (i,bus) in enumerate(bus_ordered)
+    for (i, bus) in enumerate(bus_ordered)
         bus_id_map[bus["index"]] = i
     end
     update_bus_ids!(data, bus_id_map)
@@ -138,7 +143,12 @@ function main()
     out_dir = args["out"]
     n_train = args["n_train"]
     n_test = args["n_test"]
-    width = args["width"]
+    min_load = args["min_load"]
+    max_load = args["max_load"]
+
+    if max_load <= min_load
+        error("max_load must be greater than min_load")
+    end
 
     println("There are $(Threads.nthreads()) threads available.")
 
@@ -146,7 +156,7 @@ function main()
     network_data = PowerModels.parse_file(casefile)
     # reindex bus ids to be contiguous from 1 to N
     network_data = reindex_bus(network_data)
-    
+
     check_assumptions!(network_data)
 
     # save network data in JSON format
@@ -156,7 +166,7 @@ function main()
 
     # generate the labeled samples
     n_samples = n_train + n_test
-    samples = generate_samples(network_data, n_samples, width)
+    samples = generate_samples(network_data, n_samples, min_load, max_load)
     samples_valid = @view samples[1:n_train]
     samples_test = @view samples[(n_train+1):end]
     open(joinpath(out_dir, casename * ".train.json"), "w") do f
