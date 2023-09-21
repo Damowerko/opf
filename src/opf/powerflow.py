@@ -119,6 +119,7 @@ class PowerflowParameters(torch.nn.Module):
                 self.Sg_max.real,
                 self.Sg_min.imag,
                 self.Sg_min.imag,
+                self.is_ref,
                 *self.cost_coeff.T,
             ],
             dim=1,
