@@ -3,15 +3,6 @@
 Code used in [Optimal Power Flow Using Graph Neural Networks](https://doi.org/10.1109/ICASSP40776.2020.9053140) and [Unsupervised Optimal Power Flow Using Graph Neural Networks](https://arxiv.org/abs/2210.09277). To cite our work please use the following biblatex citation. The version used for ICASSP is archived in a different branch.
 
 ```bibtex
-@inproceedings{owerko2020opf,
-  author={Owerko, Damian and Gama, Fernando and Ribeiro, Alejandro},
-  booktitle={ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)}, 
-  title={Optimal Power Flow Using Graph Neural Networks}, 
-  year={2020},
-  pages={5930-5934},
-  doi={10.1109/ICASSP40776.2020.9053140}
-}
-
 @misc{owerko2022opf,
   doi = {10.48550/ARXIV.2210.09277},
   url = {https://arxiv.org/abs/2210.09277},
@@ -21,7 +12,46 @@ Code used in [Optimal Power Flow Using Graph Neural Networks](https://doi.org/10
   year = {2022},
   copyright = {arXiv.org perpetual, non-exclusive license}
 }
+
+@inproceedings{owerko2020opf,
+  author={Owerko, Damian and Gama, Fernando and Ribeiro, Alejandro},
+  booktitle={ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)}, 
+  title={Optimal Power Flow Using Graph Neural Networks}, 
+  year={2020},
+  pages={5930-5934},
+  doi={10.1109/ICASSP40776.2020.9053140}
+}
 ```
+
+## Reproducing Results
+
+The code on the `main` branch is much more recent than used in the paper. To make reproducing results easier, I have created a branch 
+
+### Unsupervised Optimal Power Flow Using Graph Neural Networks
+The code from the paper is archived in the `unsupervised` branch.
+Below I provide instructions on how to reproduce the results for the IEEE-30 system.
+
+#### Data
+Generated data is available on Google Drive. Download the data and place in `data/`, relative to the repo root.
+* [IEEE-30](https://drive.google.com/file/d/1bM7rwOdLN555zRkLBRLgxSUgH2VkEnQy/view?usp=sharing) 
+* [IEEE-118](https://drive.google.com/file/d/1UyztAKuIYxhTJyJFhLxOe-0MKUuFgn2s/view?usp=drive_web)
+
+Alternatively use `generate.py` to generate your own data.
+```
+python -m opf.generate --help
+```
+
+#### Training
+To train the model with the hyperparameters from the paper, run the following command.
+```
+python scripts/train.py --F 32 --K 8 --L 2 --activation leaky_relu --adj_threshold 0.01 --batch_size 256 --case_name case30 --constraint_features 0 --cost_weight 0.01 --enforce_constraints 0 --eps 0.0001 --gpus 1 --gradient_clip_val 0 --log 1 --lr 0.0003 --max_epochs 1000 --patience 1000 --readout local --s 10 --t 500 --wandb 0
+```
+
+#### Using the provided checkpoint
+The branch `unsupervided` contains a checkpoint trained on the IEEE-30 system. It is inside `models/`. There is a checkpoint file and a yaml file specifying all the hyperparameters needed to load the model. You can create an instance of `OPFLogBarrier` using the hyperparameters and load the weights using `load_state_dict`.
+
+### Optimal Power Flow Using Graph Neural Networks
+The code from the paper is archived in the `icassp` branch. I do not recommend using this branch as it is outdated.
 
 ## Installation
 
