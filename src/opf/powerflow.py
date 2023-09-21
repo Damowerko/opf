@@ -63,7 +63,7 @@ class PowerflowParameters(torch.nn.Module):
     rate_a: torch.Tensor
     # path to casefile
     casefile: str
-    # referzorch.Tensor
+    is_ref: torch.Tensor
     # reference cost
     reference_cost: float = 1.0
 
@@ -209,8 +209,11 @@ def power_from_solution(load: dict, solution: dict, parameters: PowerflowParamet
 def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
     return {
         "equality/bus_power": EqualityConstraint(True, False, d.Sbus, d.S),
+        "equality/bus_reference": EqualityConstraint(
+            True, True, d.V.angle() * p.is_ref, torch.zeros(p.n_bus)
+        ),
         "inequality/voltage_magnitude": InequalityConstraint(
-            True, True, d.V.abs(), p.vm_min, p.vm_max
+            True, False, d.V.abs(), p.vm_min, p.vm_max
         ),
         "inequality/active_power": InequalityConstraint(
             True, False, d.Sg.real, p.Sg_min.real, p.Sg_max.real
@@ -242,15 +245,14 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
     vm_min = torch.zeros(n_bus)
     vm_max = torch.zeros(n_bus)
     base_kv = torch.zeros(n_bus)
-    reference_buses = []
+    is_ref = torch.zeros(n_bus)
     for bus in pm["bus"].values():
         i = bus["bus_i"] - 1
         vm_min[i] = bus["vmin"]
         vm_max[i] = bus["vmax"]
         base_kv[i] = bus["base_kv"]
         if bus["bus_type"] == 3:
-            reference_buses.append(i)
-    ref_idx = torch.as_tensor(reference_buses, dtype=torch.long)
+            is_ref[i] = 1
 
     # init gen
     n_gen = len(pm["gen"])
@@ -337,7 +339,7 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
         vad_max,
         rate_a,
         casefile,
-        ref_idx,
+        is_ref,
     )
 
 
