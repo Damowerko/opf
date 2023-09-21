@@ -128,7 +128,7 @@ class OPFLogBarrier(pl.LightningModule):
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
             )
-            self.log_dict(test_metrics)
+            self.log_dict(test_metrics, batch_size=batch.data.num_graphs)
             # TODO: rethink how to do comparison against ACOPF
             # Test the ACOPF solution for reference.
             # acopf_bus = self.bus_from_polar(acopf_bus)
