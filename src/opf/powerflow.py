@@ -61,6 +61,9 @@ class PowerflowParameters(torch.nn.Module):
     vad_min: torch.Tensor
     vad_max: torch.Tensor
     rate_a: torch.Tensor
+    # path to casefile
+    casefile: str
+    # referzorch.Tensor
     # reference cost
     reference_cost: float = 1.0
 
@@ -231,7 +234,7 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
     }
 
 
-def parameters_from_powermodels(pm, precision=32) -> PowerflowParameters:
+def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowParameters:
     dtype = torch.complex128 if precision == 64 else torch.complex64
 
     # init bus
@@ -247,6 +250,7 @@ def parameters_from_powermodels(pm, precision=32) -> PowerflowParameters:
         base_kv[i] = bus["base_kv"]
         if bus["bus_type"] == 3:
             reference_buses.append(i)
+    ref_idx = torch.as_tensor(reference_buses, dtype=torch.long)
 
     # init gen
     n_gen = len(pm["gen"])
@@ -332,6 +336,8 @@ def parameters_from_powermodels(pm, precision=32) -> PowerflowParameters:
         vad_min,
         vad_max,
         rate_a,
+        casefile,
+        ref_idx,
     )
 
 

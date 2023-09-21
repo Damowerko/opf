@@ -1,6 +1,10 @@
 import argparse
+import subprocess
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Dict
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from torch_geometric.data import Data
@@ -92,7 +96,15 @@ class OPFLogBarrier(pl.LightningModule):
         Sd: torch.Tensor,
         parameters: pf.PowerflowParameters,
         substitute_equality=False,
+        project_powermodels=False,
     ):
+        if substitute_equality and project_powermodels:
+            raise ValueError(
+                "substitute_equality and project_powermodels are mutually exclusive"
+            )
+        if project_powermodels:
+            # Project the solution to the powermodels solution
+            V, Sg, Sd = self.project_powermodels(V, Sg, Sd, parameters)
         variables = pf.powerflow(V, Sg, Sd, parameters)
         if substitute_equality:
             # Make a substitution to enforce equality constraints
@@ -121,9 +133,10 @@ class OPFLogBarrier(pl.LightningModule):
 
     def test_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
-            _, constraints, cost, loss = self._step_helper(
+            _, constraints, cost, _ = self._step_helper(
                 *self.forward(batch),
                 batch.powerflow_parameters,
+                project_powermodels=True,
             )
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
@@ -143,6 +156,47 @@ class OPFLogBarrier(pl.LightningModule):
             # self.log_dict(acopf_metrics)
             # return dict(**test_metrics, **acopf_metrics)
             return test_metrics
+
+    def project_powermodels(
+        self,
+        V: torch.Tensor,
+        Sg: torch.Tensor,
+        Sd: torch.Tensor,
+        parameters: pf.PowerflowParameters,
+    ):
+        shape = V.shape
+        dtype = V.dtype
+        device = V.device
+        V = torch.view_as_real(V).view(-1, parameters.n_bus, 2).numpy()
+        Sg = torch.view_as_real(Sg).view(-1, parameters.n_bus, 2).numpy()
+        Sd = torch.view_as_real(Sd).view(-1, parameters.n_bus, 2).numpy()
+
+        # TODO: make this more robust, maybe use PyJulia
+        # currently what we do is save the data to a temporary directory
+        # then run the julia script and load the data back
+        with TemporaryDirectory() as tempdir:
+            busfile = Path(tempdir) / "busfile.npz"
+            np.savez(busfile, V=V, Sg=Sg, Sd=Sd)
+            subprocess.run(
+                [
+                    "julia",
+                    "../scripts/project.jl",
+                    "--casefile",
+                    parameters.casefile,
+                    "--busfile",
+                    busfile.as_posix(),
+                ]
+            )
+            bus = np.load(busfile)
+        V, Sg, Sd = bus["V"], bus["Sg"], bus["Sd"]
+        # convert back to torch tensors with the original shape
+        V = torch.from_numpy(V)
+        Sg = torch.from_numpy(Sg)
+        Sd = torch.from_numpy(Sd)
+        V = torch.complex(V[..., 0], V[..., 1]).to(device, dtype).view(shape)
+        Sg = torch.complex(Sg[..., 0], Sg[..., 1]).to(device, dtype).view(shape)
+        Sd = torch.complex(Sd[..., 0], Sd[..., 1]).to(device, dtype).view(shape)
+        return V, Sg, Sd
 
     def parse_bus(self, bus: torch.Tensor):
         assert bus.shape[1] == 4

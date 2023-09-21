@@ -267,7 +267,9 @@ class CaseDataModule(pl.LightningDataModule):
             powermodels_dict = json.load(f)
 
         # parse the powermodels dict
-        powerflow_parameters = pf.parameters_from_powermodels(powermodels_dict)
+        powerflow_parameters = pf.parameters_from_powermodels(
+            powermodels_dict, self.case_path.as_posix()
+        )
         bus_parameters = powerflow_parameters.bus_parameters()
         if self.bipartite:
             edge_index, edge_attr = _bipartite_from_parameters(powerflow_parameters)
