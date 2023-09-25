@@ -26,6 +26,17 @@ torchcps = {git = "https://github.com/Damowerko/torchcps"}
 optuna = "^3.3.0"
 psycopg2-binary = "^2.9.7"
 plotly = "^5.16.1"
+torch-sparse = "^0.6.17+pt20cu118"
+pyg-lib = "^0.2.0+pt20cu118"
+
+[[tool.poetry.source]]
+name = "PyPI"
+priority = "supplemental"
+
+[[tool.poetry.source]]
+name = "pyg"
+url = "https://data.pyg.org/whl/torch-2.0.0+cu118.html"
+priority = "primary"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

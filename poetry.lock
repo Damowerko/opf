@@ -3495,6 +3495,29 @@ files = [
 typing-extensions = ">=4.6.0,<4.7.0 || >4.7.0"
 
 [[package]]
+name = "pyg-lib"
+version = "0.2.0+pt20cu118"
+description = "Low-Level Graph Neural Network Operators for PyG"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "pyg_lib-0.2.0+pt20cu118-cp310-cp310-linux_x86_64.whl", hash = "sha256:14d9abae57a932f477543bd32fe52733cfbe4b333d19fe7b8ebee8a87545c72b"},
+    {file = "pyg_lib-0.2.0+pt20cu118-cp311-cp311-linux_x86_64.whl", hash = "sha256:0e08daeee5e744aae6e0803e0b0c2bfa2f731c77f900be5628c70f35863d77da"},
+    {file = "pyg_lib-0.2.0+pt20cu118-cp38-cp38-linux_x86_64.whl", hash = "sha256:a2176581ec02627562a10fe1e8d060ac800897dfd85686e22cd60ef239c725ef"},
+    {file = "pyg_lib-0.2.0+pt20cu118-cp39-cp39-linux_x86_64.whl", hash = "sha256:2376b95bdcec39d816dce7140f60e93a83d53e59c565cfe38020cb59e9cd00d4"},
+]
+
+[package.extras]
+dev = ["pre-commit"]
+test = ["pytest", "pytest-cov"]
+triton = ["triton"]
+
+[package.source]
+type = "legacy"
+url = "https://data.pyg.org/whl/torch-2.0.0+cu118.html"
+reference = "pyg"
+
+[[package]]
 name = "pygments"
 version = "2.16.1"
 description = "Pygments is a syntax highlighting package written in Python."
@@ -4716,6 +4739,34 @@ modelhub = ["huggingface_hub"]
 test = ["onnx", "onnxruntime", "pytest", "pytest-cov"]
 
 [[package]]
+name = "torch-sparse"
+version = "0.6.17+pt20cu118"
+description = "PyTorch Extension Library of Optimized Autograd Sparse Matrix Operations"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "torch_sparse-0.6.17+pt20cu118-cp310-cp310-linux_x86_64.whl", hash = "sha256:256559b48f6bcf57e999a783e4e7c52405cc57d19e10f4aac0bfc3c88f5afc41"},
+    {file = "torch_sparse-0.6.17+pt20cu118-cp310-cp310-win_amd64.whl", hash = "sha256:5c192a5f7ea09c248899271ac6e7e06b666b5049381cc208008e7045eda7aea1"},
+    {file = "torch_sparse-0.6.17+pt20cu118-cp311-cp311-linux_x86_64.whl", hash = "sha256:9ea1c3f5ddbfa8ecadd04779093b9e26cbc323c2cd6df7ba48f5eba0e79472db"},
+    {file = "torch_sparse-0.6.17+pt20cu118-cp311-cp311-win_amd64.whl", hash = "sha256:c95201c3954df79c7f2cf6bf027810e932f930919a6a27a389034caa1675b1cc"},
+    {file = "torch_sparse-0.6.17+pt20cu118-cp38-cp38-linux_x86_64.whl", hash = "sha256:e0fa2c95bb980cbb43574847172895a73c4214716197982f9415f9f97ae6e131"},
+    {file = "torch_sparse-0.6.17+pt20cu118-cp38-cp38-win_amd64.whl", hash = "sha256:a61358aadc9f35707a2e8d5d6d7ad4b81776626d3f3b9b0fcc70e2c2d95e13b0"},
+    {file = "torch_sparse-0.6.17+pt20cu118-cp39-cp39-linux_x86_64.whl", hash = "sha256:47f1f9f4053057781738d6ab1c83f672d5535d903f7cbc1024b76ff5cfe00c53"},
+    {file = "torch_sparse-0.6.17+pt20cu118-cp39-cp39-win_amd64.whl", hash = "sha256:60bd0bcdc2c47a32b8a5674d0a9e257b8e88a3e99d621c03f3f966dfc8311e38"},
+]
+
+[package.dependencies]
+scipy = "*"
+
+[package.extras]
+test = ["pytest", "pytest-cov"]
+
+[package.source]
+type = "legacy"
+url = "https://data.pyg.org/whl/torch-2.0.0+cu118.html"
+reference = "pyg"
+
+[[package]]
 name = "torchcps"
 version = "0.1.0"
 description = "Tools for deep learning on cyber-physical systems."
@@ -5179,4 +5230,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11,<3.12"
-content-hash = "80a7939dd41d15f244b2204ab5416b83c85eeafcc038c27ec728f01d27838943"
+content-hash = "ea9efb0f90cfc75c25eec42ecc451c2afd5a7c1e3efc0c1ec1f3865a26fdc937"
