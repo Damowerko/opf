@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import typing
@@ -8,8 +9,9 @@ from typing import Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
+import torch_geometric.transforms as T
 from torch.utils.data import DataLoader, Dataset
-from torch_geometric.data import Batch, Data, download_url, extract_tar
+from torch_geometric.data import Batch, Data, HeteroData, download_url, extract_tar
 
 import opf.powerflow as pf
 
@@ -17,7 +19,7 @@ PGLIB_VERSION = "21.07"
 
 
 class PowerflowData(typing.NamedTuple):
-    data: Data
+    data: Data | HeteroData
     powerflow_parameters: pf.PowerflowParameters
 
 
@@ -33,9 +35,9 @@ class BipartiteData(Data):
         return super().__inc__(key, value, *args, **kwargs)
 
 
-def _graph_from_parameters(
+def build_graph(
     params: pf.PowerflowParameters,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> Data:
     """Convert a pf.PowerflowParameters object to a torch_geometric.data.Data object.
 
     Args:
@@ -69,24 +71,52 @@ def _graph_from_parameters(
         ],
         dim=0,
     )
-    return edge_index, edge_attr.float()
+    return Data(edge_index=edge_index, edge_attr=edge_attr.float())
 
 
-def _bipartite_from_parameters(
+def build_hetero_graph(
     params: pf.PowerflowParameters,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    self_loops: bool = True,
+) -> HeteroData:
     n_bus = params.n_bus
     branch_nodes = torch.arange(params.n_branch) + n_bus
 
-    # create one edge for each branch
-    edge_index_forward = torch.stack([params.fr_bus, branch_nodes], dim=0)
-    edge_index_backward = torch.stack([branch_nodes, params.fr_bus], dim=0)
-    edge_index = torch.cat([edge_index_forward, edge_index_backward], dim=1)
+    graph = HeteroData()
 
-    edge_attr_forward = torch.ones(params.n_branch)
-    edge_attr_backward = -torch.ones(params.n_branch)
-    edge_attr = torch.cat([edge_attr_forward, edge_attr_backward], dim=0)
-    return edge_index, edge_attr
+    # Define Anti-Symmetric Graph
+
+    # From side of branches
+    graph["bus", "from", "branch"].edge_index = torch.stack(
+        [params.fr_bus, branch_nodes], dim=0
+    )
+    graph["branch", "from", "bus"].edge_index = torch.stack(
+        [branch_nodes, params.fr_bus], dim=0
+    )
+    graph["bus", "from", "branch"].edge_weight = torch.ones(params.n_branch)
+    graph["branch", "from", "bus"].edge_weight = -torch.ones(params.n_branch)
+
+    # To side of branches
+    graph["bus", "to", "branch"].edge_index = torch.stack(
+        [params.to_bus, branch_nodes], dim=0
+    )
+    graph["branch", "to", "bus"].edge_index = torch.stack(
+        [branch_nodes, params.to_bus], dim=0
+    )
+    graph["bus", "to", "branch"].edge_weight = torch.ones(params.n_branch)
+    graph["branch", "to", "bus"].edge_weight = -torch.ones(params.n_branch)
+
+    # Self-loops
+    if self_loops:
+        graph["bus", "self", "bus"].edge_index = torch.stack(
+            [torch.arange(n_bus), torch.arange(n_bus)], dim=0
+        )
+        graph["branch", "self", "branch"].edge_index = torch.stack(
+            [branch_nodes, branch_nodes], dim=0
+        )
+        graph["bus", "self", "bus"].edge_weight = torch.ones(n_bus)
+        graph["branch", "self", "branch"].edge_weight = torch.ones(params.n_branch)
+
+    return graph
 
 
 def _concat_features(*features: torch.Tensor):
@@ -107,12 +137,26 @@ def _concat_features(*features: torch.Tensor):
     return concatenated
 
 
+@staticmethod
+def graph_collate_fn(input: list[PowerflowData]) -> PowerflowBatch:
+    data_list, powerflow_parameters_list = zip(*input)
+    # cast to appropriate types
+    data_list = typing.cast(tuple[Data | HeteroData], data_list)
+    powerflow_parameters_list = typing.cast(
+        tuple[pf.PowerflowParameters], powerflow_parameters_list
+    )
+    batch: Batch = Batch.from_data_list(data_list)  # type: ignore
+    # let's assume that all samples have the same powerflow parameters
+    powerflow_parameters = powerflow_parameters_list[0]
+    assert all(powerflow_parameters == p for p in powerflow_parameters_list)
+    return PowerflowBatch(batch, powerflow_parameters)
+
+
 class StaticGraphDataset(Dataset[PowerflowData]):
     def __init__(
         self,
         x: torch.Tensor,
-        edge_index: torch.Tensor,
-        edge_attr: torch.Tensor,
+        graph: Data,
         powerflow_parameters: pf.PowerflowParameters,
     ):
         """
@@ -126,8 +170,8 @@ class StaticGraphDataset(Dataset[PowerflowData]):
         """
         super().__init__()
         self.x = x
-        self.edge_index = edge_index
-        self.edge_attr = edge_attr
+        self.edge_index = graph.edge_index
+        self.edge_attr = graph.edge_attr
         self.powerflow_parameters = powerflow_parameters
 
     def __len__(self) -> int:
@@ -140,31 +184,20 @@ class StaticGraphDataset(Dataset[PowerflowData]):
                 edge_index=self.edge_index,
                 edge_attr=self.edge_attr,
             ),
-            # Output a list with one element, so that batches
-            # have the same type as a single sample
             self.powerflow_parameters,
         )
 
     @staticmethod
     def collate_fn(input: list[PowerflowData]) -> PowerflowBatch:
-        data_list, powerflow_parameters_list = zip(*input)
-        batch: Batch = Batch.from_data_list(data_list)  # type: ignore
-        powerflow_parameters_list = typing.cast(
-            list[pf.PowerflowParameters], powerflow_parameters_list
-        )
-        # let's assume that all samples have the same powerflow parameters
-        powerflow_parameters = powerflow_parameters_list[0]
-        assert all(powerflow_parameters == p for p in powerflow_parameters_list)
-        return PowerflowBatch(batch, powerflow_parameters)
+        return graph_collate_fn(input)
 
 
-class StaticBipartiteGraphDataset(Dataset[PowerflowData]):
+class StaticHeteroDataset(Dataset[PowerflowData]):
     def __init__(
         self,
-        node_features: torch.Tensor,
+        bus_features: torch.Tensor,
         branch_features: torch.Tensor,
-        edge_index: torch.Tensor,
-        edge_attr: torch.Tensor,
+        graph: HeteroData,
         powerflow_parameters: pf.PowerflowParameters,
     ):
         """
@@ -172,49 +205,37 @@ class StaticBipartiteGraphDataset(Dataset[PowerflowData]):
         multiple samples on the graph.
 
         Args:
-            x_s: Bus features with shape (n_samples, n_bus, n_features).
-            x_t: Branch features with shape (n_samples, n_branch, n_features).
+            x_bus: Bus features with shape (n_samples, n_bus, n_features).
+            x_branch: Branch features with shape (n_samples, n_branch, n_features).
             edge_index: Edge index with shape (2, num_edges)
             edge_attr: Edge attributes with shape (num_edges, num_edge_features)
         """
         super().__init__()
-        if node_features.shape[0] != branch_features.shape[0]:
+        if bus_features.shape[0] != branch_features.shape[0]:
             raise ValueError(
                 f"Expected node_features and branch_features to have the same number of samples, but got {node_features.shape[0]} and {branch_features.shape[0]}."
             )
-        self.x_s = node_features
-        self.x_t = branch_features
-        self.edge_index = edge_index
-        self.edge_attr = edge_attr
+        self.x_bus = bus_features
+        self.x_branch = branch_features
+        self.graph = T.ToSparseTensor()(graph)
         self.powerflow_parameters = powerflow_parameters
 
     def __len__(self) -> int:
-        return len(self.x_t)
+        return len(self.x_bus)
 
     def __getitem__(self, index) -> PowerflowData:
+        # shallow copy, to avoid copying tensors
+        graph = copy.copy(self.graph)
+        graph["bus"].x = self.x_bus[index]
+        graph["branch"].x = self.x_branch[index]
         return PowerflowData(
-            BipartiteData(
-                x_s=self.x_s[index],
-                x_t=self.x_t[index],
-                edge_index=self.edge_index,
-                edge_attr=self.edge_attr,
-            ),
-            # Output a list with one element, so that batches
-            # have the same type as a single sample
+            graph,
             self.powerflow_parameters,
         )
 
     @staticmethod
     def collate_fn(input: list[PowerflowData]) -> PowerflowBatch:
-        data_list, powerflow_parameters_list = zip(*input)
-        batch: Batch = Batch.from_data_list(data_list)  # type: ignore
-        powerflow_parameters_list = typing.cast(
-            list[pf.PowerflowParameters], powerflow_parameters_list
-        )
-        # let's assume that all samples have the same powerflow parameters
-        powerflow_parameters = powerflow_parameters_list[0]
-        assert all(powerflow_parameters == p for p in powerflow_parameters_list)
-        return PowerflowBatch(batch, powerflow_parameters)
+        return graph_collate_fn(input)
 
 
 class CaseDataModule(pl.LightningDataModule):
@@ -272,9 +293,9 @@ class CaseDataModule(pl.LightningDataModule):
         )
         bus_parameters = powerflow_parameters.bus_parameters()
         if self.bipartite:
-            edge_index, edge_attr = _bipartite_from_parameters(powerflow_parameters)
+            graph = build_hetero_graph(powerflow_parameters)
         else:
-            edge_index, edge_attr = _graph_from_parameters(powerflow_parameters)
+            graph = build_graph(powerflow_parameters)
 
         def dataset_from_load(load: torch.Tensor):
             bus_load = (load.mT @ powerflow_parameters.load_matrix).mT
@@ -289,15 +310,13 @@ class CaseDataModule(pl.LightningDataModule):
                 return StaticBipartiteGraphDataset(
                     bus_features,
                     branch_features,
-                    edge_index,
-                    edge_attr,
+                    graph,
                     powerflow_parameters,
                 )
             else:
                 return StaticGraphDataset(
                     bus_features,
-                    edge_index,
-                    edge_attr,
+                    graph,
                     powerflow_parameters,
                 )
 
