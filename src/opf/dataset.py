@@ -213,7 +213,7 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         super().__init__()
         if bus_features.shape[0] != branch_features.shape[0]:
             raise ValueError(
-                f"Expected node_features and branch_features to have the same number of samples, but got {node_features.shape[0]} and {branch_features.shape[0]}."
+                f"Expected node_features and branch_features to have the same number of samples, but got {bus_features.shape[0]} and {branch_features.shape[0]}."
             )
         self.x_bus = bus_features
         self.x_branch = branch_features
@@ -260,7 +260,7 @@ class CaseDataModule(pl.LightningDataModule):
         self.load_distribution_width = load_distribution_width
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-        self.bipartite = bipartite
+        self.hetero = bipartite
 
         self.train_dataset = None
         self.val_dataset = None
@@ -292,7 +292,7 @@ class CaseDataModule(pl.LightningDataModule):
             powermodels_dict, self.case_path.as_posix()
         )
         bus_parameters = powerflow_parameters.bus_parameters()
-        if self.bipartite:
+        if self.hetero:
             graph = build_hetero_graph(powerflow_parameters)
         else:
             graph = build_graph(powerflow_parameters)
@@ -303,17 +303,19 @@ class CaseDataModule(pl.LightningDataModule):
                 bus_load,
                 bus_parameters,
             ).to(bus_load.dtype)
-            if self.bipartite:
+            if self.hetero:
+                assert isinstance(graph, HeteroData)
                 branch_features = _concat_features(
                     powerflow_parameters.branch_parameters(),
                 ).to(bus_load.dtype)
-                return StaticBipartiteGraphDataset(
+                return StaticHeteroDataset(
                     bus_features,
                     branch_features,
                     graph,
                     powerflow_parameters,
                 )
             else:
+                assert isinstance(graph, Data)
                 return StaticGraphDataset(
                     bus_features,
                     graph,
