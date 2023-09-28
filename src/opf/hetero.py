@@ -193,6 +193,12 @@ class HeteroGCN(nn.Module):
     def add_args(parser: argparse.ArgumentParser):
         group = parser.add_argument_group(HeteroGCN.__name__)
         group.add_argument(
+            "--n_taps",
+            type=int,
+            default=4,
+            help="Number of filter taps per layer.",
+        )
+        group.add_argument(
             "--n_channels",
             type=int,
             default=32,
@@ -229,11 +235,7 @@ class HeteroGCN(nn.Module):
             "--dropout", type=float, default=0.0, help="Dropout probability."
         )
         group.add_argument(
-            "--residual_type",
-            type=str,
-            default="res+",
-            choices=["res", "res+", "dense", "plain"],
-            help="Type of residual connection to use.",
+            "--aggr", type=str, default="sum", help="Aggregation scheme to use."
         )
 
     def __init__(
