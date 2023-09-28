@@ -4739,6 +4739,31 @@ modelhub = ["huggingface_hub"]
 test = ["onnx", "onnxruntime", "pytest", "pytest-cov"]
 
 [[package]]
+name = "torch-scatter"
+version = "2.1.1+pt20cu118"
+description = "PyTorch Extension Library of Optimized Scatter Operations"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "torch_scatter-2.1.1+pt20cu118-cp310-cp310-linux_x86_64.whl", hash = "sha256:dc950e83fb1c9f5be6dc3e4778fce8a4904a9f1848d960e9a2049783237444ba"},
+    {file = "torch_scatter-2.1.1+pt20cu118-cp310-cp310-win_amd64.whl", hash = "sha256:1204f06f65dcb14fcaa690d9d2898b1be57b742734429c625b41ae6e254003a9"},
+    {file = "torch_scatter-2.1.1+pt20cu118-cp311-cp311-linux_x86_64.whl", hash = "sha256:767f82f545240e89f06ae83f6e3acc4b265a9852823985849bb996a434407c5c"},
+    {file = "torch_scatter-2.1.1+pt20cu118-cp311-cp311-win_amd64.whl", hash = "sha256:a69ba1347b4385f2b39acab9f0cfc02cc8ca58492be3c2f2fbaafce940d88a5e"},
+    {file = "torch_scatter-2.1.1+pt20cu118-cp38-cp38-linux_x86_64.whl", hash = "sha256:60d5bceee7ada073c8f5d3e290a7bb0a4df303d3c9dcce6072f2d79b371e84c1"},
+    {file = "torch_scatter-2.1.1+pt20cu118-cp38-cp38-win_amd64.whl", hash = "sha256:feb1f7707914be764c62d46b76be91d650332d8a76e1f26c80ce2d503dc920d7"},
+    {file = "torch_scatter-2.1.1+pt20cu118-cp39-cp39-linux_x86_64.whl", hash = "sha256:905e9dfb2dba841ab64676380bd944797b76c17efb081047ae0a64bfbd4f2a42"},
+    {file = "torch_scatter-2.1.1+pt20cu118-cp39-cp39-win_amd64.whl", hash = "sha256:669c4f460c57ed8919ab647e0836cc45cbca5b488b88380547cde658cc6a06ef"},
+]
+
+[package.extras]
+test = ["pytest", "pytest-cov"]
+
+[package.source]
+type = "legacy"
+url = "https://data.pyg.org/whl/torch-2.0.0+cu118.html"
+reference = "pyg"
+
+[[package]]
 name = "torch-sparse"
 version = "0.6.17+pt20cu118"
 description = "PyTorch Extension Library of Optimized Autograd Sparse Matrix Operations"
@@ -5230,4 +5255,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11,<3.12"
-content-hash = "ea9efb0f90cfc75c25eec42ecc451c2afd5a7c1e3efc0c1ec1f3865a26fdc937"
+content-hash = "7a794a10c97a525db39626c5e8b630eabaa926ed7f67a85320e37c4326ccae7a"

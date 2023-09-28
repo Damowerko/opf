@@ -12,8 +12,8 @@ from pytorch_lightning.loggers.wandb import WandbLogger
 from torchcps.gnn import ParametricGNN
 
 from opf.dataset import CaseDataModule
+from opf.hetero import HeteroGCN
 from opf.modules import OPFLogBarrier
-from opf.utils import create_model
 
 
 def main():
@@ -42,7 +42,7 @@ def main():
     group.add_argument("--gradient_clip_val", type=float, default=0)
 
     # the gnn being used
-    ParametricGNN.add_args(parser)
+    HeteroGCN.add_args(parser)
     OPFLogBarrier.add_args(parser)
 
     params = parser.parse_args()
@@ -96,8 +96,10 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
 
 
 def train(trainer: Trainer, params):
-    dm = CaseDataModule(pin_memory=params["gpu"], **params)
-    model = create_model(params)
+    dm = CaseDataModule(pin_memory=params["gpu"], **params, hetero=True)
+    dm.setup()
+    gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
+    model = OPFLogBarrier(gcn, **params)
 
     # TODO: Add back once we can run ACOPF examples.
     # figure out the cost weight normalization factor
@@ -146,7 +148,6 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         weight_decay=trial.suggest_float("weight_decay", 1e-16, 1, log=True),
         n_layers=trial.suggest_int("n_layers", 1, 128),
         dropout=trial.suggest_float("dropout", 0, 1),
-        heads=8,
         n_channels=32,
         activation="leaky_relu",
         # loss function parameters, should be kept constant within study
@@ -169,8 +170,10 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         wandb_kwargs=dict(group=trial.study.study_name),
     )
 
-    dm = CaseDataModule(pin_memory=params["gpu"], **params)
-    model = create_model(params)
+    dm = CaseDataModule(pin_memory=params["gpu"], **params, hetero=True)
+    dm.setup()
+    gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
+    model = OPFLogBarrier(gcn, **params)
     trainer.fit(model, dm)
 
     # finish up

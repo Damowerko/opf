@@ -4,7 +4,7 @@ from torch_geometric.data import HeteroData
 from torch_geometric.datasets import FakeHeteroDataset
 from torch_geometric.transforms import ToSparseTensor
 
-from opf.hetero import HeteroParametricGNN
+from opf.hetero import HeteroGCN
 
 
 def test_hetero():
@@ -15,7 +15,7 @@ def test_hetero():
     data = transform(data)
     assert isinstance(data, HeteroData)
 
-    model = HeteroParametricGNN(
+    model = HeteroGCN(
         data.metadata(), in_channels=-1, out_channels=10, n_taps=4, mlp_per_gnn_layers=2
     )
     y_dict = model(data.x_dict, data.adj_t_dict)

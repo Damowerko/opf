@@ -100,6 +100,7 @@ class PowerflowParameters(torch.nn.Module):
         self.vad_min = fn(self.vad_min)
         self.vad_max = fn(self.vad_max)
         self.rate_a = fn(self.rate_a)
+        self.is_ref = fn(self.is_ref)
 
     def bus_parameters(self) -> torch.Tensor:
         """
@@ -211,7 +212,7 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
     return {
         "equality/bus_power": EqualityConstraint(True, False, d.Sbus, d.S),
         "equality/bus_reference": EqualityConstraint(
-            True, True, d.V.angle() * p.is_ref, torch.zeros(p.n_bus)
+            True, True, d.V.angle() * p.is_ref, torch.zeros(p.n_bus).to(d.V.device)
         ),
         "inequality/voltage_magnitude": InequalityConstraint(
             True, False, d.V.abs(), p.vm_min, p.vm_max

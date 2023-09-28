@@ -5,13 +5,14 @@ import typing
 from multiprocessing import cpu_count
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Optional, Tuple
+from typing import Optional
 
 import pytorch_lightning as pl
 import torch
 import torch_geometric.transforms as T
 from torch.utils.data import DataLoader, Dataset
 from torch_geometric.data import Batch, Data, HeteroData, download_url, extract_tar
+from torch_geometric.typing import EdgeType, NodeType
 
 import opf.powerflow as pf
 
@@ -78,55 +79,53 @@ def build_hetero_graph(
     params: pf.PowerflowParameters,
     self_loops: bool = True,
 ) -> HeteroData:
-    n_bus = params.n_bus
-    branch_nodes = torch.arange(params.n_branch) + n_bus
-
     graph = HeteroData()
+    graph["bus"].num_nodes = params.n_bus
+    graph["branch"].num_nodes = params.n_branch
+    branch_index = torch.arange(params.n_branch)
 
     # Define Anti-Symmetric Graph
 
     # From side of branches
     graph["bus", "from", "branch"].edge_index = torch.stack(
-        [params.fr_bus, branch_nodes], dim=0
-    )
-    graph["branch", "from", "bus"].edge_index = torch.stack(
-        [branch_nodes, params.fr_bus], dim=0
+        [params.fr_bus, branch_index], dim=0
     )
     graph["bus", "from", "branch"].edge_weight = torch.ones(params.n_branch)
+    graph["branch", "from", "bus"].edge_index = torch.stack(
+        [branch_index, params.fr_bus], dim=0
+    )
     graph["branch", "from", "bus"].edge_weight = -torch.ones(params.n_branch)
 
     # To side of branches
     graph["bus", "to", "branch"].edge_index = torch.stack(
-        [params.to_bus, branch_nodes], dim=0
-    )
-    graph["branch", "to", "bus"].edge_index = torch.stack(
-        [branch_nodes, params.to_bus], dim=0
+        [params.to_bus, branch_index], dim=0
     )
     graph["bus", "to", "branch"].edge_weight = torch.ones(params.n_branch)
+    graph["branch", "to", "bus"].edge_index = torch.stack(
+        [branch_index, params.to_bus], dim=0
+    )
     graph["branch", "to", "bus"].edge_weight = -torch.ones(params.n_branch)
 
     # Self-loops
     if self_loops:
         graph["bus", "self", "bus"].edge_index = torch.stack(
-            [torch.arange(n_bus), torch.arange(n_bus)], dim=0
+            [torch.arange(params.n_bus), torch.arange(params.n_bus)], dim=0
         )
+        graph["bus", "self", "bus"].edge_weight = torch.ones(params.n_bus)
         graph["branch", "self", "branch"].edge_index = torch.stack(
-            [branch_nodes, branch_nodes], dim=0
+            [branch_index, branch_index], dim=0
         )
-        graph["bus", "self", "bus"].edge_weight = torch.ones(n_bus)
         graph["branch", "self", "branch"].edge_weight = torch.ones(params.n_branch)
 
     return graph
 
 
-def _concat_features(*features: torch.Tensor):
+def _concat_features(n_samples: int, *features: torch.Tensor):
     """
     Concatenate the features along the last dimension.
     Args:
         features: Node features with shape (n_samples, num_nodes, num_features) or (num_nodes, num_features).
     """
-    # Get the number of samples
-    n_samples = max(x.shape[0] for x in features if len(x.shape) == 3)
     # If node features do not have a `n_samples` dimension add it
     # Useing expand creates a view instead of a copy of the tensor
     expanded = [
@@ -225,11 +224,11 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
 
     def __getitem__(self, index) -> PowerflowData:
         # shallow copy, to avoid copying tensors
-        graph = copy.copy(self.graph)
-        graph["bus"].x = self.x_bus[index]
-        graph["branch"].x = self.x_branch[index]
+        data = copy.copy(self.graph)
+        data["bus"].x = self.x_bus[index]
+        data["branch"].x = self.x_branch[index]
         return PowerflowData(
-            graph,
+            data,
             self.powerflow_parameters,
         )
 
@@ -248,7 +247,7 @@ class CaseDataModule(pl.LightningDataModule):
         load_distribution_width=0.2,
         num_workers=min(cpu_count(), 8),
         pin_memory=False,
-        bipartite=False,
+        hetero=False,
         **kwargs,
     ):
         super().__init__()
@@ -260,8 +259,10 @@ class CaseDataModule(pl.LightningDataModule):
         self.load_distribution_width = load_distribution_width
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-        self.hetero = bipartite
+        self.hetero = hetero
 
+        self.powerflow_parameters = None
+        self.graph = None
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
@@ -282,47 +283,66 @@ class CaseDataModule(pl.LightningDataModule):
     def case_path(self):
         return Path(self.data_dir / f"{self.case_name}.json")
 
-    def setup(self, stage: Optional[str] = None):
-        # load from json
-        with open(self.case_path) as f:
-            powermodels_dict = json.load(f)
+    def metadata(self) -> tuple[list[NodeType], list[EdgeType]]:
+        if not self.hetero:
+            raise ValueError("Metadata is only available for hetero graphs.")
+        if self.graph is None:
+            raise ValueError("Graph is not initialized. Call `setup()` first.")
+        dataset = self.train_dataset or self.val_dataset or self.test_dataset
+        assert isinstance(dataset, StaticHeteroDataset)
+        return dataset[0][0].metadata()
 
-        # parse the powermodels dict
-        powerflow_parameters = pf.parameters_from_powermodels(
-            powermodels_dict, self.case_path.as_posix()
-        )
-        bus_parameters = powerflow_parameters.bus_parameters()
-        if self.hetero:
-            graph = build_hetero_graph(powerflow_parameters)
-        else:
-            graph = build_graph(powerflow_parameters)
+    def setup(self, stage: Optional[str] = None):
+        if self.powerflow_parameters is None:
+            # load from json
+            with open(self.case_path) as f:
+                powermodels_dict = json.load(f)
+
+            # parse the powermodels dict
+            self.powerflow_parameters = pf.parameters_from_powermodels(
+                powermodels_dict, self.case_path.as_posix()
+            )
+        if self.graph is None:
+            if self.hetero:
+                self.graph = build_hetero_graph(self.powerflow_parameters)
+            else:
+                self.graph = build_graph(self.powerflow_parameters)
+
+        bus_parameters = self.powerflow_parameters.bus_parameters()
+        branch_parameters = self.powerflow_parameters.branch_parameters()
 
         def dataset_from_load(load: torch.Tensor):
-            bus_load = (load.mT @ powerflow_parameters.load_matrix).mT
+            assert self.powerflow_parameters is not None
+            n_samples = load.shape[0]
+
+            bus_load = (load.mT @ self.powerflow_parameters.load_matrix).mT
             bus_features = _concat_features(
+                n_samples,
                 bus_load,
                 bus_parameters,
             ).to(bus_load.dtype)
+
             if self.hetero:
-                assert isinstance(graph, HeteroData)
+                assert isinstance(self.graph, HeteroData)
                 branch_features = _concat_features(
-                    powerflow_parameters.branch_parameters(),
+                    n_samples,
+                    branch_parameters,
                 ).to(bus_load.dtype)
                 return StaticHeteroDataset(
                     bus_features,
                     branch_features,
-                    graph,
-                    powerflow_parameters,
+                    self.graph,
+                    self.powerflow_parameters,
                 )
             else:
-                assert isinstance(graph, Data)
+                assert isinstance(self.graph, Data)
                 return StaticGraphDataset(
                     bus_features,
-                    graph,
-                    powerflow_parameters,
+                    self.graph,
+                    self.powerflow_parameters,
                 )
 
-        if stage in (None, "fit"):
+        if stage in (None, "fit") and not self.train_dataset:
             # The file contains a list of dicts, each dict contains the load, solution to a case
             # they are guaranteed to be feasible this way
             with open(self.data_dir / f"{self.case_name}.train.json") as f:
@@ -332,7 +352,7 @@ class CaseDataModule(pl.LightningDataModule):
                 n_val = n_samples - n_train
 
                 # average objective value for the validation set
-                powerflow_parameters.reference_cost = sum(
+                self.powerflow_parameters.reference_cost = sum(
                     [d["result"]["objective"] / n_val for d in train_dicts[n_train:]]
                 )
 
@@ -354,13 +374,13 @@ class CaseDataModule(pl.LightningDataModule):
                 )
                 self.val_dataset = dataset_from_load(validation_load)
 
-        if stage in (None, "test"):
+        if stage in (None, "test") and not self.test_dataset:
             with open(self.data_dir / f"{self.case_name}.test.json") as f:
                 test_dicts: list[dict] = json.load(f)
                 n_test = len(test_dicts)
 
                 # average objective value for the test set
-                powerflow_parameters.reference_cost = sum(
+                self.powerflow_parameters.reference_cost = sum(
                     [d["result"]["objective"] / n_test for d in test_dicts]
                 )
 

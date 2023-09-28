@@ -28,6 +28,7 @@ psycopg2-binary = "^2.9.7"
 plotly = "^5.16.1"
 torch-sparse = "^0.6.17+pt20cu118"
 pyg-lib = "^0.2.0+pt20cu118"
+torch-scatter = "^2.1.1+pt20cu118"
 
 [[tool.poetry.source]]
 name = "PyPI"

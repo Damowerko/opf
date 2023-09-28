@@ -7,7 +7,7 @@ from typing import Dict
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from torch_geometric.data import Data
+from torch_geometric.data import Data, HeteroData
 
 import opf.powerflow as pf
 from opf.constraints import equality, inequality
@@ -17,7 +17,7 @@ from opf.dataset import PowerflowBatch, PowerflowData
 class OPFLogBarrier(pl.LightningModule):
     def __init__(
         self,
-        model,
+        model: torch.nn.Module,
         t=500,
         s=100,
         cost_weight=1.0,
@@ -63,15 +63,24 @@ class OPFLogBarrier(pl.LightningModule):
         input: PowerflowBatch | PowerflowData,
     ):
         data, powerflow_parameters = input
-        assert isinstance(data, Data)
-        n_batch = data.x.shape[0] // powerflow_parameters.n_bus
-        bus = self.model(data.x, data.edge_index, data.edge_attr)
+        if isinstance(data, HeteroData):
+            n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
+            bus = self.model(data.x_dict, data.adj_t_dict)["bus"]
+            load = data["bus"].x[:, :2]
+        elif isinstance(data, Data):
+            n_batch = data.x.shape[0] // powerflow_parameters.n_bus
+            bus = self.model(data.x, data.edge_index, data.edge_attr)
+            load = data.x[:, :2]
+        else:
+            raise ValueError(
+                f"Unsupported data type {type(data)} expected Data or HeteroData."
+            )
 
         # Reshape the output to (batch_size, n_features, n_bus)
         # Where n_features is 4 and 2 for bus and load respectively.
         bus = bus.view(n_batch, powerflow_parameters.n_bus, 4).mT
-        # assume that the first two features are the active and reactive load
-        load = data.x[:, :2].view(n_batch, powerflow_parameters.n_bus, 2).mT
+        # Similar shape for load
+        load = load.view(n_batch, powerflow_parameters.n_bus, 2).mT
         V, Sg = self.parse_bus(bus)
         Sd = self.parse_load(load)
         if self._enforce_constraints:
@@ -119,8 +128,16 @@ class OPFLogBarrier(pl.LightningModule):
         _, constraints, cost, loss = self._step_helper(
             *self.forward(batch), batch.powerflow_parameters
         )
-        self.log("train/loss", loss, prog_bar=True)
-        self.log_dict(self.metrics(cost, constraints, "train", self.detailed_metrics))
+        self.log(
+            "train/loss",
+            loss,
+            prog_bar=True,
+            batch_size=batch.data.num_graphs,
+        )
+        self.log_dict(
+            self.metrics(cost, constraints, "train", self.detailed_metrics),
+            batch_size=batch.data.num_graphs,
+        )
         return loss
 
     def validation_step(self, batch: PowerflowBatch, *args):
@@ -128,8 +145,16 @@ class OPFLogBarrier(pl.LightningModule):
             _, constraints, cost, loss = self._step_helper(
                 *self.forward(batch), batch.powerflow_parameters
             )
-            self.log("val/loss", loss, prog_bar=True)
-            self.log_dict(self.metrics(cost, constraints, "val", self.detailed_metrics))
+            self.log(
+                "val/loss",
+                loss,
+                prog_bar=True,
+                batch_size=batch.data.num_graphs,
+            )
+            self.log_dict(
+                self.metrics(cost, constraints, "val", self.detailed_metrics),
+                batch_size=batch.data.num_graphs,
+            )
 
     def test_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
@@ -141,7 +166,10 @@ class OPFLogBarrier(pl.LightningModule):
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
             )
-            self.log_dict(test_metrics, batch_size=batch.data.num_graphs)
+            self.log_dict(
+                test_metrics,
+                batch_size=batch.data.num_graphs,
+            )
             # TODO: rethink how to do comparison against ACOPF
             # Test the ACOPF solution for reference.
             # acopf_bus = self.bus_from_polar(acopf_bus)

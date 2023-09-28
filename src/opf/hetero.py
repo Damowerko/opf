@@ -182,7 +182,7 @@ class HeteroResidualBlock(nn.Module):
         return x
 
 
-class HeteroParametricGNN(nn.Module):
+class HeteroGCN(nn.Module):
     activation_choices: typing.Dict[str, Type[nn.Module]] = {
         "tanh": nn.Tanh,
         "relu": nn.ReLU,
@@ -191,7 +191,7 @@ class HeteroParametricGNN(nn.Module):
 
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
-        group = parser.add_argument_group(HeteroParametricGNN.__name__)
+        group = parser.add_argument_group(HeteroGCN.__name__)
         group.add_argument(
             "--n_channels",
             type=int,
@@ -205,7 +205,7 @@ class HeteroParametricGNN(nn.Module):
             "--activation",
             type=str,
             default="leaky_relu",
-            choices=list(HeteroParametricGNN.activation_choices),
+            choices=list(HeteroGCN.activation_choices),
         )
         group.add_argument(
             "--mlp_read_layers",
@@ -241,7 +241,7 @@ class HeteroParametricGNN(nn.Module):
         metadata: tuple[list[NodeType], list[EdgeType]],
         in_channels: int,
         out_channels: int,
-        n_taps: int,
+        n_taps: int = 4,
         n_layers: int = 2,
         n_channels: int = 32,
         activation: typing.Union[nn.Module, str] = "leaky_relu",
@@ -270,7 +270,7 @@ class HeteroParametricGNN(nn.Module):
         """
         super().__init__()
         if isinstance(activation, str):
-            activation = HeteroParametricGNN.activation_choices[activation]()
+            activation = HeteroGCN.activation_choices[activation]()
 
         if mlp_read_layers < 1:
             raise ValueError("mlp_read_layers must be >= 1.")
