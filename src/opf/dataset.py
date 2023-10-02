@@ -78,11 +78,13 @@ def build_graph(
 def build_hetero_graph(
     params: pf.PowerflowParameters,
     self_loops: bool = True,
+    antisymmetric: bool = True,
 ) -> HeteroData:
     graph = HeteroData()
     graph["bus"].num_nodes = params.n_bus
     graph["branch"].num_nodes = params.n_branch
     branch_index = torch.arange(params.n_branch)
+    reverse_coef = -1 if antisymmetric else 1
 
     # Define Anti-Symmetric Graph
 
@@ -94,7 +96,9 @@ def build_hetero_graph(
     graph["branch", "from", "bus"].edge_index = torch.stack(
         [branch_index, params.fr_bus], dim=0
     )
-    graph["branch", "from", "bus"].edge_weight = -torch.ones(params.n_branch)
+    graph["branch", "from", "bus"].edge_weight = reverse_coef * torch.ones(
+        params.n_branch
+    )
 
     # To side of branches
     graph["bus", "to", "branch"].edge_index = torch.stack(
@@ -104,7 +108,9 @@ def build_hetero_graph(
     graph["branch", "to", "bus"].edge_index = torch.stack(
         [branch_index, params.to_bus], dim=0
     )
-    graph["branch", "to", "bus"].edge_weight = -torch.ones(params.n_branch)
+    graph["branch", "to", "bus"].edge_weight = reverse_coef * torch.ones(
+        params.n_branch
+    )
 
     # Self-loops
     if self_loops:
@@ -216,6 +222,7 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
             )
         self.x_bus = bus_features
         self.x_branch = branch_features
+        graph = T.GCNNorm(False)(graph.to_homogeneous()).to_heterogeneous()
         self.graph = T.ToSparseTensor()(graph)
         self.powerflow_parameters = powerflow_parameters
 
@@ -304,7 +311,7 @@ class CaseDataModule(pl.LightningDataModule):
             )
         if self.graph is None:
             if self.hetero:
-                self.graph = build_hetero_graph(self.powerflow_parameters)
+                self.graph = build_hetero_graph(self.powerflow_parameters, True, False)
             else:
                 self.graph = build_graph(self.powerflow_parameters)
 
