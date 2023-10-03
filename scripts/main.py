@@ -10,6 +10,7 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers.wandb import WandbLogger
 from torchcps.gnn import ParametricGNN
+from wandb.wandb_run import Run
 
 from opf.dataset import CaseDataModule
 from opf.hetero import HeteroGCN
@@ -33,6 +34,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--fast_dev_run", action="store_true", default=False)
     parser.add_argument("--num_workers", type=int, default=0)
+    parser.add_argument("--homo", action="store_true", default=False)
 
     # trainer arguments
     group = parser.add_argument_group("Trainer")
@@ -67,9 +69,17 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
             save_dir=params["log_dir"],
             config=params,
             log_model=True,
-            **wandb_kwargs,
         )
+
         logger.log_hyperparams(params)
+        typing.cast(Run, logger.experiment).log_code(
+            Path(__file__).parent.parent,
+            include_fn=lambda path: (
+                (path.endswith(".py") or path.endswith(".jl"))
+                and "logs" not in path
+                and ("src" in path or "scripts" in path)
+            ),
+        )
 
         # logger specific callbacks
         callbacks += [
@@ -96,9 +106,12 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
 
 
 def train(trainer: Trainer, params):
-    dm = CaseDataModule(pin_memory=params["gpu"], **params, hetero=True)
-    dm.setup()
-    gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
+    dm = CaseDataModule(pin_memory=params["gpu"], **params)
+    if params["homo"]:
+        gcn = ParametricGNN(in_channels=-1, out_channels=4, **params)
+    else:
+        dm.setup()
+        gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
     model = OPFLogBarrier(gcn, **params)
 
     # TODO: Add back once we can run ACOPF examples.
@@ -170,10 +183,15 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         wandb_kwargs=dict(group=trial.study.study_name),
     )
 
-    dm = CaseDataModule(pin_memory=params["gpu"], **params, hetero=True)
-    dm.setup()
-    gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
+    dm = CaseDataModule(pin_memory=params["gpu"], **params)
+    if params["hetero"]:
+        dm.setup()
+        gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
+    else:
+        gcn = ParametricGNN(in_channels=-1, out_channels=4, **params)
     model = OPFLogBarrier(gcn, **params)
+
+    # train the model
     trainer.fit(model, dm)
 
     # finish up

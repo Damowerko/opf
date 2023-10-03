@@ -1,12 +1,13 @@
-# Project
+## Project
 data/
+# If data is symlinked it will be a file
 data
 logs/
 scripts/latest.ckpt
 **/wandb
 figures/
 
-# IDE
+## IDE
 .idea/
 .vscode/
 

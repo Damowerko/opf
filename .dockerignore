@@ -1,7 +1,18 @@
-.pytest_cache/
-.vscode/
-cluster/
+## Project
 data/
-figures/
-models/
+# If data is symlinked it will be a file
+data
 logs/
+scripts/latest.ckpt
+**/wandb
+figures/
+
+## IDE
+.idea/
+.vscode/
+
+#Python
+**/__pycache__/
+**/.ipynb_checkpoints/
+.python-version
+.pytest_cache

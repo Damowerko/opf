@@ -17,22 +17,19 @@ ENV VIRTUAL_ENV=/home/$USERNAME/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# upgrade pip
-RUN pip install --upgrade pip
+# install torch to avoid rebuilding the image every time
+RUN pip install torch==2.0.0
 
 # install poetry
 RUN curl -sSL https://install.python-poetry.org | python3 - \
     && poetry config virtualenvs.create false \
     && poetry config installer.max-workers 10
 
-# install torch to avoid rebuilding the image every time
-RUN pip install torch==2.0.0
-
 # install requirements
 COPY poetry.lock pyproject.toml README.md ./
 RUN poetry install --no-root
 
+# Copy whole repo, .dockerignore should exclude everything unnecessary
+COPY . .
 # install opf package in editable mode
-COPY src src
-COPY scripts scripts
 RUN poetry install --only-root

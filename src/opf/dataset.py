@@ -254,7 +254,7 @@ class CaseDataModule(pl.LightningDataModule):
         load_distribution_width=0.2,
         num_workers=min(cpu_count(), 8),
         pin_memory=False,
-        hetero=False,
+        homo=False,
         **kwargs,
     ):
         super().__init__()
@@ -266,7 +266,7 @@ class CaseDataModule(pl.LightningDataModule):
         self.load_distribution_width = load_distribution_width
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-        self.hetero = hetero
+        self.homo = homo
 
         self.powerflow_parameters = None
         self.graph = None
@@ -291,7 +291,7 @@ class CaseDataModule(pl.LightningDataModule):
         return Path(self.data_dir / f"{self.case_name}.json")
 
     def metadata(self) -> tuple[list[NodeType], list[EdgeType]]:
-        if not self.hetero:
+        if self.homo:
             raise ValueError("Metadata is only available for hetero graphs.")
         if self.graph is None:
             raise ValueError("Graph is not initialized. Call `setup()` first.")
@@ -310,10 +310,10 @@ class CaseDataModule(pl.LightningDataModule):
                 powermodels_dict, self.case_path.as_posix()
             )
         if self.graph is None:
-            if self.hetero:
-                self.graph = build_hetero_graph(self.powerflow_parameters, True, False)
-            else:
+            if self.homo:
                 self.graph = build_graph(self.powerflow_parameters)
+            else:
+                self.graph = build_hetero_graph(self.powerflow_parameters, True, False)
 
         bus_parameters = self.powerflow_parameters.bus_parameters()
         branch_parameters = self.powerflow_parameters.branch_parameters()
@@ -329,7 +329,14 @@ class CaseDataModule(pl.LightningDataModule):
                 bus_parameters,
             ).to(bus_load.dtype)
 
-            if self.hetero:
+            if self.homo:
+                assert isinstance(self.graph, Data)
+                return StaticGraphDataset(
+                    bus_features,
+                    self.graph,
+                    self.powerflow_parameters,
+                )
+            else:
                 assert isinstance(self.graph, HeteroData)
                 branch_features = _concat_features(
                     n_samples,
@@ -338,13 +345,6 @@ class CaseDataModule(pl.LightningDataModule):
                 return StaticHeteroDataset(
                     bus_features,
                     branch_features,
-                    self.graph,
-                    self.powerflow_parameters,
-                )
-            else:
-                assert isinstance(self.graph, Data)
-                return StaticGraphDataset(
-                    bus_features,
                     self.graph,
                     self.powerflow_parameters,
                 )
