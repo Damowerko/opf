@@ -13,10 +13,16 @@ s = ArgParseSettings()
     help = "Output directory path."
     arg_type = String
     default = "./data"
+    "--label_train"
+    help = "If provided will label the training data else only generate the data."
+    action = :store_true
+    default = false
     "--n_train"
-    help = "Number of (labeled) samples to generate."
+    help = "Number of samples to generate if `--label_train` is provided the samples will be labeled."
     arg_type = Int
     required = true
+    "--n_valid"
+    help = "Number of (labeled) samples to generate."
     "--n_test"
     help = "Number of (labeled) samples to generate."
     arg_type = Int
@@ -24,11 +30,11 @@ s = ArgParseSettings()
     "--min_load"
     help = "Width of the uniform distribution to sample the load."
     arg_type = Float64
-    default = 0.8
+    default = 0.9
     "--max_load"
     help = "Width of the uniform distribution to sample the load."
     arg_type = Float64
-    default = 1.2
+    default = 1.1
 end
 args = parse_args(ARGS, s)
 
@@ -89,7 +95,7 @@ end
 Generate `n_samples` from the power system network. Each sample is labeled with the optimal solution.
 Samples that did not converge are discarded.
 """
-function generate_samples(network_data, n_samples, min_load=0.8, max_load=1.2)::Array{Dict,1}
+function generate_samples(network_data, n_samples, min_load=0.9, max_load=1.1)::Array{Dict,1}
     count_atomic = Threads.Atomic{Int}(0)
     samples = Array{Dict,1}(undef, n_samples)
     progress = Progress(n_samples)
@@ -142,6 +148,7 @@ function main()
     casename = replace(splitext(basename(casefile))[1], "pglib_opf_" => "")
     out_dir = args["out"]
     n_train = args["n_train"]
+    n_valid = args["n_valid"]
     n_test = args["n_test"]
     min_load = args["min_load"]
     max_load = args["max_load"]
@@ -165,15 +172,25 @@ function main()
     end
 
     # generate the labeled samples
-    n_samples = n_train + n_test
+    n_samples = n_train + n_valid + n_test
     samples = generate_samples(network_data, n_samples, min_load, max_load)
-    samples_valid = @view samples[1:n_train]
-    samples_test = @view samples[(n_train+1):end]
-    open(joinpath(out_dir, casename * ".train.json"), "w") do f
-        JSON.print(f, samples_valid)
+    samples_train = @view samples[1:n_train]
+    samples_valid = @view samples[(n_train+1):(n_train+n_valid)]
+    samples_test = @view samples[(n_train+n_valid+1):end]
+    if n_train > 0
+        open(joinpath(out_dir, casename * ".train.json"), "w") do f
+            JSON.print(f, samples_train)
+        end
     end
-    open(joinpath(out_dir, casename * ".test.json"), "w") do f
-        JSON.print(f, samples_test)
+    if n_valid > 0
+        open(joinpath(out_dir, casename * ".valid.json"), "w") do f
+            JSON.print(f, samples_valid)
+        end
+    end
+    if n_test > 0
+        open(joinpath(out_dir, casename * ".test.json"), "w") do f
+            JSON.print(f, samples_test)
+        end
     end
 end
 

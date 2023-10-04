@@ -250,8 +250,6 @@ class CaseDataModule(pl.LightningDataModule):
         case_name="case1354_pegase__api",
         data_dir="./data",
         batch_size=32,
-        ratio_train=0.95,
-        load_distribution_width=0.2,
         num_workers=min(cpu_count(), 8),
         pin_memory=False,
         homo=False,
@@ -262,8 +260,6 @@ class CaseDataModule(pl.LightningDataModule):
         self.data_dir = Path(data_dir)
         self.pglib_path = Path(self.data_dir, f"pglib-opf-{PGLIB_VERSION}")
         self.batch_size = batch_size
-        self.ratio_trian = ratio_train
-        self.load_distribution_width = load_distribution_width
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.homo = homo
@@ -301,7 +297,6 @@ class CaseDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
         if self.powerflow_parameters is None:
-            # load from json
             with open(self.case_path) as f:
                 powermodels_dict = json.load(f)
 
@@ -318,8 +313,13 @@ class CaseDataModule(pl.LightningDataModule):
         bus_parameters = self.powerflow_parameters.bus_parameters()
         branch_parameters = self.powerflow_parameters.branch_parameters()
 
-        def dataset_from_load(load: torch.Tensor):
+        def parse_dataset(dicts: list[dict]):
             assert self.powerflow_parameters is not None
+
+            # convert to torch tensors
+            load = torch.stack(
+                [pf.powermodels_to_tensor(d["load"], ["pd", "qd"]) for d in dicts]
+            )
             n_samples = load.shape[0]
 
             bus_load = (load.mT @ self.powerflow_parameters.load_matrix).mT
@@ -349,55 +349,29 @@ class CaseDataModule(pl.LightningDataModule):
                     self.powerflow_parameters,
                 )
 
-        if stage in (None, "fit") and not self.train_dataset:
-            # The file contains a list of dicts, each dict contains the load, solution to a case
-            # they are guaranteed to be feasible this way
-            with open(self.data_dir / f"{self.case_name}.train.json") as f:
+        # Labeled data is stored as a json file, which describes a list of dictionaries
+        # Each dict contains {"load" => another dict describing all the loads, "solution" => a solution to the powermodels problem}
+        if stage in (None, "fit"):
+            with self.case_path.with_suffix(".train.json").open() as f:
                 train_dicts: list[dict] = json.load(f)
-                n_samples = len(train_dicts)
-                n_train = int(self.ratio_trian * n_samples)
-                n_val = n_samples - n_train
+                self.train_dataset = parse_dataset(train_dicts)
 
+            with self.case_path.with_suffix(".valid.json").open() as f:
+                valid_dicts = json.load(f)
+                self.val_dataset = parse_dataset(valid_dicts)
                 # average objective value for the validation set
                 self.powerflow_parameters.reference_cost = sum(
-                    [d["result"]["objective"] / n_val for d in train_dicts[n_train:]]
+                    [d["result"]["objective"] / len(valid_dicts) for d in valid_dicts]
                 )
 
-                # convert training data to torch tensors
-                train_load = torch.stack(
-                    [
-                        pf.powermodels_to_tensor(d["load"], ["pd", "qd"])
-                        for d in train_dicts[:n_train]
-                    ]
-                )
-                self.train_dataset = dataset_from_load(train_load)
-
-                # convert validation data to torch tensors
-                validation_load = torch.stack(
-                    [
-                        pf.powermodels_to_tensor(d["load"], ["pd", "qd"])
-                        for d in train_dicts[n_train:]
-                    ]
-                )
-                self.val_dataset = dataset_from_load(validation_load)
-
-        if stage in (None, "test") and not self.test_dataset:
-            with open(self.data_dir / f"{self.case_name}.test.json") as f:
+        if stage in (None, "test"):
+            with self.case_path.with_suffix(".test.json").open() as f:
                 test_dicts: list[dict] = json.load(f)
-                n_test = len(test_dicts)
-
+                self.test_dataset = parse_dataset(test_dicts)
                 # average objective value for the test set
                 self.powerflow_parameters.reference_cost = sum(
-                    [d["result"]["objective"] / n_test for d in test_dicts]
+                    [d["result"]["objective"] / len(test_dicts) for d in test_dicts]
                 )
-
-                test_load = torch.stack(
-                    [
-                        pf.powermodels_to_tensor(d["load"], ["pd", "qd"])
-                        for d in test_dicts
-                    ]
-                )
-                self.test_dataset = dataset_from_load(test_load)
 
     def train_dataloader(self):
         if self.train_dataset is None:
