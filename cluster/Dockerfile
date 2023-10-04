@@ -13,6 +13,9 @@ USER $USERNAME
 ENV PATH="/home/$USERNAME/.local/bin:${PATH}"
 WORKDIR /home/$USERNAME/opf
 
+# fix for git user ownership issue
+RUN git config --global --add safe.directory /home/$USERNAME/opf
+
 ENV VIRTUAL_ENV=/home/$USERNAME/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
@@ -30,7 +33,6 @@ COPY poetry.lock pyproject.toml README.md ./
 RUN poetry install --no-root
 
 # Copy whole repo, .dockerignore should exclude everything unnecessary
-RUN git config --global --add safe.directory /home/$USERNAME/opf
 COPY . .
 # install opf package in editable mode
 RUN poetry install --only-root
