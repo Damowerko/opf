@@ -14,7 +14,6 @@ from IPython.display import HTML
 from pytorch_lightning.callbacks import Callback
 
 from opf.modules import OPFLogBarrier
-from opf.utils import create_model
 
 
 class CacheOutputs(Callback):

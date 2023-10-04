@@ -161,7 +161,7 @@ class OPFLogBarrier(pl.LightningModule):
             _, constraints, cost, _ = self._step_helper(
                 *self.forward(batch),
                 batch.powerflow_parameters,
-                substitute_equality=True,
+                project_powermodels=True,
             )
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
