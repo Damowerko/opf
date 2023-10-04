@@ -77,7 +77,7 @@ python -c "import julia; julia.install()"
 ```
 This will install and configure PyCall in the julia installation. There are couple dependencies for PandaPower-PowerModels.jl integration. Open up julia REPL and press `]` to manage the packages. Then run the following.
 ```
-add Ipopt PowerModels PandaModels JSON Cbc Juniper JuMP ProgressMeter ArgParse NPZ
+add Ipopt PowerModels PandaModels JSON Cbc Juniper JuMP ProgressMeter ArgParse NPZ ZipFile
 ```
 You might want to run `test PandaModels` in the julia pakcage manager to test the installation.
 

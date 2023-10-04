@@ -6,6 +6,7 @@ from multiprocessing import cpu_count
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Optional
+from zipfile import ZipFile
 
 import pytorch_lightning as pl
 import torch
@@ -351,27 +352,30 @@ class CaseDataModule(pl.LightningDataModule):
 
         # Labeled data is stored as a json file, which describes a list of dictionaries
         # Each dict contains {"load" => another dict describing all the loads, "solution" => a solution to the powermodels problem}
-        if stage in (None, "fit"):
-            with self.case_path.with_suffix(".train.json").open() as f:
-                train_dicts: list[dict] = json.load(f)
-                self.train_dataset = parse_dataset(train_dicts)
-
-            with self.case_path.with_suffix(".valid.json").open() as f:
-                valid_dicts = json.load(f)
-                self.val_dataset = parse_dataset(valid_dicts)
-                # average objective value for the validation set
-                self.powerflow_parameters.reference_cost = sum(
-                    [d["result"]["objective"] / len(valid_dicts) for d in valid_dicts]
-                )
-
-        if stage in (None, "test"):
-            with self.case_path.with_suffix(".test.json").open() as f:
-                test_dicts: list[dict] = json.load(f)
-                self.test_dataset = parse_dataset(test_dicts)
-                # average objective value for the test set
-                self.powerflow_parameters.reference_cost = sum(
-                    [d["result"]["objective"] / len(test_dicts) for d in test_dicts]
-                )
+        # The train, valid, and test datasets are stored together in a zip file
+        with ZipFile(self.case_path.with_suffix(".zip")) as z:
+            if stage in (None, "fit"):
+                with z.open(f"{self.case_name}_train.json") as f:
+                    train_dicts: list[dict] = json.load(f)
+                    self.train_dataset = parse_dataset(train_dicts)
+                with z.open(f"{self.case_name}_valid.json") as f:
+                    valid_dicts = json.load(f)
+                    self.val_dataset = parse_dataset(valid_dicts)
+                    # average objective value for the validation set
+                    self.powerflow_parameters.reference_cost = sum(
+                        [
+                            d["result"]["objective"] / len(valid_dicts)
+                            for d in valid_dicts
+                        ]
+                    )
+            if stage in (None, "test"):
+                with z.open(f"{self.case_name}_test.json") as f:
+                    test_dicts: list[dict] = json.load(f)
+                    self.test_dataset = parse_dataset(test_dicts)
+                    # average objective value for the test set
+                    self.powerflow_parameters.reference_cost = sum(
+                        [d["result"]["objective"] / len(test_dicts) for d in test_dicts]
+                    )
 
     def train_dataloader(self):
         if self.train_dataset is None:

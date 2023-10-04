@@ -16,13 +16,14 @@ s = ArgParseSettings()
     "--label_train"
     help = "If provided will label the training data else only generate the data."
     action = :store_true
-    default = false
     "--n_train"
     help = "Number of samples to generate if `--label_train` is provided the samples will be labeled."
     arg_type = Int
     required = true
     "--n_valid"
     help = "Number of (labeled) samples to generate."
+    arg_type = Int
+    required = true
     "--n_test"
     help = "Number of (labeled) samples to generate."
     arg_type = Int
@@ -46,6 +47,7 @@ using JuMP
 using ProgressMeter
 using JSON
 using Pkg
+using ZipFile
 
 # load HSL if available
 try
@@ -61,7 +63,7 @@ Sample a network model based on the reference case.
 
 Currently we only sample the load uniformly +- `width` around the reference case.
 """
-function sample_load(network_data::Dict{String,Any}, min_load=0.8, max_load=1.2)::Dict{String,Any}
+function sample_load(network_data::Dict{String,Any}, min_load=0.9, max_load=1.1)::Dict{String,Any}
     load = deepcopy(network_data["load"])
     for (k, v) in load
         # sample load around [REF * min_load, REF * max_load]
@@ -91,6 +93,17 @@ function label_network(network_data::Dict{String,Any}, load::Dict{String,Any})::
     return result, solved
 end
 
+function generate_samples_unlabeled(network_data, n_samples, min_load=0.9, max_load=1.1)::Array{Dict,1}
+    samples = Array{Dict,1}(undef, n_samples)
+    progress = Progress(n_samples, desc="Generating unlabeled samples:")
+    Threads.@threads for i = 1:n_samples
+        load = sample_load(network_data, min_load, max_load)
+        samples[i] = Dict("load" => load)
+        next!(progress)
+    end
+    return samples
+end
+
 """
 Generate `n_samples` from the power system network. Each sample is labeled with the optimal solution.
 Samples that did not converge are discarded.
@@ -98,7 +111,7 @@ Samples that did not converge are discarded.
 function generate_samples(network_data, n_samples, min_load=0.9, max_load=1.1)::Array{Dict,1}
     count_atomic = Threads.Atomic{Int}(0)
     samples = Array{Dict,1}(undef, n_samples)
-    progress = Progress(n_samples)
+    progress = Progress(n_samples, desc="Generating labeled samples:")
     Threads.@threads for i = 1:n_samples
         solved = false
         while !solved
@@ -152,46 +165,57 @@ function main()
     n_test = args["n_test"]
     min_load = args["min_load"]
     max_load = args["max_load"]
+    label_train = args["label_train"]
 
+    
     if max_load <= min_load
         error("max_load must be greater than min_load")
     end
-
+    
     println("There are $(Threads.nthreads()) threads available.")
-
+    
     # load case file
     network_data = PowerModels.parse_file(casefile)
     # reindex bus ids to be contiguous from 1 to N
     network_data = reindex_bus(network_data)
-
+    
     check_assumptions!(network_data)
-
+    
     # save network data in JSON format
     open(joinpath(out_dir, casename * ".json"), "w") do f
         JSON.print(f, network_data, 4)
     end
 
-    # generate the labeled samples
-    n_samples = n_train + n_valid + n_test
-    samples = generate_samples(network_data, n_samples, min_load, max_load)
-    samples_train = @view samples[1:n_train]
-    samples_valid = @view samples[(n_train+1):(n_train+n_valid)]
-    samples_test = @view samples[(n_train+n_valid+1):end]
+    if label_train
+        # generate the labeled samples
+        n_labeled = n_train + n_valid + n_test
+        samples = generate_samples(network_data, n_labeled, min_load, max_load)
+        samples_train = @view samples[1:n_train]
+        samples_valid = @view samples[(n_train+1):(n_train+n_valid)]
+        samples_test = @view samples[(n_train+n_valid+1):end]
+    else
+        samples_train = generate_samples_unlabeled(network_data, n_train, min_load, max_load)
+        n_labeled = n_valid + n_test
+        samples = generate_samples(network_data, n_labeled, min_load, max_load)
+        samples_valid = @view samples[1:n_valid]
+        samples_test = @view samples[(n_valid+1):end]
+    end
+
+    # write data to zip file
+    writer = ZipFile.Writer(joinpath(out_dir, casename * ".zip"))
     if n_train > 0
-        open(joinpath(out_dir, casename * ".train.json"), "w") do f
-            JSON.print(f, samples_train)
-        end
+        f = ZipFile.addfile(writer, casename * "_train.json")
+        JSON.print(f, samples_train)
     end
     if n_valid > 0
-        open(joinpath(out_dir, casename * ".valid.json"), "w") do f
-            JSON.print(f, samples_valid)
-        end
+        f = ZipFile.addfile(writer, casename * "_valid.json")
+        JSON.print(f, samples_valid)
     end
     if n_test > 0
-        open(joinpath(out_dir, casename * ".test.json"), "w") do f
-            JSON.print(f, samples_test)
-        end
+        f = ZipFile.addfile(writer, casename * "_test.json")
+        JSON.print(f, samples_test)
     end
+    close(writer)
 end
 
 main()
