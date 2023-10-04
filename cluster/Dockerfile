@@ -30,6 +30,7 @@ COPY poetry.lock pyproject.toml README.md ./
 RUN poetry install --no-root
 
 # Copy whole repo, .dockerignore should exclude everything unnecessary
+RUN git config --global --add safe.directory /home/$USERNAME/opf
 COPY . .
 # install opf package in editable mode
 RUN poetry install --only-root
