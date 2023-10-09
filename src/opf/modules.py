@@ -203,12 +203,14 @@ class OPFLogBarrier(pl.LightningModule):
         # currently what we do is save the data to a temporary directory
         # then run the julia script and load the data back
         with TemporaryDirectory() as tempdir:
+            script_path = Path(__file__).parent / "project.jl"
             busfile = Path(tempdir) / "busfile.npz"
             np.savez(busfile, V=V, Sg=Sg, Sd=Sd)
             subprocess.run(
                 [
                     "julia",
-                    "../scripts/project.jl",
+                    "--project=@.",
+                    script_path.as_posix(),
                     "--casefile",
                     parameters.casefile,
                     "--busfile",

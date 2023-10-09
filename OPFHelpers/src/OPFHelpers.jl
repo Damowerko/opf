@@ -1,36 +1,17 @@
-# Script to generate test data for the ACOPF problem.
-using ArgParse
-
-# parse arguments
-s = ArgParseSettings()
-@add_arg_table s begin
-    "--casefile"
-    help = "Path to the parsed casefile in json format."
-    arg_type = String
-    required = true
-    "--busfile"
-    help = "Path to numpy archive containing the bus data V, Sg and Sd."
-    arg_type = String
-    required = true
-end
-args = parse_args(ARGS, s)
+module OPFHelpers
 
 # Include libraries here so --help is faster.
+using PrecompileTools
 using PowerModels
 using Ipopt
-using Random
-using JuMP
-using ProgressMeter
-using JSON
-using Pkg
-using NPZ
 
 # load HSL if available
 try
-    using HSL
+    import HSL_jll
     global use_hsl = true
 catch
     global use_hsl = false
+    println("HSL not available.")
 end
 
 """
@@ -66,22 +47,21 @@ function project(network_data::Dict{String,Any}, V::Array{Float64,2}, Sg::Array{
         pg = min(pg, v["pmax"])
         qg = max(qg, v["qmin"])
         qg = min(qg, v["qmax"])
-        v["pg"] = Sg[bus, 1]
-        v["qg"] = Sg[bus, 2]
+        v["pg"] = pg
+        v["qg"] = qg
     end
 
     # if possible use hsl to speed up computation
-    # uncomment to use IPOPT
     if use_hsl
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0, "linear_solver" => "ma57", "hsllib" => HSL.libcoinhsl)
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0, "linear_solver" => "ma57", "hsllib" => HSL_jll.libhsl_path, "sb" => "yes")
     else
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0)
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0, "sb" => "yes")
     end
     result = PowerModels.solve_ac_pf(network_data, solver)
     if (result["termination_status"] != LOCALLY_SOLVED)
         println("The problem was not solved to optimality.")
     end
-
+    # uncomment to use IPOPT
     # result = PowerModels.compute_ac_pf(network_data)
     # if (!result["termination_status"])
     #     println("The problem was not solved to optimality.")
@@ -98,31 +78,41 @@ function project(network_data::Dict{String,Any}, V::Array{Float64,2}, Sg::Array{
     return V
 end
 
-function main()
-    casefile = args["casefile"]
-    busfile = args["busfile"]
+@compile_workload begin
+    # toy example to precompile the code
 
-    # load case file
-    network_data = JSON.parsefile(casefile)
+    if use_hsl
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0, "linear_solver" => "ma57", "hsllib" => HSL_jll.libhsl_path)
+    else
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0)
+    end
+    data = PowerModels.parse_file(normpath(joinpath(@__DIR__, "../data/case3.m")))
 
-    # load the model output matrix
-    bus_variables = NPZ.npzread(busfile)
-    V, Sd, Sg = bus_variables["V"], bus_variables["Sd"], bus_variables["Sg"]
-    if (size(V) != size(Sd) || size(V) != size(Sg))
-        error("The size of the variables is not the same.")
+    # read matrices from networkdata
+    n_bus = length(data["bus"])
+    V = zeros(n_bus, 2)
+    Sd = zeros(n_bus, 2)
+    Sg = zeros(n_bus, 2)
+    for (k, v) in data["bus"]
+        i = v["bus_i"]
+        V[i, 1] = v["vm"] * cos(v["va"])
+        V[i, 2] = v["vm"] * sin(v["va"])
+    end
+    for (k, v) in data["load"]
+        bus = v["load_bus"]
+        Sd[bus, 1] = v["pd"]
+        Sd[bus, 2] = v["qd"]
+    end
+    for (k, v) in data["gen"]
+        bus = v["gen_bus"]
+        Sg[bus, 1] = v["pg"]
+        Sg[bus, 2] = v["qg"]
     end
 
-    # convert arrays to float32
-    V = Float64.(V)
-    Sd = Float64.(Sd)
-    Sg = Float64.(Sg)
-
-    n_bus = size(V, 1)
-    Threads.@threads for i in 1:n_bus
-        V[i, :, :] = project(network_data, V[i, :, :], Sg[i, :, :], Sd[i, :, :])
-    end
-    # write the projected variables to file
-    NPZ.npzwrite(busfile, Dict("V" => V, "Sd" => Sd, "Sg" => Sg))
+    # call several methods to precompile
+    project(data, V, Sg, Sd)
+    solve_ac_opf(data, solver)
+    solve_ac_pf(data, solver)
 end
 
-main()
+end # module OPFHelpers

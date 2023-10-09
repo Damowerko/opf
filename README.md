@@ -57,11 +57,6 @@ The code from the paper is archived in the `icassp` branch. I do not recommend u
 
 ### Python
 
-You will need to have a python version installed that is not statically linked.
-You can install such a version using `pyenv`.
-```PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install 3.9.9```
-This will create a python version linked to a shared library.
-
 This project uses [poetry](https://python-poetry.org/) for dependency managemnt. To install the project and all
 the dependencies simply call use `poetry install`. Poetry will create a virtualenv for you or alternatively you can use,
 ```
@@ -71,28 +66,26 @@ to supress virtualenv creation for the project.
 
 ### Julia
 
-You will need to install Julia 1.6 (as of December 2022). Run the following in the python version installed above.
+You will need to install Julia 1.9.3 (as of October 2023). You can download it from the [julia website](https://julialang.org/downloads/).
+Then install the dependencies. Run the following command in the repo root.
 ```
-python -c "import julia; julia.install()"
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
-This will install and configure PyCall in the julia installation. There are couple dependencies for PandaPower-PowerModels.jl integration. Open up julia REPL and press `]` to manage the packages. Then run the following.
+Optionally, test the PowerModels installation. This can take a while.
 ```
-add Ipopt PowerModels PandaModels JSON Cbc Juniper JuMP ProgressMeter ArgParse NPZ ZipFile
+julia --project=. -e 'using Pkg; Pkg.test("PowerModels")'
 ```
-You might want to run `test PandaModels` in the julia pakcage manager to test the installation.
 
-### HSL Solver (Optional)
-The HSL linear solver for IPOPT dramatically speeds up solving the problem by taking advantage of BLAS and LAPACK. PowerModels.jl (benchmarks)[https://lanl-ansi.github.io/PowerModels.jl/stable/experiment-results/] use the HSL_MA57 solver, which I will use as well.
-
-What I do is compile the (Coin-HSL Full)[https://www.hsl.rl.ac.uk/ipopt/] solver archive. You need a license to do so, but it is free for academic use.
-Installing the dependencies can be simplified by using (HSL.jl)[https://github.com/JuliaSmoothOptimizers/HSL.jl].
-Note that HSL.jl depends on the `gfortran` compiler.
-To build HSL.jl you will need to run the following in julia.
+### HSL Solver
+The HSL linear solver for IPOPT dramatically speeds up solving the problem by taking advantage of BLAS and LAPACK. PowerModels.jl (benchmarks)[https://lanl-ansi.github.io/PowerModels.jl/stable/experiment-results/] use the HSL_MA57 solver, which I use as well. If you **do not** want to use the HSL solver then in the repo root run the following.
 ```
-ENV["HSL_ARCHIVES_PATH"] = "PATH_TO_FOLDER_CONTAINING_ARCHIVE"
-import Pkg
-Pkg.build("HSL")
-Pkg.test("HSL")  # If needed
+julia --project=OPFHelpers -e 'using Pkg; Pkg.rm("HSL_jll")'
+```
+
+If you want to use HSL you will have to download it yourself from (here)[https://licences.stfc.ac.uk/product/julia-hsl]. You need a license to do so, but it is free for academic use.
+Once you obtain the archive download it and extract to a location of your choice. Then run the following with PATH_TO_HSL_JL replaced by the path to the extracted archive.
+``` 
+julia --project=OPFHelpers -e 'using Pkg; Pkg.develop("PATH_TO_HSL_JL")' 
 ```
 
 

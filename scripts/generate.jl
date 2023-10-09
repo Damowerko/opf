@@ -43,10 +43,8 @@ args = parse_args(ARGS, s)
 using PowerModels
 using Ipopt
 using Random
-using JuMP
 using ProgressMeter
 using JSON
-using Pkg
 using ZipFile
 
 # load HSL if available
@@ -84,9 +82,9 @@ function label_network(network_data::Dict{String,Any}, load::Dict{String,Any})::
     network_data = deepcopy(network_data)
     network_data["load"] = load
     if use_hsl
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 1, "linear_solver" => "ma57", "hsllib" => HSL.libcoinhsl)
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 1, "linear_solver" => "ma57", "hsllib" => HSL_jll.hsllib, "sb" => "yes")
     else
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 1)
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 1, "sb" => "yes")
     end
     result = solve_ac_opf(network_data, solver)
     solved = result["termination_status"] == LOCALLY_SOLVED
@@ -167,20 +165,20 @@ function main()
     max_load = args["max_load"]
     label_train = args["label_train"]
 
-    
+
     if max_load <= min_load
         error("max_load must be greater than min_load")
     end
-    
+
     println("There are $(Threads.nthreads()) threads available.")
-    
+
     # load case file
     network_data = PowerModels.parse_file(casefile)
     # reindex bus ids to be contiguous from 1 to N
     network_data = reindex_bus(network_data)
-    
+
     check_assumptions!(network_data)
-    
+
     # save network data in JSON format
     open(joinpath(out_dir, casename * ".json"), "w") do f
         JSON.print(f, network_data, 4)
