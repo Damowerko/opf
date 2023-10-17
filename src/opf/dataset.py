@@ -143,8 +143,11 @@ def _concat_features(n_samples: int, *features: torch.Tensor):
     return concatenated
 
 
-@staticmethod
-def graph_collate_fn(input: list[PowerflowData]) -> PowerflowBatch:
+def static_collate(input: list[PowerflowData]) -> PowerflowBatch:
+    """
+    Collate function for static graphs.
+    """
+
     data_list, powerflow_parameters_list = zip(*input)
     # cast to appropriate types
     data_list = typing.cast(tuple[Data | HeteroData], data_list)
@@ -195,7 +198,7 @@ class StaticGraphDataset(Dataset[PowerflowData]):
 
     @staticmethod
     def collate_fn(input: list[PowerflowData]) -> PowerflowBatch:
-        return graph_collate_fn(input)
+        return static_collate(input)
 
 
 class StaticHeteroDataset(Dataset[PowerflowData]):
@@ -242,7 +245,7 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
 
     @staticmethod
     def collate_fn(input: list[PowerflowData]) -> PowerflowBatch:
-        return graph_collate_fn(input)
+        return static_collate(input)
 
 
 class CaseDataModule(pl.LightningDataModule):
