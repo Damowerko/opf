@@ -311,6 +311,7 @@ class OPFLogBarrier(pl.LightningModule):
                 values[name] = equality(
                     constraint.value,
                     constraint.target,
+                    constraint.mask,
                     self.eps,
                     constraint.isAngle,
                 )
