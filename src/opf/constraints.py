@@ -1,5 +1,6 @@
-import torch
 from math import log, pi
+
+import torch
 
 
 def metrics(loss, u: torch.Tensor, eps: float):
@@ -37,7 +38,7 @@ def _compute_mask(mask, constraint):
 
 
 def truncated_log(u, s, t):
-    assert not u.isnan().any() 
+    assert not u.isnan().any()
     threshold = -1 / (s * t)
     below = u <= threshold
     v = torch.zeros_like(u)
@@ -46,7 +47,29 @@ def truncated_log(u, s, t):
     return v
 
 
-def equality(x: torch.Tensor, y: torch.Tensor, eps=1e-4, angle=False):
+def equality(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    mask: torch.Tensor | None = None,
+    eps=1e-4,
+    angle=False,
+):
+    """
+    Computes the equality constraint between two tensors `x` and `y`.
+
+    Args:
+        x (torch.Tensor): The first tensor.
+        y (torch.Tensor): The second tensor.
+        mask (torch.Tensor | None, optional): A boolean mask tensor. If provided, only the elements where `mask` is `True` will be considered. Defaults to `None`.
+        eps (float, optional): A small constant used to avoid division by zero. Defaults to `1e-4`.
+        angle (bool, optional): If `True`, the input tensors are treated as angles in radians and the difference is wrapped to the range `[-pi, pi]`. Defaults to `False`.
+
+    Returns:
+        A tuple containing the loss value, the constraint violation vector, and the number of violated constraints.
+    """
+    if mask is not None:
+        x = x[..., mask]
+        y = y[..., mask]
     u = (x - y).abs()
     if angle:
         u = fix_angle(u)
@@ -66,6 +89,22 @@ def inequality(
     eps=1e-4,
     angle=False,
 ):
+    """
+    Computes the inequality constraint loss for a given tensor.
+
+    Args:
+        value (torch.Tensor): The tensor to be constrained.
+        lower_bound (torch.Tensor): The lower bound tensor.
+        upper_bound (torch.Tensor): The upper bound tensor.
+        s (float): The maximum slope of the log-barrier.
+        t (float): The barrier function scaling parameter.
+        eps (float, optional): The epsilon value. Defaults to 1e-4.
+        angle (bool, optional): Whether to fix the angle. Defaults to False.
+
+    Returns:
+        tuple: A tuple containing the loss and the metrics.
+    """
+
     # To properly normalize the results we do not want any of these to be inf.
     assert not torch.isinf(upper_bound).any()
     assert not torch.isinf(lower_bound).any()
@@ -76,7 +115,7 @@ def inequality(
     mask_lower = _compute_mask(~mask_equality, lower_bound)
     mask_upper = _compute_mask(~mask_equality, upper_bound)
 
-    u_equal = (lower_bound[mask_equality] - value[:, mask_equality])
+    u_equal = lower_bound[mask_equality] - value[:, mask_equality]
     u_lower = lower_bound[mask_lower] - value[:, mask_lower]
     u_upper = value[:, mask_upper] - upper_bound[mask_upper]
 
@@ -91,7 +130,9 @@ def inequality(
     # we normalize u_equal by the mean difference between the upper and lower constraints
     # this allows us to compare values of different scales
     u_inequality = torch.cat((u_lower.flatten(), u_upper.flatten()))
-    loss = (u_equal.square().sum() + truncated_log(u_inequality, s, t).sum()) / value.numel()
+    loss = (
+        u_equal.square().sum() + truncated_log(u_inequality, s, t).sum()
+    ) / value.numel()
 
     # The tensor elements should be bounded.
     assert not torch.isinf(u_equal).any()
