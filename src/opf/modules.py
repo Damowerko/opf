@@ -159,18 +159,26 @@ class OPFLogBarrier(pl.LightningModule):
 
     def validation_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
+            batch_size = batch.data.num_graphs
             _, constraints, cost, loss = self._step_helper(
                 *self.forward(batch), batch.powerflow_parameters
             )
             self.log(
                 "val/loss",
                 loss,
-                prog_bar=True,
-                batch_size=batch.data.num_graphs,
+                batch_size=batch_size,
             )
-            self.log_dict(
-                self.metrics(cost, constraints, "val", self.detailed_metrics),
-                batch_size=batch.data.num_graphs,
+            metrics = self.metrics(cost, constraints, "val", self.detailed_metrics)
+            self.log_dict(metrics, batch_size=batch_size)
+
+            # Metric that does not depend on the loss function shape
+            self.log(
+                "val/invariant",
+                cost
+                + metrics["val/equality/error_mean"]
+                + metrics["val/inequality/error_mean"],
+                batch_size=batch_size,
+                prog_bar=True,
             )
 
     def test_step(self, batch: PowerflowBatch, *args):
