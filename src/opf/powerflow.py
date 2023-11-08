@@ -169,6 +169,7 @@ class InequalityConstraint(Constraint):
 class EqualityConstraint(Constraint):
     value: torch.Tensor
     target: torch.Tensor
+    mask: torch.Tensor | None = None
 
 
 def powermodels_to_tensor(data: dict, attributes: list[str]):
@@ -212,7 +213,7 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
     return {
         "equality/bus_power": EqualityConstraint(True, False, d.Sbus, d.S),
         "equality/bus_reference": EqualityConstraint(
-            True, True, d.V.angle() * p.is_ref, torch.zeros(p.n_bus).to(d.V.device)
+            True, True, d.V.angle(), torch.zeros(p.n_bus).to(d.V.device), p.is_ref
         ),
         "inequality/voltage_magnitude": InequalityConstraint(
             True, False, d.V.abs(), p.vm_min, p.vm_max
