@@ -248,7 +248,7 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
     vm_min = torch.zeros(n_bus)
     vm_max = torch.zeros(n_bus)
     base_kv = torch.zeros(n_bus)
-    is_ref = torch.zeros(n_bus)
+    is_ref = torch.zeros(n_bus, dtype=torch.bool)
     for bus in pm["bus"].values():
         i = bus["bus_i"] - 1
         vm_min[i] = bus["vmin"]
