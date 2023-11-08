@@ -24,7 +24,7 @@ spec:
           path: /nfs/general/opf_data
       containers:
       - name: opf-train
-        image: lc1.alelab:32000/damowerko/opf
+        image: docker.io/damowerko/opf
         imagePullPolicy: Always
         command: ["bash", "-c", "python -u scripts/main.py train $args && sleep 1"]
         env:
