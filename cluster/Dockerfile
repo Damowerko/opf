@@ -18,7 +18,7 @@ RUN git config --global --add safe.directory /home/$USERNAME/opf
 
 ENV VIRTUAL_ENV=/home/$USERNAME/venv
 RUN python3 -m venv $VIRTUAL_ENV
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"docker
 
 # install torch to avoid rebuilding the image every time
 RUN pip install torch==2.0.0
