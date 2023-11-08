@@ -84,7 +84,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         # logger specific callbacks
         callbacks += [
             ModelCheckpoint(
-                monitor="val/loss",
+                monitor="val/invariant",
                 dirpath=Path(params["log_dir"]) / "checkpoints",
                 filename="best",
                 auto_insert_metric_name=False,
@@ -92,7 +92,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
                 save_top_k=1,
             ),
         ]
-    callbacks += [EarlyStopping(monitor="val/loss", patience=params["patience"])]
+    callbacks += [EarlyStopping(monitor="val/invariant", patience=params["patience"])]
     trainer = Trainer(
         logger=logger,
         callbacks=callbacks,
