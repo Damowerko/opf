@@ -18,11 +18,12 @@ class OPFLogBarrier(pl.LightningModule):
     def __init__(
         self,
         model: torch.nn.Module,
-        t=500,
-        s=100,
-        cost_weight=1.0,
+        t=500.0,
+        t_step=0.0,
+        s=100.0,
+        s_step=0.0,
         equality_weight=1.0,
-        inequality_weight=1.0,
+        equality_step=1.0,
         lr=1e-4,
         weight_decay=0.0,
         eps=1e-3,
@@ -32,31 +33,47 @@ class OPFLogBarrier(pl.LightningModule):
     ):
         super().__init__()
         self.model = model
-        self.detailed_metrics = detailed_metrics
-        self.t = t
-        self.s = s
-        self.cost_weight = cost_weight
-        self.equality_weight = equality_weight
-        self.inequality_weight = inequality_weight
+        # variables controlling the evolution of the log barrier
+        self.t_start = t
+        self.t_step = t_step
+        self.s_start = s
+        self.s_step = s_step
+        self.equality_start = equality_weight
+        self.equality_step = equality_step
+        # other parameters
         self.lr = lr
         self.weight_decay = weight_decay
         self.eps = eps
         self._enforce_constraints = enforce_constraints
+        self.detailed_metrics = detailed_metrics
         self.save_hyperparameters(ignore=["model", "kwargs"])
 
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
         group = parser.add_argument_group("OPFLogBarrier")
-        group.add_argument("--s", type=int, default=100)
-        group.add_argument("--t", type=int, default=500)
-        group.add_argument("--cost_weight", type=float, default=0.01)
+        group.add_argument("--s", type=float, default=100)
+        group.add_argument("--s_step", type=float, default=0.0)
+        group.add_argument("--t", type=float, default=500)
+        group.add_argument("--t_step", type=float, default=0.0)
         group.add_argument("--equality_weight", type=float, default=1.0)
-        group.add_argument("--inequality_weight", type=float, default=0.1)
+        group.add_argument("--equality_step", type=float, default=1.0)
         group.add_argument("--lr", type=float, default=3e-4)
         group.add_argument("--weight_decay", type=float, default=0.0)
         group.add_argument("--eps", type=float, default=1e-3)
         group.add_argument("--enforce_constraints", action="store_true", default=False)
         group.add_argument("--detailed_metrics", action="store_true", default=False)
+
+    @property
+    def s(self):
+        return self.s_start + self.s_step * self.current_epoch
+
+    @property
+    def t(self):
+        return self.t_start + self.t_step * self.current_epoch
+
+    @property
+    def equality_weight(self):
+        return self.equality_start + self.equality_step * self.current_epoch
 
     def forward(
         self,
@@ -260,7 +277,7 @@ class OPFLogBarrier(pl.LightningModule):
         ]
         if len(constraint_losses) == 0:
             constraint_losses = [torch.zeros(1, device=self.device, dtype=self.dtype)]  # type: ignore
-        return cost * self.cost_weight + torch.stack(constraint_losses).sum()
+        return cost + torch.stack(constraint_losses).sum()
 
     def cost(
         self,
@@ -309,8 +326,6 @@ class OPFLogBarrier(pl.LightningModule):
                     self.eps,
                     constraint.isAngle,
                 )
-                # apply weight
-                values[name]["loss"] *= self.inequality_weight
         return values
 
     def metrics(self, cost, constraints, prefix, detailed=False):
