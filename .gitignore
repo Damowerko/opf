@@ -1,7 +1,6 @@
 ## Project
-data/
 # If data is symlinked it will be a file
-data
+/data
 logs/
 scripts/latest.ckpt
 **/wandb
