@@ -49,10 +49,11 @@ using ZipFile
 
 # load HSL if available
 try
-    using HSL
+    using HSL_jll
     global use_hsl = true
 catch
     global use_hsl = false
+    println("HSL not available.")
 end
 
 
@@ -82,7 +83,7 @@ function label_network(network_data::Dict{String,Any}, load::Dict{String,Any})::
     network_data = deepcopy(network_data)
     network_data["load"] = load
     if use_hsl
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 1, "linear_solver" => "ma57", "hsllib" => HSL_jll.hsllib, "sb" => "yes")
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 1, "linear_solver" => "ma27", "hsllib" => HSL_jll.libhsl_path, "sb" => "yes")
     else
         solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 1, "sb" => "yes")
     end
