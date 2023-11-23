@@ -85,7 +85,7 @@ julia --project=OPFHelpers -e 'using Pkg; Pkg.rm("HSL_jll")'
 If you want to use HSL you will have to download it yourself from (here)[https://licences.stfc.ac.uk/product/julia-hsl]. You need a license to do so, but it is free for academic use.
 Once you obtain the archive download it and extract to a location of your choice. Then run the following with PATH_TO_HSL_JL replaced by the path to the extracted archive.
 ``` 
-julia --project=OPFHelpers -e 'using Pkg; Pkg.develop("PATH_TO_HSL_JL")' 
+julia --project=OPFHelpers -e 'using Pkg; Pkg.develop(path="PATH_TO_HSL_JL")' 
 ```
 
 
