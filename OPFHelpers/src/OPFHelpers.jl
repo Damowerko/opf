@@ -53,19 +53,14 @@ function project(network_data::Dict{String,Any}, V::Array{Float64,2}, Sg::Array{
 
     # if possible use hsl to speed up computation
     if use_hsl
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0, "linear_solver" => "ma57", "hsllib" => HSL_jll.libhsl_path, "sb" => "yes")
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0, "linear_solver" => "ma27", "hsllib" => HSL_jll.libhsl_path, "sb" => "yes")
     else
         solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0, "sb" => "yes")
     end
     result = PowerModels.solve_ac_pf(network_data, solver)
     if (result["termination_status"] != LOCALLY_SOLVED)
-        println("The problem was not solved to optimality.")
+        println("The problem was not solved to optimality: $(result["termination_status"])")
     end
-    # uncomment to use IPOPT
-    # result = PowerModels.compute_ac_pf(network_data)
-    # if (!result["termination_status"])
-    #     println("The problem was not solved to optimality.")
-    # end
 
     # parse the result as array
     n_bus = length(network_data["bus"])

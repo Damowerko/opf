@@ -19,10 +19,15 @@ args = parse_args(ARGS, s)
 using OPFHelpers
 using JSON
 using NPZ
+using PowerModels
+using Memento
 
 function main()
     casefile = args["casefile"]
     busfile = args["busfile"]
+
+    # supress info and warning messages from PowerModels
+    Memento.setlevel!(Memento.getlogger(PowerModels), "error")
 
     # load case file
     network_data = JSON.parsefile(casefile)
