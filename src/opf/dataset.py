@@ -181,7 +181,7 @@ class StaticGraphDataset(Dataset[PowerflowData]):
         self.x = x
         self.edge_index = graph.edge_index
         self.edge_attr = graph.edge_attr
-        self.powerflow_parameters = powerflow_parameters
+        self.powerflow_parameters = copy.deepcopy(powerflow_parameters)
 
     def __len__(self) -> int:
         return len(self.x)
@@ -228,7 +228,7 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         self.x_branch = branch_features
         graph = T.GCNNorm(False)(graph.to_homogeneous()).to_heterogeneous()
         self.graph = T.ToSparseTensor()(graph)
-        self.powerflow_parameters = powerflow_parameters
+        self.powerflow_parameters = copy.deepcopy(powerflow_parameters)
 
     def __len__(self) -> int:
         return len(self.x_bus)
@@ -424,3 +424,14 @@ class CaseDataModule(pl.LightningDataModule):
             pin_memory=self.pin_memory,
             collate_fn=self.test_dataset.collate_fn,
         )
+
+    def transfer_batch_to_device(
+        self,
+        input: PowerflowBatch | PowerflowData,
+        device,
+        dataloader_idx: int,
+    ) -> PowerflowBatch | PowerflowData:
+        input = typing.cast(PowerflowData, input)
+        input.data.to(device)
+        input.powerflow_parameters.to(device)
+        return input

@@ -9,7 +9,7 @@ import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers.wandb import WandbLogger
-from torchcps.gnn import ParametricGNN
+from torchcps.gnn import GCN
 from wandb.wandb_run import Run
 
 from opf.dataset import CaseDataModule
@@ -108,7 +108,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
 def train(trainer: Trainer, params):
     dm = CaseDataModule(pin_memory=params["gpu"], **params)
     if params["homo"]:
-        gcn = ParametricGNN(in_channels=-1, out_channels=4, **params)
+        gcn = GCN(in_channels=-1, out_channels=4, **params)
     else:
         dm.setup()
         gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
@@ -188,7 +188,7 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         dm.setup()
         gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
     else:
-        gcn = ParametricGNN(in_channels=-1, out_channels=4, **params)
+        gcn = GCN(in_channels=-1, out_channels=4, **params)
     model = OPFLogBarrier(gcn, **params)
 
     # train the model

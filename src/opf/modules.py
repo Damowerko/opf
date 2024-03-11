@@ -1,8 +1,9 @@
 import argparse
 import subprocess
+import typing
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Dict
+from typing import Any, Dict
 
 import numpy as np
 import pytorch_lightning as pl
@@ -220,9 +221,9 @@ class OPFLogBarrier(pl.LightningModule):
         shape = V.shape
         dtype = V.dtype
         device = V.device
-        V = torch.view_as_real(V).view(-1, parameters.n_bus, 2).numpy()
-        Sg = torch.view_as_real(Sg).view(-1, parameters.n_bus, 2).numpy()
-        Sd = torch.view_as_real(Sd).view(-1, parameters.n_bus, 2).numpy()
+        V = torch.view_as_real(V.cpu()).view(-1, parameters.n_bus, 2).numpy()
+        Sg = torch.view_as_real(Sg.cpu()).view(-1, parameters.n_bus, 2).numpy()
+        Sd = torch.view_as_real(Sd.cpu()).view(-1, parameters.n_bus, 2).numpy()
 
         # TODO: make this more robust, maybe use PyJulia
         # currently what we do is save the data to a temporary directory
@@ -244,7 +245,7 @@ class OPFLogBarrier(pl.LightningModule):
             )
             bus = np.load(busfile)
         V, Sg, Sd = bus["V"], bus["Sg"], bus["Sd"]
-        # convert back to torch tensors with the original shape
+        # convert back to torch tensors with the original device, dtype, and shape
         V = torch.from_numpy(V)
         Sg = torch.from_numpy(Sg)
         Sd = torch.from_numpy(Sd)

@@ -34,6 +34,7 @@ using Ipopt
 using Random
 using ProgressMeter
 using NPZ
+using Statistics
 
 # load HSL if available
 try

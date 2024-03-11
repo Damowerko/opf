@@ -54,10 +54,10 @@ def load_checkpoint(barrier: OPFLogBarrier, id: str, log_dir: str):
     barrier.load_state_dict(checkpoint["state_dict"], strict=False)
 
 
-def test(barrier, dm):
+def test(barrier, dm, accelerator="cpu"):
     cache = CacheOutputs()
     trainer = pl.Trainer(
-        precision=32, callbacks=[cache], logger=False, accelerator="cpu"
+        precision=32, callbacks=[cache], logger=False, accelerator=accelerator
     )
     trainer.test(barrier, datamodule=dm, verbose=False)
     return pd.DataFrame(cache.outputs).map(torch.Tensor.item)
