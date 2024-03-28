@@ -18,17 +18,12 @@ wandb = "^0.16.0"
 pytest = "^7.2.0"
 seaborn = "^0.12.2"
 pandoc = "^2.3"
-guildai = "^0.8.2"
-torch = {version = ">=2.0.0, !=2.0.1"}
-torch-geometric = "^2.3.1"
+torch = "2.1.*"
 matpowercaseframes = "^1.0.4"
 torchcps = {git = "https://github.com/Damowerko/torchcps"}
 optuna = "^3.3.0"
 psycopg2-binary = "^2.9.7"
 plotly = "^5.16.1"
-torch-sparse = "^0.6.17+pt20cu118"
-pyg-lib = "^0.2.0+pt20cu118"
-torch-scatter = "^2.1.1+pt20cu118"
 
 [[tool.poetry.source]]
 name = "PyPI"
@@ -36,7 +31,7 @@ priority = "supplemental"
 
 [[tool.poetry.source]]
 name = "pyg"
-url = "https://data.pyg.org/whl/torch-2.0.0+cu118.html"
+url = "https://data.pyg.org/whl/torch-2.1.0+cu121.html"
 priority = "primary"
 
 [build-system]
