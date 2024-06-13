@@ -48,6 +48,10 @@ class HeteroGraphFilter(nn.Module):
     def forward(self, x: dict[NodeType, torch.Tensor], adj_t: dict[EdgeType, Adj]):
         z: dict[NodeType, torch.Tensor] = self.taps[0](x)
         for i in range(1, len(self.taps)):
+            if not isinstance(x, dict):
+                raise AttributeError(f"Expected x type 'dict' but got type {type(x).__name__}")
+            if not isinstance(adj_t, dict):
+                raise AttributeError(f"Expected adj_t type 'dict' but got type {type(adj_t).__name__}")
             x = self.shift(x, adj_t)
             y = self.taps[i](x)
             z = {t: z[t] + y[t] for t in z}
@@ -188,6 +192,7 @@ class HeteroGCN(nn.Module):
         "relu": nn.ReLU,
         "leaky_relu": nn.LeakyReLU,
     }
+
 
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):

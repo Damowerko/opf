@@ -14,7 +14,7 @@ import opf.powerflow as pf
 from opf.constraints import equality, inequality
 from opf.dataset import PowerflowBatch, PowerflowData
 
-
+# make a second class OPFDual
 class OPFLogBarrier(pl.LightningModule):
     def __init__(
         self,
@@ -49,6 +49,11 @@ class OPFLogBarrier(pl.LightningModule):
         self.detailed_metrics = detailed_metrics
         self.save_hyperparameters(ignore=["model", "kwargs"])
 
+        # zeros of full? what shape also?
+        # should this be passed as an argument?
+        # self.equality_multiplier = torch.zeros()
+        # self.inequality_multiplier = torch.zeros()
+
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
         group = parser.add_argument_group("OPFLogBarrier")
@@ -76,6 +81,7 @@ class OPFLogBarrier(pl.LightningModule):
     def equality_weight(self):
         return self.equality_start + self.equality_step * self.current_epoch
 
+
     def forward(
         self,
         input: PowerflowBatch | PowerflowData,
@@ -83,7 +89,11 @@ class OPFLogBarrier(pl.LightningModule):
         data, powerflow_parameters = input
         if isinstance(data, HeteroData):
             n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
-            bus = self.model(data.x_dict, data.adj_t_dict)["bus"]
+            powerflow_model = self.model(data.x_dict, data.adj_t_dict)
+            bus = powerflow_model["bus"]
+            gen = powerflow_model["gen"]
+            # will be a tensor shaped n_gen, num of output features
+            # output likely n_gen by 2, which is what you are calling Sg_filtered
             load = data["bus"].x[:, :2]
         elif isinstance(data, Data):
             n_batch = data.x.shape[0] // powerflow_parameters.n_bus
@@ -91,7 +101,7 @@ class OPFLogBarrier(pl.LightningModule):
             load = data.x[:, :2]
         else:
             raise ValueError(
-                f"Unsupported data type {type(data)} expected Data or HeteroData."
+                f"Unsupported data type {type(data)}, expected Data or HeteroData."
             )
 
         # Reshape the output to (batch_size, n_features, n_bus)
@@ -99,10 +109,15 @@ class OPFLogBarrier(pl.LightningModule):
         bus = bus.view(n_batch, powerflow_parameters.n_bus, 4).mT
         # Similar shape for load
         load = load.view(n_batch, powerflow_parameters.n_bus, 2).mT
-        V, Sg = self.parse_bus(bus)
+        V = self.parse_bus(bus)
+        # do I even need this line lol
+        # Sg = torch.zeros(powerflow_parameters.n_gen, 2)
+        Sg = gen
         Sd = self.parse_load(load)
         if self._enforce_constraints:
             V, Sg = self.enforce_constraints(V, Sg, powerflow_parameters)
+        # Sg_unfiltered = torch.zeros(powerflow_parameters.n_bus, 2)
+        # Sg_unfiltered[powerflow_parameters.gen_bus_ids] = Sg
         return V, Sg, Sd
 
     def sigmoid_bound(self, x, lb, ub):
@@ -142,6 +157,7 @@ class OPFLogBarrier(pl.LightningModule):
         loss = self.loss(cost, constraints)
         return variables, constraints, cost, loss
 
+
     def training_step(self, batch: PowerflowBatch):
         _, constraints, cost, loss = self._step_helper(
             *self.forward(batch), batch.powerflow_parameters
@@ -157,6 +173,7 @@ class OPFLogBarrier(pl.LightningModule):
             batch_size=batch.data.num_graphs,
         )
         return loss
+
 
     def validation_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
@@ -181,6 +198,7 @@ class OPFLogBarrier(pl.LightningModule):
                 batch_size=batch_size,
                 prog_bar=True,
             )
+
 
     def test_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
@@ -260,12 +278,13 @@ class OPFLogBarrier(pl.LightningModule):
         # Convert voltage and power to per unit
         vr = bus[:, 0, :]
         vi = bus[:, 1, :]
-        pg = bus[:, 2, :]
-        qg = bus[:, 3, :]
+        # pg = bus[:, 2, :]
+        # qg = bus[:, 3, :]
 
         V = torch.complex(vr, vi)
-        Sg = torch.complex(pg, qg)
-        return V, Sg
+        # Sg = torch.complex(pg, qg)
+        return V
+
 
     def parse_load(self, load: torch.Tensor):
         """
@@ -288,6 +307,7 @@ class OPFLogBarrier(pl.LightningModule):
             constraint_losses = [torch.zeros(1, device=self.device, dtype=self.dtype)]  # type: ignore
         return cost + torch.stack(constraint_losses).sum()
 
+
     def cost(
         self,
         variables: pf.PowerflowVariables,
@@ -301,14 +321,16 @@ class OPFLogBarrier(pl.LightningModule):
             cost += p_coeff[:, i] * p.squeeze() ** i
         # cost cannot be negative
         cost = torch.clamp(cost, min=0)
-        # normalize the cost by the number of generators
+        # # normalize the cost by the number of generators
         return cost.mean(0).sum() / powerflow_parameters.reference_cost
+        # return cost.mean()
+
 
     def constraints(
         self,
         variables: pf.PowerflowVariables,
         powerflow_parameters: pf.PowerflowParameters,
-    ) -> Dict[str, Dict[str, torch.Tensor]]:
+     ) -> Dict[str, Dict[str, torch.Tensor]]:
         """
         Calculates the powerflow constraints.
         :returns: Nested map from constraint name => (value name => tensor value)
@@ -324,6 +346,7 @@ class OPFLogBarrier(pl.LightningModule):
                     self.eps,
                     constraint.isAngle,
                 )
+                
                 # apply weight
                 values[name]["loss"] *= self.equality_weight
             elif isinstance(constraint, pf.InequalityConstraint):
@@ -337,6 +360,7 @@ class OPFLogBarrier(pl.LightningModule):
                     constraint.isAngle,
                 )
         return values
+
 
     def metrics(self, cost, constraints, prefix, detailed=False):
         aggregate_metrics = {

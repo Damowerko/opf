@@ -82,18 +82,23 @@ def build_hetero_graph(
     antisymmetric: bool = True,
 ) -> HeteroData:
     graph = HeteroData()
+
     graph["bus"].num_nodes = params.n_bus
     graph["branch"].num_nodes = params.n_branch
+    graph["gen"].num_nodes = params.n_gen
+     
     branch_index = torch.arange(params.n_branch)
+    gen_index = torch.arange(params.n_gen)
     reverse_coef = -1 if antisymmetric else 1
 
     # Define Anti-Symmetric Graph
 
-    # From side of branches
+    # BFR
     graph["bus", "from", "branch"].edge_index = torch.stack(
         [params.fr_bus, branch_index], dim=0
     )
     graph["bus", "from", "branch"].edge_weight = torch.ones(params.n_branch)
+    # RFB
     graph["branch", "from", "bus"].edge_index = torch.stack(
         [branch_index, params.fr_bus], dim=0
     )
@@ -101,11 +106,12 @@ def build_hetero_graph(
         params.n_branch
     )
 
-    # To side of branches
+    # BTR
     graph["bus", "to", "branch"].edge_index = torch.stack(
         [params.to_bus, branch_index], dim=0
     )
     graph["bus", "to", "branch"].edge_weight = torch.ones(params.n_branch)
+    # RTB
     graph["branch", "to", "bus"].edge_index = torch.stack(
         [branch_index, params.to_bus], dim=0
     )
@@ -113,16 +119,50 @@ def build_hetero_graph(
         params.n_branch
     )
 
+    # BFG
+    graph["bus", "from", "gen"].edge_index = torch.stack(
+        [params.gen_bus_ids, gen_index], dim=0
+    )
+    graph["bus", "from", "gen"].edge_weight = torch.ones(params.n_gen)
+    # GFB
+    graph["gen", "from", "bus"].edge_index = torch.stack(
+        [gen_index, params.gen_bus_ids], dim=0
+    )
+    graph["gen", "from", "bus"].edge_weight = reverse_coef * torch.ones(
+        params.n_gen
+    )
+
+    # GTB
+    graph["gen", "to", "bus"].edge_index = torch.stack(
+        [gen_index, params.gen_bus_ids], dim=0
+    )
+    graph["gen", "to", "bus"].edge_weight = torch.ones(params.n_gen)
+    # BTG
+    graph["bus", "to", "gen"].edge_index = torch.stack(
+        [params.gen_bus_ids, gen_index], dim=0
+    )
+    graph["bus", "to", "gen"].edge_weight = reverse_coef * torch.ones(
+        params.n_gen
+    )
+  
+
     # Self-loops
     if self_loops:
+        # BSB
         graph["bus", "self", "bus"].edge_index = torch.stack(
             [torch.arange(params.n_bus), torch.arange(params.n_bus)], dim=0
         )
         graph["bus", "self", "bus"].edge_weight = torch.ones(params.n_bus)
+        # RSR
         graph["branch", "self", "branch"].edge_index = torch.stack(
             [branch_index, branch_index], dim=0
         )
         graph["branch", "self", "branch"].edge_weight = torch.ones(params.n_branch)
+        # GSG
+        graph["gen", "self", "gen"].edge_index = torch.stack(
+            [gen_index, gen_index], dim=0
+        )
+        graph["gen", "self", "gen"].edge_weight = torch.ones(params.n_gen)
 
     return graph
 
@@ -134,7 +174,7 @@ def _concat_features(n_samples: int, *features: torch.Tensor):
         features: Node features with shape (n_samples, num_nodes, num_features) or (num_nodes, num_features).
     """
     # If node features do not have a `n_samples` dimension add it
-    # Useing expand creates a view instead of a copy of the tensor
+    # Using expand creates a view instead of a copy of the tensor
     expanded = [
         x[None, ...].expand(n_samples, -1, -1) if len(x.shape) == 2 else x
         for x in features
@@ -181,7 +221,7 @@ class StaticGraphDataset(Dataset[PowerflowData]):
         self.x = x
         self.edge_index = graph.edge_index
         self.edge_attr = graph.edge_attr
-        self.powerflow_parameters = copy.deepcopy(powerflow_parameters)
+        self.powerflow_parameters = powerflow_parameters
 
     def __len__(self) -> int:
         return len(self.x)
@@ -206,6 +246,7 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         self,
         bus_features: torch.Tensor,
         branch_features: torch.Tensor,
+        gen_features: torch.Tensor,
         graph: HeteroData,
         powerflow_parameters: pf.PowerflowParameters,
     ):
@@ -216,19 +257,25 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         Args:
             x_bus: Bus features with shape (n_samples, n_bus, n_features).
             x_branch: Branch features with shape (n_samples, n_branch, n_features).
+            x_gen: Gen features with shape (n_samples, n_gen, n_features)
             edge_index: Edge index with shape (2, num_edges)
             edge_attr: Edge attributes with shape (num_edges, num_edge_features)
         """
         super().__init__()
-        if bus_features.shape[0] != branch_features.shape[0]:
+        
+        if bus_features.shape[0] != branch_features.shape[0] or bus_features.shape[0] != gen_features.shape[0]:
             raise ValueError(
-                f"Expected node_features and branch_features to have the same number of samples, but got {bus_features.shape[0]} and {branch_features.shape[0]}."
+                f"Expected inputs to have the same number of samples, but got {bus_features.shape[0]}, {branch_features.shape[0]}, {gen_features.shape[0]}."
             )
         self.x_bus = bus_features
         self.x_branch = branch_features
-        graph = T.GCNNorm(False)(graph.to_homogeneous()).to_heterogeneous()
+        self.x_gen = gen_features
+
+        homogeneous_graph = graph.to_homogeneous()
+        homogeneous_graph.edge_index = homogeneous_graph.edge_index.to(torch.int64)
+        graph = T.GCNNorm(False)(homogeneous_graph).to_heterogeneous()
         self.graph = T.ToSparseTensor()(graph)
-        self.powerflow_parameters = copy.deepcopy(powerflow_parameters)
+        self.powerflow_parameters = powerflow_parameters
 
     def __len__(self) -> int:
         return len(self.x_bus)
@@ -238,6 +285,7 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         data = copy.copy(self.graph)
         data["bus"].x = self.x_bus[index]
         data["branch"].x = self.x_branch[index]
+        data["gen"].x = self.x_gen[index]
         return PowerflowData(
             data,
             self.powerflow_parameters,
@@ -299,6 +347,7 @@ class CaseDataModule(pl.LightningDataModule):
         assert isinstance(dataset, StaticHeteroDataset)
         return dataset[0][0].metadata()
 
+
     def setup(self, stage: Optional[str] = None):
         if self.powerflow_parameters is None:
             with open(self.case_path) as f:
@@ -316,6 +365,8 @@ class CaseDataModule(pl.LightningDataModule):
 
         bus_parameters = self.powerflow_parameters.bus_parameters()
         branch_parameters = self.powerflow_parameters.branch_parameters()
+        gen_parameters = self.powerflow_parameters.gen_parameters()
+
 
         def parse_dataset(dicts: list[dict]):
             assert self.powerflow_parameters is not None
@@ -327,6 +378,7 @@ class CaseDataModule(pl.LightningDataModule):
             n_samples = load.shape[0]
 
             bus_load = (load.mT @ self.powerflow_parameters.load_matrix).mT
+            # Concatenates the features along the last dimension (n_samples)
             bus_features = _concat_features(
                 n_samples,
                 bus_load,
@@ -346,9 +398,14 @@ class CaseDataModule(pl.LightningDataModule):
                     n_samples,
                     branch_parameters,
                 ).to(bus_load.dtype)
+                gen_features = _concat_features(
+                    n_samples,
+                    gen_parameters,
+                ).to(bus_load.dtype)
                 return StaticHeteroDataset(
                     bus_features,
                     branch_features,
+                    gen_features,
                     self.graph,
                     self.powerflow_parameters,
                 )
@@ -424,14 +481,3 @@ class CaseDataModule(pl.LightningDataModule):
             pin_memory=self.pin_memory,
             collate_fn=self.test_dataset.collate_fn,
         )
-
-    def transfer_batch_to_device(
-        self,
-        input: PowerflowBatch | PowerflowData,
-        device,
-        dataloader_idx: int,
-    ) -> PowerflowBatch | PowerflowData:
-        input = typing.cast(PowerflowData, input)
-        input.data.to(device)
-        input.powerflow_parameters.to(device)
-        return input

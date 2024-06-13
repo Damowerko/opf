@@ -199,12 +199,6 @@ version = "0.10.36"
 deps = ["Random"]
 uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
 
-[[deps.HSL_jll]]
-deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "METIS_jll", "MPICH_jll", "MicrosoftMPI_jll", "Pkg", "libblastrampoline_jll"]
-path = "/home/damow/hsl/HSL_jll.jl"
-uuid = "017b0a0e-03f4-516a-9b91-836bbd1904dd"
-version = "2023.5.26+0"
-
 [[deps.Hwloc_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "8ecb0b34472a3c98f945e3c75fc7d5428d165511"
