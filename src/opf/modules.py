@@ -89,11 +89,13 @@ class OPFLogBarrier(pl.LightningModule):
         data, powerflow_parameters = input
         if isinstance(data, HeteroData):
             n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
-            powerflow_model = self.model(data.x_dict, data.adj_t_dict)
-            bus = powerflow_model["bus"]
-            gen = powerflow_model["gen"]
-            # will be a tensor shaped n_gen, num of output features
-            # output likely n_gen by 2, which is what you are calling Sg_filtered
+            output = self.model(data.x_dict, data.adj_t_dict)
+            bus = output["bus"][:, :2]
+            gen = output["gen"][:, :2]
+
+            # make an assumption here that there is at most one generator per bus
+            # assert gen == bus[powerflow_parameters.gen_bus_ids,2;]
+
             load = data["bus"].x[:, :2]
         elif isinstance(data, Data):
             n_batch = data.x.shape[0] // powerflow_parameters.n_bus
@@ -104,20 +106,15 @@ class OPFLogBarrier(pl.LightningModule):
                 f"Unsupported data type {type(data)}, expected Data or HeteroData."
             )
 
-        # Reshape the output to (batch_size, n_features, n_bus)
-        # Where n_features is 4 and 2 for bus and load respectively.
-        bus = bus.view(n_batch, powerflow_parameters.n_bus, 4).mT
-        # Similar shape for load
+        # Reshape the output to (batch_size, n_features, n_bus or n_gen)
+        bus = bus.view(n_batch, powerflow_parameters.n_bus, 2).mT
+        gen = gen.view(n_batch, powerflow_parameters.n_gen, 2).mT
         load = load.view(n_batch, powerflow_parameters.n_bus, 2).mT
         V = self.parse_bus(bus)
-        # do I even need this line lol
-        # Sg = torch.zeros(powerflow_parameters.n_gen, 2)
-        Sg = gen
+        Sg = self.parse_gen(gen)
         Sd = self.parse_load(load)
         if self._enforce_constraints:
             V, Sg = self.enforce_constraints(V, Sg, powerflow_parameters)
-        # Sg_unfiltered = torch.zeros(powerflow_parameters.n_bus, 2)
-        # Sg_unfiltered[powerflow_parameters.gen_bus_ids] = Sg
         return V, Sg, Sd
 
     def sigmoid_bound(self, x, lb, ub):
@@ -273,11 +270,12 @@ class OPFLogBarrier(pl.LightningModule):
         return V, Sg, Sd
 
     def parse_bus(self, bus: torch.Tensor):
-        assert bus.shape[1] == 4
+        assert bus.shape[1] == 2
 
         # Convert voltage and power to per unit
         vr = bus[:, 0, :]
         vi = bus[:, 1, :]
+        # IF HOMO
         # pg = bus[:, 2, :]
         # qg = bus[:, 3, :]
 
@@ -306,6 +304,11 @@ class OPFLogBarrier(pl.LightningModule):
         if len(constraint_losses) == 0:
             constraint_losses = [torch.zeros(1, device=self.device, dtype=self.dtype)]  # type: ignore
         return cost + torch.stack(constraint_losses).sum()
+    
+    def parse_gen(self, gen: torch.Tensor):
+        assert gen.shape[1] == 2
+        Sg = torch.complex(gen[:, 0, :], gen[:, 1, :])
+        return Sg
 
 
     def cost(

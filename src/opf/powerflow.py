@@ -84,9 +84,7 @@ class PowerflowParameters(torch.nn.Module):
                 tensors[k] = v
         return tensors
 
-    """
-    may need changes (gen_matrix, gen_bus_ids)
-    """
+
     def _apply(self, fn):
         super()._apply(fn)
         self.Y = fn(self.Y)
@@ -199,10 +197,7 @@ def powermodels_to_tensor(data: dict, attributes: list[str]):
             tensor[i, j] = element[attribute]
     return tensor
 
-"""
-literally only used in a test case what
-- may need changes
-"""
+
 def power_from_solution(load: dict, solution: dict, parameters: PowerflowParameters):
     """
     Parse a PowerModels.jl solution into PowerflowVariables.
@@ -409,7 +404,14 @@ def powerflow(
     #     Sbus_branch[i] += torch.sum(Sf[params.fr_bus == i])
     #     Sbus_branch[i] += torch.sum(St[params.to_bus == i])
     Sbus = Sbus_branch + Sbus_sh
-    Sg_unfiltered = torch.zeros_like(Sd)
-    Sg_unfiltered[params.gen_bus_ids.int()] = Sg
-    S = Sg_unfiltered - Sd
+    # indexing tensors still works, issue was bcus Sd complex
+
+    indexes = params.gen_bus_ids.int()
+    # Sd.shape = [32, 179]
+    # Sg.shape = [32, 29]
+    # indexes.shape = [29]
+    zeros = torch.zeros_like(Sd.T)
+    Sg_bus_t = zeros.index_add_(dim=0, index=indexes, source=Sg.T)
+    Sg_bus = Sg_bus_t.T
+    S = Sg_bus - Sd
     return PowerflowVariables(V, S, Sd, Sg, Sf, St, Sbus)

@@ -119,31 +119,18 @@ def build_hetero_graph(
         params.n_branch
     )
 
-    # BFG
-    graph["bus", "from", "gen"].edge_index = torch.stack(
+    # B&G
+    graph["bus", "tie", "gen"].edge_index = torch.stack(
         [params.gen_bus_ids, gen_index], dim=0
     )
-    graph["bus", "from", "gen"].edge_weight = torch.ones(params.n_gen)
-    # GFB
-    graph["gen", "from", "bus"].edge_index = torch.stack(
-        [gen_index, params.gen_bus_ids], dim=0
-    )
-    graph["gen", "from", "bus"].edge_weight = reverse_coef * torch.ones(
+    graph["bus", "tie", "gen"].edge_weight = reverse_coef * torch.ones(
         params.n_gen
     )
-
-    # GTB
-    graph["gen", "to", "bus"].edge_index = torch.stack(
+    # G&B
+    graph["gen", "tie", "bus"].edge_index = torch.stack(
         [gen_index, params.gen_bus_ids], dim=0
     )
-    graph["gen", "to", "bus"].edge_weight = torch.ones(params.n_gen)
-    # BTG
-    graph["bus", "to", "gen"].edge_index = torch.stack(
-        [params.gen_bus_ids, gen_index], dim=0
-    )
-    graph["bus", "to", "gen"].edge_weight = reverse_coef * torch.ones(
-        params.n_gen
-    )
+    graph["gen", "tie", "bus"].edge_weight = torch.ones(params.n_gen)
   
 
     # Self-loops
@@ -221,7 +208,7 @@ class StaticGraphDataset(Dataset[PowerflowData]):
         self.x = x
         self.edge_index = graph.edge_index
         self.edge_attr = graph.edge_attr
-        self.powerflow_parameters = powerflow_parameters
+        self.powerflow_parameters = copy.deepcopy(powerflow_parameters)
 
     def __len__(self) -> int:
         return len(self.x)
@@ -255,9 +242,9 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         multiple samples on the graph.
 
         Args:
-            x_bus: Bus features with shape (n_samples, n_bus, n_features).
-            x_branch: Branch features with shape (n_samples, n_branch, n_features).
-            x_gen: Gen features with shape (n_samples, n_gen, n_features)
+            x_bus: Bus features with shape (n_samples, n_bus, n_features_bus).
+            x_branch: Branch features with shape (n_samples, n_branch, n_features_branch).
+            x_gen: Gen features with shape (n_samples, n_gen, n_features_gen)
             edge_index: Edge index with shape (2, num_edges)
             edge_attr: Edge attributes with shape (num_edges, num_edge_features)
         """
@@ -275,7 +262,7 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         homogeneous_graph.edge_index = homogeneous_graph.edge_index.to(torch.int64)
         graph = T.GCNNorm(False)(homogeneous_graph).to_heterogeneous()
         self.graph = T.ToSparseTensor()(graph)
-        self.powerflow_parameters = powerflow_parameters
+        self.powerflow_parameters = copy.deepcopy(powerflow_parameters)
 
     def __len__(self) -> int:
         return len(self.x_bus)
@@ -481,3 +468,14 @@ class CaseDataModule(pl.LightningDataModule):
             pin_memory=self.pin_memory,
             collate_fn=self.test_dataset.collate_fn,
         )
+
+    def transfer_batch_to_device(
+        self,
+        input: PowerflowBatch | PowerflowData,
+        device,
+        dataloader_idx: int,
+    ) -> PowerflowBatch | PowerflowData:
+        input = typing.cast(PowerflowData, input)
+        input.data.to(device)
+        input.powerflow_parameters.to(device)
+        return input
