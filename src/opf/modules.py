@@ -234,10 +234,11 @@ class OPFLogBarrier(pl.LightningModule):
         parameters: pf.PowerflowParameters,
     ):
         shape = V.shape
+        print(V.shape)
         dtype = V.dtype
         device = V.device
         V = torch.view_as_real(V.cpu()).view(-1, parameters.n_bus, 2).numpy()
-        Sg = torch.view_as_real(Sg.cpu()).view(-1, parameters.n_bus, 2).numpy()
+        Sg = torch.view_as_real(Sg.cpu()).view(-1, parameters.n_gen, 2).numpy()
         Sd = torch.view_as_real(Sd.cpu()).view(-1, parameters.n_bus, 2).numpy()
 
         # TODO: make this more robust, maybe use PyJulia
@@ -259,13 +260,18 @@ class OPFLogBarrier(pl.LightningModule):
                 ]
             )
             bus = np.load(busfile)
-        V, Sg, Sd = bus["V"], bus["Sg"], bus["Sd"]
+        V, Sg_bus, Sd = bus["V"], bus["Sg"], bus["Sd"]
         # convert back to torch tensors with the original device, dtype, and shape
         V = torch.from_numpy(V)
-        Sg = torch.from_numpy(Sg)
+        Sg_bus = torch.from_numpy(Sg_bus)
+        print(Sg_bus.shape)
+        indexes = parameters.gen_bus_ids.int().cpu()
+        Sg = Sg_bus[indexes]
+        print(indexes)
+        print(Sg.shape)
         Sd = torch.from_numpy(Sd)
         V = torch.complex(V[..., 0], V[..., 1]).to(device, dtype).view(shape)
-        Sg = torch.complex(Sg[..., 0], Sg[..., 1]).to(device, dtype).view(shape)
+        Sg = torch.complex(Sg[..., 0], Sg[..., 1]).to(device, dtype).view([6, 30])
         Sd = torch.complex(Sd[..., 0], Sd[..., 1]).to(device, dtype).view(shape)
         return V, Sg, Sd
 

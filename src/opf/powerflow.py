@@ -404,7 +404,6 @@ def powerflow(
     #     Sbus_branch[i] += torch.sum(Sf[params.fr_bus == i])
     #     Sbus_branch[i] += torch.sum(St[params.to_bus == i])
     Sbus = Sbus_branch + Sbus_sh
-    # indexing tensors still works, issue was bcus Sd complex
 
     indexes = params.gen_bus_ids.int()
     # Sd.shape = [32, 179]

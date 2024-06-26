@@ -300,6 +300,7 @@ class HeteroGCN(nn.Module):
         )
 
         # Readout MLP: Changes the number of features from n_channels to out_channels
+        # could make changes here for shape of output
         self.readout = HeteroMLP(
             node_types=self.node_types,
             in_channels=n_channels,
