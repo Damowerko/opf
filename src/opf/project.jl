@@ -35,7 +35,7 @@ function main()
     # load the model output matrix
     bus_variables = NPZ.npzread(busfile)
     V, Sd, Sg = bus_variables["V"], bus_variables["Sd"], bus_variables["Sg"]
-    if (size(V) != size(Sd) || size(V) != size(Sg))
+    if (size(V) != size(Sd))
         error("The size of the variables is not the same.")
     end
 

@@ -38,10 +38,16 @@ function project(network_data::Dict{String,Any}, V::Array{Float64,2}, Sg::Array{
         v["pd"] = Sd[bus, 1]
         v["qd"] = Sd[bus, 2]
     end
+
+    gen_mapped_to_bus = size(Sg, 1) != length(network_data["gen"])
     for (_, v) in network_data["gen"]
-        bus = v["gen_bus"]
-        pg = Sg[bus, 1]
-        qg = Sg[bus, 2]
+        if gen_mapped_to_bus
+            i = v["gen_bus"]
+        else
+            i = v["index"]
+        end
+        pg = Sg[i, 1]
+        qg = Sg[i, 2]
         # enforce constraints
         pg = max(pg, v["pmin"])
         pg = min(pg, v["pmax"])
