@@ -14,6 +14,7 @@ import opf.powerflow as pf
 from opf.constraints import equality, inequality
 from opf.dataset import PowerflowBatch, PowerflowData
 
+
 # make a second class OPFDual
 class OPFLogBarrier(pl.LightningModule):
     def __init__(
@@ -80,7 +81,6 @@ class OPFLogBarrier(pl.LightningModule):
     @property
     def equality_weight(self):
         return self.equality_start + self.equality_step * self.current_epoch
-
 
     def forward(
         self,
@@ -154,7 +154,6 @@ class OPFLogBarrier(pl.LightningModule):
         loss = self.loss(cost, constraints)
         return variables, constraints, cost, loss
 
-
     def training_step(self, batch: PowerflowBatch):
         _, constraints, cost, loss = self._step_helper(
             *self.forward(batch), batch.powerflow_parameters
@@ -170,7 +169,6 @@ class OPFLogBarrier(pl.LightningModule):
             batch_size=batch.data.num_graphs,
         )
         return loss
-
 
     def validation_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
@@ -195,7 +193,6 @@ class OPFLogBarrier(pl.LightningModule):
                 batch_size=batch_size,
                 prog_bar=True,
             )
-
 
     def test_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
@@ -233,8 +230,8 @@ class OPFLogBarrier(pl.LightningModule):
         Sd: torch.Tensor,
         parameters: pf.PowerflowParameters,
     ):
-        shape = V.shape
-        print(V.shape)
+        bus_shape = V.shape
+        gen_shape = Sg.shape
         dtype = V.dtype
         device = V.device
         V = torch.view_as_real(V.cpu()).view(-1, parameters.n_bus, 2).numpy()
@@ -260,19 +257,14 @@ class OPFLogBarrier(pl.LightningModule):
                 ]
             )
             bus = np.load(busfile)
-        V, Sg_bus, Sd = bus["V"], bus["Sg"], bus["Sd"]
+        V, Sg, Sd = bus["V"], bus["Sg"], bus["Sd"]
         # convert back to torch tensors with the original device, dtype, and shape
         V = torch.from_numpy(V)
-        Sg_bus = torch.from_numpy(Sg_bus)
-        print(Sg_bus.shape)
-        indexes = parameters.gen_bus_ids.int().cpu()
-        Sg = Sg_bus[indexes]
-        print(indexes)
-        print(Sg.shape)
+        Sg = torch.from_numpy(Sg)
         Sd = torch.from_numpy(Sd)
-        V = torch.complex(V[..., 0], V[..., 1]).to(device, dtype).view(shape)
-        Sg = torch.complex(Sg[..., 0], Sg[..., 1]).to(device, dtype).view([6, 30])
-        Sd = torch.complex(Sd[..., 0], Sd[..., 1]).to(device, dtype).view(shape)
+        V = torch.complex(V[..., 0], V[..., 1]).to(device, dtype).view(bus_shape)
+        Sg = torch.complex(Sg[..., 0], Sg[..., 1]).to(device, dtype).view(gen_shape)
+        Sd = torch.complex(Sd[..., 0], Sd[..., 1]).to(device, dtype).view(bus_shape)
         return V, Sg, Sd
 
     def parse_bus(self, bus: torch.Tensor):
@@ -288,7 +280,6 @@ class OPFLogBarrier(pl.LightningModule):
         V = torch.complex(vr, vi)
         # Sg = torch.complex(pg, qg)
         return V
-
 
     def parse_load(self, load: torch.Tensor):
         """
@@ -310,12 +301,11 @@ class OPFLogBarrier(pl.LightningModule):
         if len(constraint_losses) == 0:
             constraint_losses = [torch.zeros(1, device=self.device, dtype=self.dtype)]  # type: ignore
         return cost + torch.stack(constraint_losses).sum()
-    
+
     def parse_gen(self, gen: torch.Tensor):
         assert gen.shape[1] == 2
         Sg = torch.complex(gen[:, 0, :], gen[:, 1, :])
         return Sg
-
 
     def cost(
         self,
@@ -334,12 +324,11 @@ class OPFLogBarrier(pl.LightningModule):
         return cost.mean(0).sum() / powerflow_parameters.reference_cost
         # return cost.mean()
 
-
     def constraints(
         self,
         variables: pf.PowerflowVariables,
         powerflow_parameters: pf.PowerflowParameters,
-     ) -> Dict[str, Dict[str, torch.Tensor]]:
+    ) -> Dict[str, Dict[str, torch.Tensor]]:
         """
         Calculates the powerflow constraints.
         :returns: Nested map from constraint name => (value name => tensor value)
@@ -355,7 +344,7 @@ class OPFLogBarrier(pl.LightningModule):
                     self.eps,
                     constraint.isAngle,
                 )
-                
+
                 # apply weight
                 values[name]["loss"] *= self.equality_weight
             elif isinstance(constraint, pf.InequalityConstraint):
@@ -369,7 +358,6 @@ class OPFLogBarrier(pl.LightningModule):
                     constraint.isAngle,
                 )
         return values
-
 
     def metrics(self, cost, constraints, prefix, detailed=False):
         aggregate_metrics = {
