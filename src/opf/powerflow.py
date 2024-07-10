@@ -413,4 +413,6 @@ def powerflow(
     Sg_bus_t = zeros.index_add_(dim=0, index=indexes, source=Sg.T)
     Sg_bus = Sg_bus_t.T
     S = Sg_bus - Sd
+    # if substitute_equality:
+    #     return PowerflowVariables(V, S, Sd, Sg_bus, Sf, St, Sbus)
     return PowerflowVariables(V, S, Sd, Sg, Sf, St, Sbus)
