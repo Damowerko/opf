@@ -79,13 +79,13 @@ def equality(
     assert not torch.isinf(u).any()
     return metrics(loss, u, eps)
 
-
+"""
+made changes to inequality for OPFDual
+"""
 def inequality(
     value: torch.Tensor,
     lower_bound: torch.Tensor,
     upper_bound: torch.Tensor,
-    s,
-    t,
     eps=1e-4,
     angle=False,
 ):
@@ -96,8 +96,6 @@ def inequality(
         value (torch.Tensor): The tensor to be constrained.
         lower_bound (torch.Tensor): The lower bound tensor.
         upper_bound (torch.Tensor): The upper bound tensor.
-        s (float): The maximum slope of the log-barrier.
-        t (float): The barrier function scaling parameter.
         eps (float, optional): The epsilon value. Defaults to 1e-4.
         angle (bool, optional): Whether to fix the angle. Defaults to False.
 
@@ -130,9 +128,7 @@ def inequality(
     # we normalize u_equal by the mean difference between the upper and lower constraints
     # this allows us to compare values of different scales
     u_inequality = torch.cat((u_lower.flatten(), u_upper.flatten()))
-    loss = (
-        u_equal.square().sum() + truncated_log(u_inequality, s, t).sum()
-    ) / value.numel()
+    loss = (u_equal.square().sum()) / value.numel()
 
     # The tensor elements should be bounded.
     assert not torch.isinf(u_equal).any()

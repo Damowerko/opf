@@ -261,10 +261,7 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
         ),
     }
 
-"""
-    !!! NEEDS CHANGES !!!
-    - depends on changes to params
-"""
+
 def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowParameters:
     dtype = torch.complex128 if precision == 64 else torch.complex64
 

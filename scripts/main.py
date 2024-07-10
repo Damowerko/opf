@@ -14,7 +14,7 @@ from wandb.wandb_run import Run
 
 from opf.dataset import CaseDataModule
 from opf.hetero import HeteroGCN
-from opf.modules import OPFLogBarrier
+from opf.modules import OPFLogBarrier, OPFDual
 
 
 def main():
@@ -45,7 +45,8 @@ def main():
 
     # the gnn being used
     HeteroGCN.add_args(parser)
-    OPFLogBarrier.add_args(parser)
+    # OPFLogBarrier.add_args(parser)
+    OPFDual.add_args(parser)    
 
     params = parser.parse_args()
     params_dict = vars(params)
@@ -112,7 +113,8 @@ def train(trainer: Trainer, params):
     else:
         dm.setup()
         gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
-    model = OPFLogBarrier(gcn, **params)
+    # model = OPFLogBarrier(gcn, **params)
+    model = OPFDual(gcn, **params)
 
     # TODO: Add back once we can run ACOPF examples.
     # figure out the cost weight normalization factor
@@ -189,7 +191,8 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
     else:
         gcn = GCN(in_channels=-1, out_channels=4, **params)
-    model = OPFLogBarrier(gcn, **params)
+    # model = OPFLogBarrier(gcn, **params)
+    model = OPFDual(gcn, **params)
 
     # train the model
     trainer.fit(model, dm)

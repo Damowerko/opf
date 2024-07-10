@@ -9,6 +9,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 from torch_geometric.data import Data, HeteroData
+from torch.nn import Parameter
 
 import opf.powerflow as pf
 from opf.constraints import equality, inequality
@@ -18,14 +19,6 @@ class OPFDual(pl.LightningModule):
     def __init__(
         self,
         model: torch.nn.Module,
-        lamb: torch.Tensor,
-        mu: torch.Tensor,
-        t=500.0,
-        t_step=0.0,
-        s=100.0,
-        s_step=0.0,
-        equality_weight=1.0,
-        equality_step=1.0,
         lr=1e-4,
         weight_decay=0.0,
         eps=1e-3,
@@ -36,20 +29,21 @@ class OPFDual(pl.LightningModule):
         super().__init__()
         self.model = model
         self.automatic_optimization=False
-        
-        self.lamb = lamb
-        self.mu = mu
+        # mmmmm
+        # self.retain_graph=True
+
+        n_ineq_constr=6
+        n_eq_constr=2
+        self.lamb = Parameter(
+            torch.ones(n_ineq_constr)
+        )
+        self.mu = Parameter(
+            torch.ones(n_eq_constr)
+        )
         # alternatively:
         # self.equality_multiplier = torch.zeros([shape])
         # self.inequality_multiplier = torch.zeros([shape])
 
-        # variables controlling the evolution of the log barrier
-        self.t_start = t
-        self.t_step = t_step
-        self.s_start = s
-        self.s_step = s_step
-        self.equality_start = equality_weight
-        self.equality_step = equality_step
         # other parameters
         self.lr = lr
         self.weight_decay = weight_decay
@@ -60,40 +54,21 @@ class OPFDual(pl.LightningModule):
 
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
+        # TODO: possibly change argument group
+
         group = parser.add_argument_group("OPFLogBarrier")
-        group.add_argument("--s", type=float, default=100)
-        group.add_argument("--s_step", type=float, default=0.0)
-        group.add_argument("--t", type=float, default=500)
-        group.add_argument("--t_step", type=float, default=0.0)
-        group.add_argument("--equality_weight", type=float, default=1.0)
-        group.add_argument("--equality_step", type=float, default=1.0)
+        
         group.add_argument("--lr", type=float, default=3e-4)
         group.add_argument("--weight_decay", type=float, default=0.0)
         group.add_argument("--eps", type=float, default=1e-3)
         group.add_argument("--enforce_constraints", action="store_true", default=False)
         group.add_argument("--detailed_metrics", action="store_true", default=False)
 
-    @property
-    def s(self):
-        return self.s_start + self.s_step * self.current_epoch
-
-    @property
-    def t(self):
-        return self.t_start + self.t_step * self.current_epoch
-
-    @property
-    def equality_weight(self):
-        return self.equality_start + self.equality_step * self.current_epoch
 
     def forward(
         self,
         input: PowerflowBatch | PowerflowData,
     ):
-        
-        """
-        TODO:
-        Make another forwad function to update multipliers
-        """
         data, powerflow_parameters = input
         if isinstance(data, HeteroData):
             n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
@@ -153,11 +128,6 @@ class OPFDual(pl.LightningModule):
             # Project the solution to the powermodels solution
             V, Sg, Sd = self.project_powermodels(V, Sg, Sd, parameters)
         variables = pf.powerflow(V, Sg, Sd, parameters)
-
-        # print(f'Sg shape: {Sg.shape}')                   # Sg shape: torch.Size([256, 6])
-        # print(f'Sbus shape: {variables.Sbus.shape}')     # Sbus shape: torch.Size([256, 30])
-        # print(f'Sd shape: {Sd.shape}')                   # Sd shape: torch.Size([256, 30])
-
         if substitute_equality:
             # Make a substitution to enforce equality constraints
             Sg = variables.Sbus + Sd
@@ -168,17 +138,42 @@ class OPFDual(pl.LightningModule):
         return variables, constraints, cost, loss
 
     def training_step(self, batch: PowerflowBatch):
+        # TODO: ReLU on lambda
 
-        # Not exactly sure what to do here... think about it...
-        # Change forward
-        _, constraints, cost, loss_uno = self._step_helper(
+        p_opt, d_opt = self.optimizers()
+
+        variables, constraints, cost, loss = self._step_helper(
             *self.forward(batch), batch.powerflow_parameters
         )
 
-        loss_dos = self.loss(cost, constraints)
+        ###################
+        # Optimize Primal #
+        ###################
+        p_opt.zero_grad()
+        self.manual_backward(loss, retain_graph=True)
+        p_opt.step()
+
+        #################
+        # Optimize Dual #
+        #################
+        """
+        QUESTION: Do I do another forward? ie:
+        variables, constraints, cost, loss = self._step_helper(
+            *self.forward(batch), batch.powerflow_parameters
+        )
+        """
+        cost_dos = self.cost(variables, batch.powerflow_parameters)
+        loss_dos = self.loss(cost_dos, constraints) 
+        # need to make a tensor to ^^ but good enough for now
+        # *-1
+
+        d_opt.zero_grad()
+        self.manual_backward(loss_dos)
+        d_opt.step()
+
         self.log(
             "train/loss",
-            loss_dos,
+            loss,
             prog_bar=True,
             batch_size=batch.data.num_graphs,
         )
@@ -186,7 +181,6 @@ class OPFDual(pl.LightningModule):
             self.metrics(cost, constraints, "train", self.detailed_metrics),
             batch_size=batch.data.num_graphs,
         )
-        return
 
     def validation_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
@@ -309,12 +303,13 @@ class OPFDual(pl.LightningModule):
         """
         Sd = torch.complex(load[:, 0, :], load[:, 1, :])
         return Sd
+    
+    def parse_gen(self, gen: torch.Tensor):
+        assert gen.shape[1] == 2
+        Sg = torch.complex(gen[:, 0, :], gen[:, 1, :])
+        return Sg
 
     def loss(self, cost, constraints):
-        """
-        TODO:
-        Change this to equation in overleaf
-        """
         constraint_losses = [
             val["loss"]
             for val in constraints.values()
@@ -323,11 +318,6 @@ class OPFDual(pl.LightningModule):
         if len(constraint_losses) == 0:
             constraint_losses = [torch.zeros(1, device=self.device, dtype=self.dtype)]  # type: ignore
         return cost + torch.stack(constraint_losses).sum()
-
-    def parse_gen(self, gen: torch.Tensor):
-        assert gen.shape[1] == 2
-        Sg = torch.complex(gen[:, 0, :], gen[:, 1, :])
-        return Sg
 
     def cost(
         self,
@@ -344,7 +334,6 @@ class OPFDual(pl.LightningModule):
         cost = torch.clamp(cost, min=0)
         # # normalize the cost by the number of generators
         return cost.mean(0).sum() / powerflow_parameters.reference_cost
-        # return cost.mean()
 
     def constraints(
         self,
@@ -355,15 +344,11 @@ class OPFDual(pl.LightningModule):
         Calculates the powerflow constraints.
         :returns: Nested map from constraint name => (value name => tensor value)
         """
-
-        """
-        TODO:
-        Update this for the new loss
-        """
         constraints = pf.build_constraints(variables, powerflow_parameters)
         values = {}
-        # l_i = 0
-        # m_i = 0
+        # there must be a better way to do this
+        l_i = 0
+        m_i = 0
         for name, constraint in constraints.items():
             if isinstance(constraint, pf.EqualityConstraint):
                 values[name] = equality(
@@ -373,23 +358,18 @@ class OPFDual(pl.LightningModule):
                     self.eps,
                     constraint.isAngle,
                 )
-
-                # apply weight
-                values[name]["loss"] *= self.equality_weight
-                # values[name]["loss"] *= self.lamb[l_i]
-                # l_i+=1                
+                values[name]["loss"] *= self.lamb[l_i]
+                m_i+=1                
             elif isinstance(constraint, pf.InequalityConstraint):
                 values[name] = inequality(
                     constraint.variable,
                     constraint.min,
                     constraint.max,
-                    self.s,
-                    self.t,
                     self.eps,
                     constraint.isAngle,
                 )
-                # values[name]["loss"] *= self.mu[m_i]
-                # m_i+=1
+                values[name]["loss"] *= self.lamb[l_i]
+                l_i+=1
         return values
 
     def metrics(self, cost, constraints, prefix, detailed=False):
@@ -432,11 +412,12 @@ class OPFDual(pl.LightningModule):
         return {**aggregate_metrics, **detailed_metrics}
 
     def configure_optimizers(self):
+        # Should this be self.parameters() or self.model.parameters()
         primal_opt = torch.optim.AdamW(
             self.parameters(), self.lr, weight_decay=self.weight_decay
         )
         dual_opt = torch.optim.AdamW(
-            self.parameters(), self.lr, weight_decay=self.weight_decay
+            [self.lamb, self.mu], self.lr, weight_decay=self.weight_decay
         )
         return primal_opt, dual_opt
 
@@ -753,9 +734,6 @@ class OPFLogBarrier(pl.LightningModule):
         if len(constraint_losses) == 0:
             constraint_losses = [torch.zeros(1, device=self.device, dtype=self.dtype)]  # type: ignore
         return cost + torch.stack(constraint_losses).sum()
-    
-    def dual_loss(self, cost, constraints):
-        eq_loss
 
     def parse_gen(self, gen: torch.Tensor):
         assert gen.shape[1] == 2
