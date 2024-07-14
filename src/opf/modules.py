@@ -10,6 +10,7 @@ import pytorch_lightning as pl
 import torch
 from torch_geometric.data import Data, HeteroData
 from torch.nn import Parameter
+import torch.nn.functional as F
 
 import opf.powerflow as pf
 from opf.constraints import equality, inequality
@@ -29,21 +30,16 @@ class OPFDual(pl.LightningModule):
         super().__init__()
         self.model = model
         self.automatic_optimization=False
-        # mmmmm
-        # self.retain_graph=True
-
         n_ineq_constr=6
         n_eq_constr=2
+        # self.lamb = torch.ones(n_ineq_constr)
+        # self.mu = torch.ones(n_eq_constr)
         self.lamb = Parameter(
-            torch.ones(n_ineq_constr)
+            torch.ones(n_ineq_constr), requires_grad=True
         )
         self.mu = Parameter(
-            torch.ones(n_eq_constr)
+            torch.ones(n_eq_constr), requires_grad=True
         )
-        # alternatively:
-        # self.equality_multiplier = torch.zeros([shape])
-        # self.inequality_multiplier = torch.zeros([shape])
-
         # other parameters
         self.lr = lr
         self.weight_decay = weight_decay
@@ -138,11 +134,9 @@ class OPFDual(pl.LightningModule):
         return variables, constraints, cost, loss
 
     def training_step(self, batch: PowerflowBatch):
-        # TODO: ReLU on lambda
-
         p_opt, d_opt = self.optimizers()
 
-        variables, constraints, cost, loss = self._step_helper(
+        _, constraints, cost, loss = self._step_helper(
             *self.forward(batch), batch.powerflow_parameters
         )
 
@@ -150,26 +144,21 @@ class OPFDual(pl.LightningModule):
         # Optimize Primal #
         ###################
         p_opt.zero_grad()
-        self.manual_backward(loss, retain_graph=True)
+        self.manual_backward(loss, retain_graph=False)
         p_opt.step()
 
         #################
         # Optimize Dual #
         #################
-        """
-        QUESTION: Do I do another forward? ie:
-        variables, constraints, cost, loss = self._step_helper(
-            *self.forward(batch), batch.powerflow_parameters
-        )
-        """
-        cost_dos = self.cost(variables, batch.powerflow_parameters)
-        loss_dos = self.loss(cost_dos, constraints) 
-        # need to make a tensor to ^^ but good enough for now
-        # *-1
-
         d_opt.zero_grad()
-        self.manual_backward(loss_dos)
         d_opt.step()
+
+        # ReLU on lamb
+        self.lamb.data = F.relu(self.lamb.data)
+
+        # fix values ...
+        self.lamb = torch.ones(6)*2000
+        self.mu = torch.ones(2)*2000
 
         self.log(
             "train/loss",
@@ -412,12 +401,11 @@ class OPFDual(pl.LightningModule):
         return {**aggregate_metrics, **detailed_metrics}
 
     def configure_optimizers(self):
-        # Should this be self.parameters() or self.model.parameters()
         primal_opt = torch.optim.AdamW(
-            self.parameters(), self.lr, weight_decay=self.weight_decay
+            params=self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
-        dual_opt = torch.optim.AdamW(
-            [self.lamb, self.mu], self.lr, weight_decay=self.weight_decay
+        dual_opt = torch.optim.SGD(
+            params=[self.lamb, self.mu], lr=self.lr*1000, weight_decay=0.0, maximize=True
         )
         return primal_opt, dual_opt
 
