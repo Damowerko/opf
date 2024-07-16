@@ -48,6 +48,7 @@ def truncated_log(u, s, t):
 
 
 def equality(
+    multiplier: torch.Tensor,
     x: torch.Tensor,
     y: torch.Tensor,
     mask: torch.Tensor | None = None,
@@ -67,22 +68,24 @@ def equality(
     Returns:
         A tuple containing the loss value, the constraint violation vector, and the number of violated constraints.
     """
+    
     if mask is not None:
         x = x[..., mask]
         y = y[..., mask]
     u = (x - y).abs()
     if angle:
         u = fix_angle(u)
-    loss = u.square().mean()
+
+    loss_tensor = u @ multiplier
+    loss = loss_tensor.square().mean()
 
     assert not torch.isnan(u).any()
     assert not torch.isinf(u).any()
     return metrics(loss, u, eps)
 
-"""
-made changes to inequality for OPFDual
-"""
+
 def inequality(
+    multiplier: torch.Tensor,
     value: torch.Tensor,
     lower_bound: torch.Tensor,
     upper_bound: torch.Tensor,
@@ -93,6 +96,7 @@ def inequality(
     Computes the inequality constraint loss for a given tensor.
 
     Args:
+        multiplier (torch.Tesnor): The loss multiplier.
         value (torch.Tensor): The tensor to be constrained.
         lower_bound (torch.Tensor): The lower bound tensor.
         upper_bound (torch.Tensor): The upper bound tensor.
@@ -109,7 +113,8 @@ def inequality(
 
     band = (upper_bound - lower_bound).abs()
 
-    mask_equality = band < eps
+    mask_equality = band < eps   
+
     mask_lower = _compute_mask(~mask_equality, lower_bound)
     mask_upper = _compute_mask(~mask_equality, upper_bound)
 
@@ -128,7 +133,10 @@ def inequality(
     # we normalize u_equal by the mean difference between the upper and lower constraints
     # this allows us to compare values of different scales
     u_inequality = torch.cat((u_lower.flatten(), u_upper.flatten()))
-    loss = (u_equal.square().sum()) / value.numel()
+
+    loss_tensor = u_equal @ multiplier[mask_equality]
+    loss = (loss_tensor.square().sum()) / value.numel()
+    # loss = (u_equal.square().sum()) / value.numel()
 
     # The tensor elements should be bounded.
     assert not torch.isinf(u_equal).any()

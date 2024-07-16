@@ -30,17 +30,39 @@ class OPFDual(pl.LightningModule):
         super().__init__()
         self.model = model
         self.automatic_optimization=False
-        n_ineq_constr=6
-        n_eq_constr=2
-        # self.lamb = torch.ones(n_ineq_constr)
-        # self.mu = torch.ones(n_eq_constr)
-        self.lamb = Parameter(
-            torch.ones(n_ineq_constr), requires_grad=True
+        # find a way to get these...
+        n_bus=30
+        n_gen=6
+        n_branch=41
+
+        ### MU ###
+        self.zues = Parameter(
+            torch.ones([n_bus])
         )
-        self.mu = Parameter(
-            torch.ones(n_eq_constr), requires_grad=True
+        self.hades = Parameter(
+            torch.ones([1])
         )
-        # other parameters
+
+        ### LAMBDA ###
+        self.artemis = Parameter(
+            torch.ones([n_bus])
+        )
+        self.athena = Parameter(
+            torch.ones([n_gen])
+        )
+        self.apollo = Parameter(
+            torch.ones([n_gen])
+        )
+        self.ares = Parameter(
+            torch.ones([n_branch])
+        )
+        self.hermes = Parameter(
+            torch.ones([n_branch])
+        )
+        self.aphrodite = Parameter(
+            torch.ones([n_branch])
+        )
+
         self.lr = lr
         self.weight_decay = weight_decay
         self.eps = eps
@@ -153,12 +175,17 @@ class OPFDual(pl.LightningModule):
         d_opt.zero_grad()
         d_opt.step()
 
-        # ReLU on lamb
-        self.lamb.data = F.relu(self.lamb.data)
+        # ReLU on lambda
+        self.artemis.data = F.relu(self.artemis.data)
+        self.athena.data = F.relu(self.athena.data)
+        self.apollo.data = F.relu(self.apollo.data)
+        self.ares.data = F.relu(self.ares.data)
+        self.hermes.data = F.relu(self.hermes.data)
+        self.aphrodite.data = F.relu(self.aphrodite.data)
 
-        # fix values ...
-        self.lamb = torch.ones(6)*2000
-        self.mu = torch.ones(2)*2000
+        # # fix values ...
+        # self.lamb = torch.ones(6)*2000
+        # self.mu = torch.ones(2)*2000
 
         self.log(
             "train/loss",
@@ -335,30 +362,81 @@ class OPFDual(pl.LightningModule):
         """
         constraints = pf.build_constraints(variables, powerflow_parameters)
         values = {}
-        # there must be a better way to do this
-        l_i = 0
-        m_i = 0
-        for name, constraint in constraints.items():
-            if isinstance(constraint, pf.EqualityConstraint):
-                values[name] = equality(
-                    constraint.value,
-                    constraint.target,
-                    constraint.mask,
-                    self.eps,
-                    constraint.isAngle,
-                )
-                values[name]["loss"] *= self.lamb[l_i]
-                m_i+=1                
-            elif isinstance(constraint, pf.InequalityConstraint):
-                values[name] = inequality(
-                    constraint.variable,
-                    constraint.min,
-                    constraint.max,
-                    self.eps,
-                    constraint.isAngle,
-                )
-                values[name]["loss"] *= self.lamb[l_i]
-                l_i+=1
+
+        zues = constraints["equality/bus_power"]
+        hades = constraints["equality/bus_reference"]
+        artemis = constraints["inequality/voltage_magnitude"]
+        apollo = constraints["inequality/active_power"]
+        athena = constraints["inequality/reactive_power"]
+        ares = constraints["inequality/forward_rate"]
+        hermes = constraints["inequality/backward_rate"]
+        aphrodite = constraints["inequality/voltage_angle_difference"]
+
+        values["equality/bus_power"] = equality(
+            self.zues,
+            zues.value,
+            zues.target,
+            zues.mask,
+            self.eps,
+            zues.isAngle
+        )
+        values["equality/bus_reference"] = equality(
+            multiplier=self.hades,
+            x=hades.value,
+            y=hades.target,
+            mask=hades.mask,
+            eps=self.eps,
+            angle=hades.isAngle
+        )
+        values["inequality/voltage_magnitude"] = inequality(
+            multiplier=self.artemis,
+            value=artemis.variable,
+            lower_bound=artemis.min,
+            upper_bound=artemis.max,
+            eps=self.eps,
+            angle=artemis.isAngle,
+        )
+        values["inequality/active_power"] = inequality(
+            multiplier=self.apollo,
+            value=apollo.variable,
+            lower_bound=apollo.min,
+            upper_bound=apollo.max,
+            eps=self.eps,
+            angle=apollo.isAngle,
+        )
+        values["inequality/reactive_power"] = inequality(
+            multiplier=self.athena,
+            value=athena.variable,
+            lower_bound=athena.min,
+            upper_bound=athena.max,
+            eps=self.eps,
+            angle=athena.isAngle,
+        )
+        values["inequality/forward_rate"] = inequality(
+            multiplier=self.ares,
+            value=ares.variable,
+            lower_bound=ares.min,
+            upper_bound=ares.max,
+            eps=self.eps,
+            angle=ares.isAngle,
+        )
+        values["inequality/backward_rate"] = inequality(
+            multiplier=self.hermes,
+            value=hermes.variable,
+            lower_bound=hermes.min,
+            upper_bound=hermes.max,
+            eps=self.eps,
+            angle=hermes.isAngle,
+        )
+        values["inequality/voltage_angle_difference"] = inequality(
+            multiplier=self.aphrodite,
+            value=aphrodite.variable,
+            lower_bound=aphrodite.min,
+            upper_bound=aphrodite.max,
+            eps=self.eps,
+            angle=aphrodite.isAngle,
+        )
+
         return values
 
     def metrics(self, cost, constraints, prefix, detailed=False):
@@ -401,11 +479,21 @@ class OPFDual(pl.LightningModule):
         return {**aggregate_metrics, **detailed_metrics}
 
     def configure_optimizers(self):
+        dual_params_list = [
+            self.zues,
+            self.hades,
+            self.artemis,
+            self.apollo,
+            self.athena,
+            self.ares,
+            self.hermes,
+            self.aphrodite,
+        ]
         primal_opt = torch.optim.AdamW(
             params=self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
         dual_opt = torch.optim.SGD(
-            params=[self.lamb, self.mu], lr=self.lr*1000, weight_decay=0.0, maximize=True
+            params=dual_params_list, lr=self.lr*1000, weight_decay=0.0, maximize=True
         )
         return primal_opt, dual_opt
 
@@ -465,11 +553,6 @@ class OPFLogBarrier(pl.LightningModule):
         self._enforce_constraints = enforce_constraints
         self.detailed_metrics = detailed_metrics
         self.save_hyperparameters(ignore=["model", "kwargs"])
-
-        # zeros of full? what shape also?
-        # should this be passed as an argument?
-        # self.equality_multiplier = torch.zeros()
-        # self.inequality_multiplier = torch.zeros()
 
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
