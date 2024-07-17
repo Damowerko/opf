@@ -77,7 +77,7 @@ def equality(
         u = fix_angle(u)
 
     loss_tensor = u @ multiplier
-    loss = loss_tensor.square().mean()
+    loss = loss_tensor.mean()
 
     assert not torch.isnan(u).any()
     assert not torch.isinf(u).any()
@@ -96,7 +96,7 @@ def inequality(
     Computes the inequality constraint loss for a given tensor.
 
     Args:
-        multiplier (torch.Tesnor): The loss multiplier.
+        multiplier (torch.Tensor): The loss multiplier.
         value (torch.Tensor): The tensor to be constrained.
         lower_bound (torch.Tensor): The lower bound tensor.
         upper_bound (torch.Tensor): The upper bound tensor.
@@ -127,6 +127,7 @@ def inequality(
         u_lower = fix_angle(u_lower)
         u_upper = fix_angle(u_upper)
 
+    # keep this for u, but not for loss?
     u_lower /= band[mask_lower]
     u_upper /= band[mask_upper]
 
@@ -134,9 +135,7 @@ def inequality(
     # this allows us to compare values of different scales
     u_inequality = torch.cat((u_lower.flatten(), u_upper.flatten()))
 
-    loss_tensor = u_equal @ multiplier[mask_equality]
-    loss = (loss_tensor.square().sum()) / value.numel()
-    # loss = (u_equal.square().sum()) / value.numel()
+    loss = ((lower_bound - value)[:, mask_lower] @ multiplier[mask_lower,0]).sum() + ((value - upper_bound)[:, mask_upper] @ multiplier[mask_upper,1]).sum()
 
     # The tensor elements should be bounded.
     assert not torch.isinf(u_equal).any()
