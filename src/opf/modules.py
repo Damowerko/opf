@@ -151,42 +151,13 @@ class OPFDual(pl.LightningModule):
             *self.forward(batch), batch.powerflow_parameters
         )
 
-        ###################
-        # Optimize Primal #
-        ###################
-        p_opt.zero_grad()
-        self.manual_backward(loss, retain_graph=False)
-        p_opt.step()
-
-        #################
-        # Optimize Dual #
-        #################
-        d_opt.zero_grad()
-        d_opt.step()
-
-        # ReLU on lambda
-        self.multipliers["inequality/voltage_magnitude"].data = F.relu(
-            self.multipliers["inequality/voltage_magnitude"].data
-        )
-        self.multipliers["inequality/active_power"].data = F.relu(
-            self.multipliers["inequality/active_power"].data
-        )
-        self.multipliers["inequality/reactive_power"].data = F.relu(
-            self.multipliers["inequality/reactive_power"].data
-        )
-        self.multipliers["inequality/forward_rate"].data = F.relu(
-            self.multipliers["inequality/forward_rate"].data
-        )
-        self.multipliers["inequality/backward_rate"].data = F.relu(
-            self.multipliers["inequality/backward_rate"].data
-        )
-        self.multipliers["inequality/voltage_angle_difference"].data = F.relu(
-            self.multipliers["inequality/voltage_angle_difference"].data
-        )
-
-        # # fix values ...
-        # self.lamb = torch.ones(6)*2000
-        # self.mu = torch.ones(2)*2000
+        # Check for negative values in multipliers
+        for name, value in self.multipliers.items():
+            negative_mask = value < 0
+            check = negative_mask.any()
+            if check:
+                negatives = value[negative_mask]
+                print(f"There are negative values in {name}: {negatives}")
 
         self.log(
             "train/loss",
@@ -198,6 +169,34 @@ class OPFDual(pl.LightningModule):
             self.metrics(cost, constraints, "train", self.detailed_metrics),
             batch_size=batch.data.num_graphs,
         )
+
+
+        p_opt.zero_grad()
+        d_opt.zero_grad()
+        self.manual_backward(loss)
+        p_opt.step()
+        d_opt.step()
+
+        # ReLU on lambda
+        self.multipliers["inequality/voltage_magnitude"].data.relu_()
+        self.multipliers["inequality/active_power"].data.relu_()
+        self.multipliers["inequality/reactive_power"].data.relu_()
+        self.multipliers["inequality/forward_rate"].data.relu_()
+        self.multipliers["inequality/backward_rate"].data.relu_()
+        self.multipliers["inequality/voltage_angle_difference"].data.relu_()
+
+        # self.multipliers["inequality/voltage_magnitude"].clamp(0)
+        # self.multipliers["inequality/active_power"].clamp(0)
+        # self.multipliers["inequality/reactive_power"].clamp(0)
+        # self.multipliers["inequality/forward_rate"].clamp(0)
+        # self.multipliers["inequality/backward_rate"].clamp(0)
+        # self.multipliers["inequality/voltage_angle_difference"].clamp(0)
+
+        # # fix values ...
+        # self.lamb = torch.ones(6)*2000
+        # self.mu = torch.ones(2)*2000
+
+        
 
     def validation_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
@@ -362,8 +361,8 @@ class OPFDual(pl.LightningModule):
         :returns: Nested map from constraint name => (value name => tensor value)
         """
         constraints = pf.build_constraints(variables, powerflow_parameters)
-        values = {}
 
+        values = {}
         for name, constraint in constraints.items():
             if isinstance(constraint, pf.EqualityConstraint):
                 values[name] = equality(
@@ -392,10 +391,14 @@ class OPFDual(pl.LightningModule):
             f"{prefix}/equality/rate": [],
             f"{prefix}/equality/error_mean": [],
             f"{prefix}/equality/error_max": [],
+            f"{prefix}/equality/multiplier_mean": [],
+            f"{prefix}/equality/multiplier_max": [],
             f"{prefix}/inequality/loss": [],
             f"{prefix}/inequality/rate": [],
             f"{prefix}/inequality/error_mean": [],
             f"{prefix}/inequality/error_max": [],
+            f"{prefix}/inequality/multiplier_mean": [],
+            f"{prefix}/inequality/multiplier_max": [],
         }
         detailed_metrics = {}
         reduce_fn = {
@@ -428,9 +431,8 @@ class OPFDual(pl.LightningModule):
         primal_opt = torch.optim.AdamW(
             params=self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
-        # will this work with a dict?
-        dual_opt = torch.optim.SGD(
-            params=self.multipliers.values(), lr=self.lr*1000, weight_decay=0.0, maximize=True
+        dual_opt = torch.optim.AdamW(
+            params=self.multipliers.values(), lr=self.lr*10, weight_decay=1e-6, maximize=True
         )
         return primal_opt, dual_opt
 

@@ -3,7 +3,7 @@ from math import log, pi
 import torch
 
 
-def metrics(loss, u: torch.Tensor, eps: float):
+def metrics(loss, u: torch.Tensor, eps: float, multiplier: torch.Tensor):
     # Consider two values equal if within numerical error.
     violated_mask = u >= eps
     violated = u[violated_mask]
@@ -20,6 +20,8 @@ def metrics(loss, u: torch.Tensor, eps: float):
         rate=(violated_mask.sum() / violated_mask.numel()).nan_to_num(),
         error_mean=violated.abs().mean(),
         error_max=violated.abs().max(),
+        multiplier_mean=multiplier.mean(),
+        multiplier_max=multiplier.max(),
     )
 
 
@@ -81,7 +83,7 @@ def equality(
 
     assert not torch.isnan(u).any()
     assert not torch.isinf(u).any()
-    return metrics(loss, u, eps)
+    return metrics(loss, u, eps, multiplier)
 
 
 def inequality(
@@ -106,6 +108,8 @@ def inequality(
     Returns:
         tuple: A tuple containing the loss and the metrics.
     """
+    # TODO:
+    # Make changes to inequality for equality case
 
     # To properly normalize the results we do not want any of these to be inf.
     assert not torch.isinf(upper_bound).any()
@@ -127,7 +131,6 @@ def inequality(
         u_lower = fix_angle(u_lower)
         u_upper = fix_angle(u_upper)
 
-    # keep this for u, but not for loss?
     u_lower /= band[mask_lower]
     u_upper /= band[mask_upper]
 
@@ -146,4 +149,5 @@ def inequality(
         loss,
         torch.cat((u_equal.flatten() / band[~mask_equality].mean(), u_inequality)),
         eps,
+        multiplier,
     )
