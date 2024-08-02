@@ -140,6 +140,14 @@ def inequality(
 
     loss = ((lower_bound - value)[:, mask_lower] @ multiplier[mask_lower,0]).sum() + ((value - upper_bound)[:, mask_upper] @ multiplier[mask_upper,1]).sum()
 
+    # old loss:
+    # loss = (
+    #     u_equal.square().sum() + truncated_log(u_inequality, s, t).sum()	
+    # ) / value.numel()
+
+    # if band < eps, then multipliers should be the same
+    # avg them????
+
     # The tensor elements should be bounded.
     assert not torch.isinf(u_equal).any()
     assert not torch.isnan(u_equal).any()

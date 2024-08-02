@@ -374,6 +374,11 @@ class OPFDual(pl.LightningModule):
                     constraint.isAngle,
                 )
             elif isinstance(constraint, pf.InequalityConstraint):
+                band = (constraint.max - constraint.min).abs()
+                mask_equality = band < self.eps 
+                multiplier_detached = self.multipliers[name].detach().clone()
+                multiplier_detached[mask_equality, 0] = multiplier_detached[mask_equality, 1]
+                self.multipliers[name] = multiplier_detached
                 values[name] = inequality(
                     self.multipliers[name],
                     constraint.variable,
