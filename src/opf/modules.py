@@ -44,12 +44,12 @@ class OPFDual(pl.LightningModule):
         self.multipliers = torch.nn.ParameterDict({
             "equality/bus_power": Parameter(torch.ones([n_bus])),
             "equality/bus_reference": Parameter(torch.ones([1])),
-            "inequality/voltage_magnitude": Parameter(torch.ones([n_bus, 2])),
-            "inequality/active_power": Parameter(torch.ones([n_gen, 2])),
-            "inequality/reactive_power": Parameter(torch.ones([n_gen, 2])),
-            "inequality/forward_rate": Parameter(torch.ones([n_branch, 2])),
-            "inequality/backward_rate": Parameter(torch.ones([n_branch, 2])),
-            "inequality/voltage_angle_difference": Parameter(torch.ones([n_branch, 2])),
+            "inequality/voltage_magnitude": Parameter(torch.ones([n_bus, 3])),
+            "inequality/active_power": Parameter(torch.ones([n_gen, 3])),
+            "inequality/reactive_power": Parameter(torch.ones([n_gen, 3])),
+            "inequality/forward_rate": Parameter(torch.ones([n_branch, 3])),
+            "inequality/backward_rate": Parameter(torch.ones([n_branch, 3])),
+            "inequality/voltage_angle_difference": Parameter(torch.ones([n_branch, 3])),
         })
 
         self.lr = lr
@@ -169,7 +169,6 @@ class OPFDual(pl.LightningModule):
             self.metrics(cost, constraints, "train", self.detailed_metrics),
             batch_size=batch.data.num_graphs,
         )
-
 
         p_opt.zero_grad()
         d_opt.zero_grad()
@@ -436,8 +435,8 @@ class OPFDual(pl.LightningModule):
         primal_opt = torch.optim.AdamW(
             params=self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
-        dual_opt = torch.optim.AdamW(
-            params=self.multipliers.values(), lr=self.lr*10, weight_decay=1e-6, maximize=True
+        dual_opt = torch.optim.SGD(
+            params=self.multipliers.values(), lr=self.lr*.1, weight_decay=1e-6, maximize=True
         )
         return primal_opt, dual_opt
 

@@ -85,6 +85,81 @@ def equality(
     assert not torch.isinf(u).any()
     return metrics(loss, u, eps, multiplier)
 
+def modified_inequality(
+    multiplier: torch.Tensor,
+    value: torch.Tensor,
+    lower_bound: torch.Tensor,
+    upper_bound: torch.Tensor,
+    lower_normalizer,
+    upper_normalizer,
+    eps=1e-4,
+):
+    band = (upper_bound - lower_bound).abs()
+    mask_equality = band < eps
+
+    inequality_tensor = value[:, ~mask_equality]
+    equality_tensor = value[:, mask_equality]
+    
+    loss_inequality, u_inequality = mini_inequality(
+        multiplier[~mask_equality :2],
+        inequality_tensor,
+        lower_bound[~mask_equality],
+        upper_bound[mask_equality],
+        lower_normalizer,
+        upper_normalizer,
+    )
+
+    loss_equality, u_equality = mini_equality(
+        multiplier[mask_equality, 2],
+        equality_tensor,
+        lower_bound[:, mask_equality],
+        )
+    
+    loss = loss_equality + loss_inequality
+    u = torch.cat(u_inequality.flatten(), u_equality.flatten())
+
+    return metrics(loss, u, eps, multiplier)
+
+def mini_inequality(
+    multiplier,
+    value,
+    lower_bound,
+    upper_bound,
+    lower_normalizer,
+    upper_normalizer,
+):
+    u_lower = lower_bound - value
+    u_upper = value - upper_bound
+
+    u_lower /= lower_normalizer
+    u_upper /= upper_normalizer
+
+    u_inequality = torch.cat((u_lower.flatten(), u_upper.flatten()))
+
+    assert not torch.isinf(u_inequality).any()
+    assert not torch.isnan(u_inequality).any()
+
+    loss = ((lower_bound - value) @ multiplier).sum() + ((value - upper_bound) @ multiplier).sum()
+
+    return(
+        loss,
+        u_inequality
+    )
+
+def mini_equality(
+    multiplier,
+    x,
+    y,
+):
+    u = (x - y).abs()
+
+    loss_tensor = u @ multiplier
+    loss = loss_tensor.mean()
+
+    return(
+        loss,
+        u,
+    )
 
 def inequality(
     multiplier: torch.Tensor,
@@ -134,28 +209,19 @@ def inequality(
     u_lower /= band[mask_lower]
     u_upper /= band[mask_upper]
 
-    # we normalize u_equal by the mean difference between the upper and lower constraints
-    # this allows us to compare values of different scales
-    u_inequality = torch.cat((u_lower.flatten(), u_upper.flatten()))
-
-    loss = ((lower_bound - value)[:, mask_lower] @ multiplier[mask_lower,0]).sum() + ((value - upper_bound)[:, mask_upper] @ multiplier[mask_upper,1]).sum()
-
-    # old loss:
-    # loss = (
-    #     u_equal.square().sum() + truncated_log(u_inequality, s, t).sum()	
-    # ) / value.numel()
-
-    # if band < eps, then multipliers should be the same
-    # avg them????
-
     # The tensor elements should be bounded.
     assert not torch.isinf(u_equal).any()
     assert not torch.isnan(u_equal).any()
-    assert not torch.isinf(u_inequality).any()
-    assert not torch.isnan(u_inequality).any()
-    return metrics(
-        loss,
-        torch.cat((u_equal.flatten() / band[~mask_equality].mean(), u_inequality)),
-        eps,
+
+    return modified_inequality(
         multiplier,
+        value,
+        upper_bound,
+        lower_bound,
+        band[mask_lower],
+        band[mask_upper],
+        eps,
     )
+
+    
+
