@@ -373,11 +373,6 @@ class OPFDual(pl.LightningModule):
                     constraint.isAngle,
                 )
             elif isinstance(constraint, pf.InequalityConstraint):
-                band = (constraint.max - constraint.min).abs()
-                mask_equality = band < self.eps 
-                multiplier_detached = self.multipliers[name].detach().clone()
-                multiplier_detached[mask_equality, 0] = multiplier_detached[mask_equality, 1]
-                self.multipliers[name] = multiplier_detached
                 values[name] = inequality(
                     self.multipliers[name],
                     constraint.variable,
@@ -435,8 +430,8 @@ class OPFDual(pl.LightningModule):
         primal_opt = torch.optim.AdamW(
             params=self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
-        dual_opt = torch.optim.SGD(
-            params=self.multipliers.values(), lr=self.lr*.1, weight_decay=1e-6, maximize=True
+        dual_opt = torch.optim.AdamW(
+            params=self.multipliers.values(), lr=self.lr*10, weight_decay=1e-6, maximize=True
         )
         return primal_opt, dual_opt
 

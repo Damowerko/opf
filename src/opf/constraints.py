@@ -101,22 +101,22 @@ def modified_inequality(
     equality_tensor = value[:, mask_equality]
     
     loss_inequality, u_inequality = mini_inequality(
-        multiplier[~mask_equality :2],
+        multiplier[~mask_equality][:, :2],
         inequality_tensor,
         lower_bound[~mask_equality],
-        upper_bound[mask_equality],
+        upper_bound[~mask_equality],
         lower_normalizer,
         upper_normalizer,
     )
 
     loss_equality, u_equality = mini_equality(
-        multiplier[mask_equality, 2],
+        multiplier[mask_equality][:, -1],
         equality_tensor,
-        lower_bound[:, mask_equality],
+        lower_bound[mask_equality],
         )
     
     loss = loss_equality + loss_inequality
-    u = torch.cat(u_inequality.flatten(), u_equality.flatten())
+    u = torch.cat((u_inequality.flatten(), u_equality.flatten()))
 
     return metrics(loss, u, eps, multiplier)
 
@@ -222,6 +222,3 @@ def inequality(
         band[mask_upper],
         eps,
     )
-
-    
-
