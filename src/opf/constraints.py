@@ -99,14 +99,18 @@ def modified_inequality(
 
     inequality_tensor = value[:, ~mask_equality]
     equality_tensor = value[:, mask_equality]
+
+    # print(f"value shape: {value.shape}")
+    # print(f"inequality_tensor shape: {inequality_tensor.shape}")
+    # print(f"equality_tensor shape: {equality_tensor.shape}")
     
     loss_inequality, u_inequality = mini_inequality(
         multiplier[~mask_equality][:, :2],
         inequality_tensor,
         lower_bound[~mask_equality],
         upper_bound[~mask_equality],
-        lower_normalizer,
-        upper_normalizer,
+        # lower_normalizer[~mask_equality],
+        # upper_normalizer[~mask_equality],
     )
 
     loss_equality, u_equality = mini_equality(
@@ -125,14 +129,14 @@ def mini_inequality(
     value,
     lower_bound,
     upper_bound,
-    lower_normalizer,
-    upper_normalizer,
+    # lower_normalizer,
+    # upper_normalizer,
 ):
     u_lower = lower_bound - value
     u_upper = value - upper_bound
 
-    u_lower /= lower_normalizer
-    u_upper /= upper_normalizer
+    # u_lower /= lower_normalizer
+    # u_upper /= upper_normalizer
 
     u_inequality = torch.cat((u_lower.flatten(), u_upper.flatten()))
 

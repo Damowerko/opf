@@ -177,12 +177,13 @@ class OPFDual(pl.LightningModule):
         d_opt.step()
 
         # ReLU on lambda
-        self.multipliers["inequality/voltage_magnitude"].data.relu_()
-        self.multipliers["inequality/active_power"].data.relu_()
-        self.multipliers["inequality/reactive_power"].data.relu_()
-        self.multipliers["inequality/forward_rate"].data.relu_()
-        self.multipliers["inequality/backward_rate"].data.relu_()
-        self.multipliers["inequality/voltage_angle_difference"].data.relu_()
+        # use a for loop
+        self.multipliers["inequality/voltage_magnitude"][:, :2].data.relu_()
+        self.multipliers["inequality/active_power"][:, :2].data.relu_()
+        self.multipliers["inequality/reactive_power"][:, :2].data.relu_()
+        self.multipliers["inequality/forward_rate"][:, :2].data.relu_()
+        self.multipliers["inequality/backward_rate"][:, :2].data.relu_()
+        self.multipliers["inequality/voltage_angle_difference"][:, :2].data.relu_()
 
         # self.multipliers["inequality/voltage_magnitude"].clamp(0)
         # self.multipliers["inequality/active_power"].clamp(0)
@@ -194,8 +195,6 @@ class OPFDual(pl.LightningModule):
         # # fix values ...
         # self.lamb = torch.ones(6)*2000
         # self.mu = torch.ones(2)*2000
-
-        
 
     def validation_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
@@ -582,10 +581,6 @@ class OPFLogBarrier(pl.LightningModule):
             # Project the solution to the powermodels solution
             V, Sg, Sd = self.project_powermodels(V, Sg, Sd, parameters)
         variables = pf.powerflow(V, Sg, Sd, parameters)
-
-        # print(f'Sg shape: {Sg.shape}')                   # Sg shape: torch.Size([256, 6])
-        # print(f'Sbus shape: {variables.Sbus.shape}')     # Sbus shape: torch.Size([256, 30])
-        # print(f'Sd shape: {Sd.shape}')                   # Sd shape: torch.Size([256, 30])
 
         if substitute_equality:
             # Make a substitution to enforce equality constraints
