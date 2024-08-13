@@ -426,9 +426,13 @@ class OPFDual(pl.LightningModule):
         return {**aggregate_metrics, **detailed_metrics}
 
     def configure_optimizers(self):
+        # one of the lrs is too high
+        # likely primal is too high relative to dual
         primal_opt = torch.optim.AdamW(
             params=self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
+        # play with weight decay, make larger and see if that has an impact; set to 0
+        # dual should have higher lr than primal
         dual_opt = torch.optim.AdamW(
             params=self.multipliers.values(), lr=self.lr*10, weight_decay=1e-6, maximize=True
         )

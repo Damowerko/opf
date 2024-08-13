@@ -105,12 +105,13 @@ def modified_inequality(
     # print(f"equality_tensor shape: {equality_tensor.shape}")
     
     loss_inequality, u_inequality = mini_inequality(
-        multiplier[~mask_equality][:, :2],
+        multiplier[~mask_equality][:, 0],
+        multiplier[~mask_equality][:, 1],
         inequality_tensor,
         lower_bound[~mask_equality],
         upper_bound[~mask_equality],
-        # lower_normalizer[~mask_equality],
-        # upper_normalizer[~mask_equality],
+        lower_normalizer,
+        upper_normalizer,
     )
 
     loss_equality, u_equality = mini_equality(
@@ -125,25 +126,28 @@ def modified_inequality(
     return metrics(loss, u, eps, multiplier)
 
 def mini_inequality(
-    multiplier,
+    lower_multiplier,
+    upper_multiplier,
     value,
     lower_bound,
     upper_bound,
-    # lower_normalizer,
-    # upper_normalizer,
+    lower_normalizer,
+    upper_normalizer,
 ):
     u_lower = lower_bound - value
     u_upper = value - upper_bound
 
-    # u_lower /= lower_normalizer
-    # u_upper /= upper_normalizer
+    u_lower /= lower_normalizer
+    u_upper /= upper_normalizer
 
     u_inequality = torch.cat((u_lower.flatten(), u_upper.flatten()))
 
     assert not torch.isinf(u_inequality).any()
     assert not torch.isnan(u_inequality).any()
 
-    loss = ((lower_bound - value) @ multiplier).sum() + ((value - upper_bound) @ multiplier).sum()
+    loss = ((lower_bound - value) @ lower_multiplier).sum() + ((value - upper_bound) @ upper_multiplier).sum()
+    # loss = ((value - lower_bound) @ lower_multiplier).sum() + ((upper_bound - value) @ upper_multiplier).sum()
+
 
     return(
         loss,
@@ -172,7 +176,7 @@ def inequality(
     upper_bound: torch.Tensor,
     eps=1e-4,
     angle=False,
-):
+): 
     """
     Computes the inequality constraint loss for a given tensor.
 
@@ -187,10 +191,11 @@ def inequality(
     Returns:
         tuple: A tuple containing the loss and the metrics.
     """
-    # TODO:
-    # Make changes to inequality for equality case
-
+    
     # To properly normalize the results we do not want any of these to be inf.
+
+    assert torch.all(multiplier[:, 0] >= 0) and torch.all(multiplier[:, 1] >= 0), "There are negative values in the inequality multiplier"
+
     assert not torch.isinf(upper_bound).any()
     assert not torch.isinf(lower_bound).any()
 
@@ -220,8 +225,8 @@ def inequality(
     return modified_inequality(
         multiplier,
         value,
-        upper_bound,
         lower_bound,
+        upper_bound,
         band[mask_lower],
         band[mask_upper],
         eps,
