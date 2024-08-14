@@ -221,11 +221,15 @@ class OPFDual(pl.LightningModule):
             )
 
     def test_step(self, batch: PowerflowBatch, *args):
+        # TODO
+        # change to make faster
+        # project_powermodels taking too long
+        # go over batch w/ project pm, then individual steps without
         with torch.no_grad():
             _, constraints, cost, _ = self._step_helper(
                 *self.forward(batch),
                 batch.powerflow_parameters,
-                project_powermodels=True,
+                project_powermodels=False,
             )
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
@@ -434,7 +438,7 @@ class OPFDual(pl.LightningModule):
         # play with weight decay, make larger and see if that has an impact; set to 0
         # dual should have higher lr than primal
         dual_opt = torch.optim.AdamW(
-            params=self.multipliers.values(), lr=self.lr*10, weight_decay=1e-6, maximize=True
+            params=self.multipliers.values(), lr=self.lr*100, weight_decay=0.0, maximize=True
         )
         return primal_opt, dual_opt
 
