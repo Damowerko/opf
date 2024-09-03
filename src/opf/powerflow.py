@@ -15,10 +15,13 @@ class PowerflowVariables:
     St: torch.Tensor
     Sbus: torch.Tensor
 
+
 """
     !!! MAY NEED CHANGES
     - add an isGen
 """
+
+
 @dataclass(eq=False, repr=False)
 class Constraint(torch.nn.Module):
     isBus: bool  # True if bus constraint. False if branch constraint.
@@ -27,9 +30,6 @@ class Constraint(torch.nn.Module):
     @property
     def isBranch(self) -> bool:
         return not self.isBus
-
-    def __post_init__(self):
-        super().__init__()
 
 
 @dataclass(eq=False, repr=False)
@@ -84,7 +84,6 @@ class PowerflowParameters(torch.nn.Module):
                 tensors[k] = v
         return tensors
 
-
     def _apply(self, fn):
         super()._apply(fn)
         self.Y = fn(self.Y)
@@ -109,7 +108,6 @@ class PowerflowParameters(torch.nn.Module):
         self.vad_max = fn(self.vad_max)
         self.rate_a = fn(self.rate_a)
         self.is_ref = fn(self.is_ref)
-
 
     def bus_parameters(self) -> torch.Tensor:
         return torch.stack(
@@ -148,8 +146,6 @@ class PowerflowParameters(torch.nn.Module):
             dim=1,
         )
 
-
-
     def gen_parameters(self) -> torch.Tensor:
         return torch.stack(
             [
@@ -165,7 +161,6 @@ class PowerflowParameters(torch.nn.Module):
         )
 
 
-
 @dataclass(eq=False, repr=False)
 class InequalityConstraint(Constraint):
     variable: torch.Tensor
@@ -178,7 +173,6 @@ class InequalityConstraint(Constraint):
             self.min = fn(self.min)
         if isinstance(self.max, torch.Tensor):
             self.max = fn(self.max)
-
 
 
 @dataclass(eq=False, repr=False)
@@ -233,7 +227,12 @@ def power_from_solution(load: dict, solution: dict, parameters: PowerflowParamet
 
 def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
     return {
-        "equality/bus_power": EqualityConstraint(True, False, d.Sbus, d.S),
+        "equality/bus_active_power": EqualityConstraint(
+            True, False, d.Sbus.real, d.S.real
+        ),
+        "equality/bus_reactive_power": EqualityConstraint(
+            True, False, d.Sbus.imag, d.S.imag
+        ),
         "equality/bus_reference": EqualityConstraint(
             True, True, d.V.angle(), torch.zeros(p.n_bus).to(d.V.device), p.is_ref
         ),

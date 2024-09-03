@@ -14,7 +14,7 @@ from wandb.wandb_run import Run
 
 from opf.dataset import CaseDataModule
 from opf.hetero import HeteroGCN
-from opf.modules import OPFLogBarrier, OPFDual
+from opf.modules import OPFDual
 
 
 def main():
@@ -45,8 +45,7 @@ def main():
 
     # the gnn being used
     HeteroGCN.add_args(parser)
-    # OPFLogBarrier.add_args(parser)
-    OPFDual.add_args(parser)    
+    OPFDual.add_args(parser)
 
     params = parser.parse_args()
     params_dict = vars(params)
@@ -97,7 +96,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
     trainer = Trainer(
         logger=logger,
         callbacks=callbacks,
-        accelerator="gpu" if params["gpu"] else "cpu",
+        accelerator="cuda" if params["gpu"] else "cpu",
         devices=1,
         max_epochs=params["max_epochs"],
         default_root_dir=params["log_dir"],
@@ -113,8 +112,14 @@ def train(trainer: Trainer, params):
     else:
         dm.setup()
         gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
-    # model = OPFLogBarrier(gcn, **params)
-    model = OPFDual(gcn, **params)
+
+    assert dm.powerflow_parameters is not None
+    n_nodes = (
+        dm.powerflow_parameters.n_bus,
+        dm.powerflow_parameters.n_branch,
+        dm.powerflow_parameters.n_gen,
+    )
+    model = OPFDual(gcn, n_nodes, **params)
 
     # TODO: Add back once we can run ACOPF examples.
     # figure out the cost weight normalization factor
