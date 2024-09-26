@@ -59,9 +59,9 @@ function project(network_data::Dict{String,Any}, V::Array{Float64,2}, Sg::Array{
 
     # if possible use hsl to speed up computation
     if use_hsl
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0, "linear_solver" => "ma27", "hsllib" => HSL_jll.libhsl_path, "sb" => "yes")
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-3, "max_iter" => 1000, "print_level" => 0, "linear_solver" => "ma27", "hsllib" => HSL_jll.libhsl_path, "sb" => "yes")
     else
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0, "sb" => "yes")
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-3, "max_iter" => 1000, "print_level" => 0, "sb" => "yes")
     end
     result = PowerModels.solve_ac_pf(network_data, solver)
     if (result["termination_status"] != LOCALLY_SOLVED)
