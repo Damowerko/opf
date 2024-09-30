@@ -105,9 +105,12 @@ end
 
 """
 Generate `n_samples` from the power system network. Each sample is labeled with the optimal solution.
-Samples that did not converge are discarded.
+Samples that did not converge are discarded. Outputs a dictionary with the following keys:
+- `load`: an array of (n_samples, n_load, 2) with the active and reactive load at each bus.
+- `gen`: an array of (n_samples, n_gen, 2) with the active and reactive power generated at each generator.
+- `info`: dictionary with: termination_status, primal_status, dual_status, solve_time, objective
 """
-function generate_samples(network_data, n_samples, min_load=0.9, max_load=1.1)::Array{Dict,1}
+function generate_samples(network_data, n_samples, min_load=0.9, max_load=1.1)::Tuple{Array{Float64,3},Array{Float64,3},Array{Dict,1}}
     count_atomic = Threads.Atomic{Int}(0)
     samples = Array{Dict,1}(undef, n_samples)
     progress = Progress(n_samples, desc="Generating labeled samples:")
@@ -124,6 +127,9 @@ function generate_samples(network_data, n_samples, min_load=0.9, max_load=1.1)::
         end
         next!(progress)
     end
+    samples_memory = Base.summarysize(samples) / 1024^2
+    println("Memory usage for $n_samples samples: $samples_memory MB.")
+
     count = count_atomic[]
     println("Generated $n_samples feasible samples using $count samples. Feasibility ratio: $(n_samples / count).")
     return samples
@@ -144,14 +150,31 @@ function check_assumptions!(network_data)
     @assert length(network_data["dcline"]) == 0
 end
 
-function reindex_bus(data::Dict{String,Any})
+function reindex(data::Dict{String,Any})
     data = deepcopy(data)
-    bus_ordered = sort([bus for (i, bus) in data["bus"]], by=(x) -> x["index"])
+    # reindex buses
+    bus_ordered = sort(collect(values(data["bus"])), by=(x) -> x["index"])
     bus_id_map = Dict{Int,Int}()
     for (i, bus) in enumerate(bus_ordered)
         bus_id_map[bus["index"]] = i
     end
     update_bus_ids!(data, bus_id_map)
+    # reindex generators
+    new_gen = Dict{String,Any}()
+    gen_ordered = sort(collect(values(data["gen"])), by=(x) -> x["index"])
+    for (i, gen) in enumerate(gen_ordered)
+        gen["index"] = i
+        new_gen["$(i)"] = gen
+    end
+    data["gen"] = new_gen
+    # reindex loads
+    new_load = Dict{String,Any}()
+    load_ordered = sort(collect(values(data["load"])), by=(x) -> x["index"])
+    for (i, load) in enumerate(load_ordered)
+        load["index"] = i
+        new_load["$(i)"] = load
+    end
+    data["load"] = new_load
     return data
 end
 
@@ -176,7 +199,7 @@ function main()
     # load case file
     network_data = PowerModels.parse_file(casefile)
     # reindex bus ids to be contiguous from 1 to N
-    network_data = reindex_bus(network_data)
+    network_data = reindex(network_data)
 
     check_assumptions!(network_data)
 
