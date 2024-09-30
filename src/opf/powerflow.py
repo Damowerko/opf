@@ -7,19 +7,21 @@ import torch
 
 @dataclass
 class PowerflowVariables:
+    """
+    V: Bus voltage
+    S: But new power injected, satisfying S = y_shunt * V**2 + Cf.T Sf + Ct.T St
+    Sd: Bus load, from data
+    Sg: Generated power at each generator (n_gen, 2)
+    Sf: Power flow from each branch (n_branch, 2)
+    St: Power flow to each branch (n_branch, 2)
+    """
+
     V: torch.Tensor
     S: torch.Tensor
     Sd: torch.Tensor
     Sg: torch.Tensor
     Sf: torch.Tensor
     St: torch.Tensor
-    Sbus: torch.Tensor
-
-
-"""
-    !!! MAY NEED CHANGES
-    - add an isGen
-"""
 
 
 @dataclass(eq=False, repr=False)
@@ -149,8 +151,8 @@ class PowerflowParameters(torch.nn.Module):
     def gen_parameters(self) -> torch.Tensor:
         return torch.stack(
             [
-                # self.vm_min[self.gen_bus_ids],
-                # self.vm_max[self.gen_bus_ids],
+                self.vm_min[self.gen_bus_ids],
+                self.vm_max[self.gen_bus_ids],
                 self.Sg_min.real,
                 self.Sg_max.real,
                 self.Sg_min.imag,
@@ -213,7 +215,7 @@ def power_from_solution(load: dict, solution: dict, parameters: PowerflowParamet
     V = powermodels_to_tensor(solution["bus"], ["vm", "va"])
     V = torch.polar(V[:, 0], V[:, 1])
     # Gen
-
+    # TODO: [Damian] look into this
     # could I get rid of gen_matrix???
     # I am sure that I could replace this with gen_bus_ids somehow
     # then again this is just for test cases(?), so I am not sure
@@ -227,14 +229,8 @@ def power_from_solution(load: dict, solution: dict, parameters: PowerflowParamet
 
 def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
     return {
-        "equality/bus_active_power": EqualityConstraint(
-            True, False, d.Sbus.real, d.S.real
-        ),
-        "equality/bus_reactive_power": EqualityConstraint(
-            True, False, d.Sbus.imag, d.S.imag
-        ),
         "equality/bus_reference": EqualityConstraint(
-            True, True, d.V.angle(), torch.zeros(p.n_bus).to(d.V.device), p.is_ref
+            True, True, d.V.angle(), torch.zeros(p.n_bus, device=d.V.device), p.is_ref
         ),
         "inequality/voltage_magnitude": InequalityConstraint(
             True, False, d.V.abs(), p.vm_min, p.vm_max
@@ -283,9 +279,9 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
     n_cost = 3  # max number of cost coefficients (c0, c1, c2), which is quadratic
     Sg_min = torch.zeros(n_gen, dtype=dtype)
     Sg_max = torch.zeros(n_gen, dtype=dtype)
-    gen_matrix = torch.zeros(n_gen, n_bus)
+    gen_matrix = torch.zeros(n_gen, n_bus, dtype=torch.long)
     cost_coeff = torch.zeros((n_gen, n_cost))
-    gen_bus_ids = torch.zeros(n_gen)
+    gen_bus_ids = torch.zeros(n_gen, dtype=torch.long)
 
     for gen in pm["gen"].values():
         i = gen["index"] - 1
@@ -374,11 +370,11 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
 
 
 def powerflow(
-    V: torch.Tensor, Sg: torch.Tensor, Sd: torch.Tensor, params: PowerflowParameters
+    V: torch.Tensor, Sd: torch.Tensor, params: PowerflowParameters
 ) -> PowerflowVariables:
     """
-    Find the branch variables given the bus voltages. The inputs and outputs should both be
-    in the per unit system.
+    Given the bus voltage and load, find all the other problem variables.
+    The inputs and outputs should both be in the per unit system.
 
     Reference:
         https://lanl-ansi.github.io/PowerModels.jl/stable/math-model/
@@ -392,23 +388,11 @@ def powerflow(
     St = (params.Y + params.Yc_to).conj() * Vt.abs() ** 2 - (
         params.Y.conj() * Vf.conj() * Vt / params.ratio.conj()
     )
-    Sbus_sh = params.Ybus_sh.conj() * V.abs() ** 2
-    Sbus_branch = Sf @ params.Cf + St @ params.Ct
-    # alternate method
-    # Sbus_branch = torch.zeros_like(Sbus_sh)
-    # for i in range(len(Sbus_branch)):
-    #     Sbus_branch[i] += torch.sum(Sf[params.fr_bus == i])
-    #     Sbus_branch[i] += torch.sum(St[params.to_bus == i])
-    Sbus = Sbus_branch + Sbus_sh
-
-    indexes = params.gen_bus_ids.int()
-    # Sd.shape = [32, 179]
-    # Sg.shape = [32, 29]
-    # indexes.shape = [29]
-    zeros = torch.zeros_like(Sd.T)
-    Sg_bus_t = zeros.index_add_(dim=0, index=indexes, source=Sg.T)
-    Sg_bus = Sg_bus_t.T
-    S = Sg_bus - Sd
-    # if substitute_equality:
-    #     return PowerflowVariables(V, S, Sd, Sg_bus, Sf, St, Sbus)
-    return PowerflowVariables(V, S, Sd, Sg, Sf, St, Sbus)
+    S_sh = params.Ybus_sh.conj() * V.abs() ** 2
+    S_branch = Sf @ params.Cf + St @ params.Ct
+    S = S_branch + S_sh
+    # I assume there is only one generator per bus.
+    # TODO: Support more than one generator per bus?
+    assert len(params.gen_bus_ids.unique()) == len(params.gen_bus_ids)
+    Sg = (S + Sd)[:, params.gen_bus_ids]
+    return PowerflowVariables(V, S, Sd, Sg, Sf, St)

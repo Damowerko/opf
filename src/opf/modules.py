@@ -99,22 +99,16 @@ class OPFDual(pl.LightningModule):
     def forward(
         self,
         input: PowerflowBatch | PowerflowData,
-    ):
+    ) -> pf.PowerflowVariables:
         data, powerflow_parameters = input
         if isinstance(data, HeteroData):
             n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
             output = self.model(data.x_dict, data.adj_t_dict)
             bus = output["bus"][:, :2]
             gen = output["gen"][:, :2]
-
-            # make an assumption here that there is at most one generator per bus
-            # assert gen == bus[powerflow_parameters.gen_bus_ids,2;]
-
             load = data["bus"].x[:, :2]
         elif isinstance(data, Data):
-            n_batch = data.x.shape[0] // powerflow_parameters.n_bus
-            bus = self.model(data.x, data.edge_index, data.edge_attr)
-            load = data.x[:, :2]
+            raise NotImplementedError("Removed support for homogenous data for now.")
         else:
             raise ValueError(
                 f"Unsupported data type {type(data)}, expected Data or HeteroData."
@@ -129,7 +123,7 @@ class OPFDual(pl.LightningModule):
         Sd = self.parse_load(load)
         if self._enforce_constraints:
             V, Sg = self.enforce_constraints(V, Sg, powerflow_parameters)
-        return V, Sg, Sd
+        return pf.powerflow(V, Sd, powerflow_parameters)
 
     def sigmoid_bound(self, x, lb, ub):
         scale = ub - lb
@@ -137,32 +131,16 @@ class OPFDual(pl.LightningModule):
 
     def enforce_constraints(self, V, Sg, params: pf.PowerflowParameters):
         vm = self.sigmoid_bound(V.abs(), params.vm_min, params.vm_max)
-        V = torch.polar(vm, V.angle())  # V * vm / V.abs()
+        V = torch.polar(vm, V.angle())
         Sg.real = self.sigmoid_bound(Sg.real, params.Sg_min.real, params.Sg_max.real)
         Sg.imag = self.sigmoid_bound(Sg.imag, params.Sg_min.imag, params.Sg_max.imag)
         return V, Sg
 
     def _step_helper(
         self,
-        V: torch.Tensor,
-        Sg: torch.Tensor,
-        Sd: torch.Tensor,
+        variables: pf.PowerflowVariables,
         parameters: pf.PowerflowParameters,
-        substitute_equality=False,
-        project_powermodels=False,
     ):
-        if substitute_equality and project_powermodels:
-            raise ValueError(
-                "substitute_equality and project_powermodels are mutually exclusive"
-            )
-        if project_powermodels:
-            # Project the solution to the powermodels solution
-            V, Sg, Sd = self.project_powermodels(V, Sg, Sd, parameters)
-        variables = pf.powerflow(V, Sg, Sd, parameters)
-        if substitute_equality:
-            # Make a substitution to enforce equality constraints
-            Sg = variables.Sbus + Sd
-            variables = pf.powerflow(V, Sg, Sd, parameters)
         constraints = self.constraints(variables, parameters)
         cost = self.cost(variables, parameters)
         constraint_loss = self.constraint_loss(constraints)
@@ -171,7 +149,8 @@ class OPFDual(pl.LightningModule):
     def training_step(self, batch: PowerflowBatch):
         primal_optimizer, dual_optimizer = self.optimizers()  # type: ignore
         _, constraints, cost, constraint_loss = self._step_helper(
-            *self.forward(batch), batch.powerflow_parameters
+            self.forward(batch),
+            batch.powerflow_parameters,
         )
 
         primal_optimizer.zero_grad()
@@ -201,7 +180,8 @@ class OPFDual(pl.LightningModule):
         with torch.no_grad():
             batch_size = batch.data.num_graphs
             _, constraints, cost, constraint_loss = self._step_helper(
-                *self.forward(batch), batch.powerflow_parameters
+                self.forward(batch),
+                batch.powerflow_parameters,
             )
             self.log(
                 "val/loss",
@@ -228,9 +208,8 @@ class OPFDual(pl.LightningModule):
         # go over batch w/ project pm, then individual steps without
         with torch.no_grad():
             _, constraints, cost, _ = self._step_helper(
-                *self.forward(batch),
+                self.forward(batch),
                 batch.powerflow_parameters,
-                project_powermodels=False,
             )
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
@@ -300,16 +279,7 @@ class OPFDual(pl.LightningModule):
 
     def parse_bus(self, bus: torch.Tensor):
         assert bus.shape[1] == 2
-
-        # Convert voltage and power to per unit
-        vr = bus[:, 0, :]
-        vi = bus[:, 1, :]
-        # IF HOMO
-        # pg = bus[:, 2, :]
-        # qg = bus[:, 3, :]
-
-        V = torch.complex(vr, vi)
-        # Sg = torch.complex(pg, qg)
+        V = torch.complex(bus[:, 0, :], bus[:, 1, :])
         return V
 
     def parse_load(self, load: torch.Tensor):
@@ -320,6 +290,7 @@ class OPFDual(pl.LightningModule):
             load: A tensor of shape (batch_size, n_features, n_bus). The first two features should contain the active and reactive load.
 
         """
+        assert load.shape[1] == 2
         Sd = torch.complex(load[:, 0, :], load[:, 1, :])
         return Sd
 
@@ -434,7 +405,7 @@ class OPFDual(pl.LightningModule):
     def configure_optimizers(self):
         primal_optimizer = torch.optim.Adam(
             self.model.parameters(),
-            lr=self.lr,
+            lr=self.lr * 0.1,
             weight_decay=self.weight_decay,
         )
         dual_optimizer = torch.optim.Adam(
