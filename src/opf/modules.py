@@ -23,6 +23,7 @@ class OPFDual(pl.LightningModule):
         model: torch.nn.Module,
         n_nodes: tuple[int, int, int],
         lr=1e-4,
+        lr_dual_scale=0.1,
         weight_decay=0.0,
         eps=1e-3,
         enforce_constraints=False,
@@ -44,6 +45,7 @@ class OPFDual(pl.LightningModule):
         self.save_hyperparameters(ignore=["model", "kwargs"])
         self.model = model
         self.lr = lr
+        self.lr_dual_scale = lr_dual_scale
         self.weight_decay = weight_decay
         self.eps = eps
         self._enforce_constraints = enforce_constraints
@@ -86,11 +88,9 @@ class OPFDual(pl.LightningModule):
 
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
-        # TODO: possibly change argument group
-
-        group = parser.add_argument_group("OPFLogBarrier")
-
+        group = parser.add_argument_group("OPFDual")
         group.add_argument("--lr", type=float, default=3e-4)
+        group.add_argument("--lr_dual_scale", type=float, default=0.1)
         group.add_argument("--weight_decay", type=float, default=0.0)
         group.add_argument("--eps", type=float, default=1e-3)
         group.add_argument("--enforce_constraints", action="store_true", default=False)
@@ -405,12 +405,12 @@ class OPFDual(pl.LightningModule):
     def configure_optimizers(self):
         primal_optimizer = torch.optim.Adam(
             self.model.parameters(),
-            lr=self.lr * 0.1,
+            lr=self.lr,
             weight_decay=self.weight_decay,
         )
         dual_optimizer = torch.optim.Adam(
             self.multipliers.parameters(),
-            lr=self.lr * 10,
+            lr=self.lr * self.lr_dual_scale,
             weight_decay=self.weight_decay,
             maximize=True,
         )
