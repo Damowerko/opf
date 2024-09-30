@@ -13,7 +13,7 @@ import wandb.apis.public
 from IPython.display import HTML
 from pytorch_lightning.callbacks import Callback
 
-from opf.modules import OPFLogBarrier
+from opf.modules import OPFDual
 
 
 class CacheOutputs(Callback):
@@ -46,7 +46,7 @@ def load_model(dm, id: str):
         return model
 
 
-def load_checkpoint(barrier: OPFLogBarrier, id: str, log_dir: str):
+def load_checkpoint(barrier: OPFDual, id: str, log_dir: str):
     checkpoint_directory = f"{log_dir}opf/{id}/checkpoints/"
     files = list(glob.glob(checkpoint_directory + "*.ckpt"))
     assert len(files) == 1
