@@ -214,16 +214,9 @@ def power_from_solution(load: dict, solution: dict, parameters: PowerflowParamet
     # Voltages
     V = powermodels_to_tensor(solution["bus"], ["vm", "va"])
     V = torch.polar(V[:, 0], V[:, 1])
-    # Gen
-    # TODO: [Damian] look into this
-    # could I get rid of gen_matrix???
-    # I am sure that I could replace this with gen_bus_ids somehow
-    # then again this is just for test cases(?), so I am not sure
-    # that there is a point to making changes here
-    Sg_unfiltered = torch.complex(
-        *powermodels_to_tensor(solution["gen"], ["pg", "qg"]).T @ parameters.gen_matrix
-    )
-    Sg = Sg_unfiltered[parameters.gen_bus_ids]
+    # Generators
+    assert len(parameters.gen_bus_ids.unique()) == len(parameters.gen_bus_ids)
+    Sg = torch.complex(*powermodels_to_tensor(solution["gen"], ["pg", "qg"]).T)
     return V, Sg, Sd
 
 
