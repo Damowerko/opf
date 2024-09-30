@@ -57,31 +57,31 @@ class OPFDual(pl.LightningModule):
         self.multipliers = torch.nn.ParameterDict(
             {
                 "equality/bus_active_power": Parameter(
-                    torch.ones([n_bus], device=self.device)
+                    torch.zeros([n_bus], device=self.device)
                 ),
                 "equality/bus_reactive_power": Parameter(
-                    torch.ones([n_bus], device=self.device)
+                    torch.zeros([n_bus], device=self.device)
                 ),
                 "equality/bus_reference": Parameter(
-                    torch.ones([n_bus], device=self.device)
+                    torch.zeros([n_bus], device=self.device)
                 ),
                 "inequality/voltage_magnitude": Parameter(
-                    torch.ones([n_bus, 2], device=self.device)
+                    torch.zeros([n_bus, 2], device=self.device)
                 ),
                 "inequality/active_power": Parameter(
-                    torch.ones([n_gen, 2], device=self.device)
+                    torch.zeros([n_gen, 2], device=self.device)
                 ),
                 "inequality/reactive_power": Parameter(
-                    torch.ones([n_gen, 2], device=self.device)
+                    torch.zeros([n_gen, 2], device=self.device)
                 ),
                 "inequality/forward_rate": Parameter(
-                    torch.ones([n_branch, 2], device=self.device)
+                    torch.zeros([n_branch, 2], device=self.device)
                 ),
                 "inequality/backward_rate": Parameter(
-                    torch.ones([n_branch, 2], device=self.device)
+                    torch.zeros([n_branch, 2], device=self.device)
                 ),
                 "inequality/voltage_angle_difference": Parameter(
-                    torch.ones([n_branch, 2], device=self.device)
+                    torch.zeros([n_branch, 2], device=self.device)
                 ),
             }
         )
