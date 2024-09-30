@@ -120,6 +120,8 @@ def train(trainer: Trainer, params):
         dm.powerflow_parameters.n_gen,
     )
     model = OPFDual(gcn, n_nodes, **params)
+    # need to pass through a dummy input
+    model(dm.train_dataset[0])  # type: ignore
 
     # TODO: Add back once we can run ACOPF examples.
     # figure out the cost weight normalization factor
@@ -213,8 +215,4 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    finally:
-        # exit or the MPS server might be in an undefined state
-        torch.cuda.synchronize()
+    main()
