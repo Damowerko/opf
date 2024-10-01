@@ -39,9 +39,9 @@ spec:
               key: api_key
         resources:
           limits:
-            nvidia.com/gpu-24gb: 1
             cpu: 32
-            memory: 24Gi
+            memory: 64Gi
+            nvidia.com/gpu: 1
         volumeMounts:
         - mountPath: /home/default/opf/data
           name: opf-data
