@@ -141,6 +141,7 @@ function generate_samples_numpy(network_data, n_samples, min_load=0.9, max_load=
         "bus" => Array{Float64,3}(undef, 2, length(network_data["bus"]), n_samples),
         "load" => Array{Float64,3}(undef, 2, length(network_data["load"]), n_samples),
         "gen" => Array{Float64,3}(undef, 2, length(network_data["gen"]), n_samples),
+        "branch" => Array{Float64,3}(undef, 4, length(network_data["branch"]), n_samples),
         "termination_status" => Array{String}(undef, n_samples),
         "primal_status" => Array{String}(undef, n_samples),
         "dual_status" => Array{String}(undef, n_samples),
@@ -158,8 +159,8 @@ function generate_samples_numpy(network_data, n_samples, min_load=0.9, max_load=
                 continue
             end
             for j = 1:length(network_data["bus"])
-                data["bus"][1, j, i] = network_data["bus"]["$(j)"]["vm"]
-                data["bus"][2, j, i] = network_data["bus"]["$(j)"]["va"]
+                data["bus"][1, j, i] = result["solution"]["bus"]["$(j)"]["vm"]
+                data["bus"][2, j, i] = result["solution"]["bus"]["$(j)"]["va"]
             end
             for j = 1:length(network_data["load"])
                 data["load"][1, j, i] = load["$(j)"]["pd"]
@@ -168,6 +169,12 @@ function generate_samples_numpy(network_data, n_samples, min_load=0.9, max_load=
             for j = 1:length(network_data["gen"])
                 data["gen"][1, j, i] = result["solution"]["gen"]["$(j)"]["pg"]
                 data["gen"][2, j, i] = result["solution"]["gen"]["$(j)"]["qg"]
+            end
+            for j = 1:length(network_data["branch"])
+                data["branch"][1, j, i] = result["solution"]["branch"]["$(j)"]["pf"]
+                data["branch"][2, j, i] = result["solution"]["branch"]["$(j)"]["qf"]
+                data["branch"][3, j, i] = result["solution"]["branch"]["$(j)"]["pt"]
+                data["branch"][4, j, i] = result["solution"]["branch"]["$(j)"]["qt"]
             end
             data["termination_status"][i] = string(result["termination_status"])
             data["primal_status"][i] = string(result["primal_status"])
@@ -222,6 +229,13 @@ function reindex(data::Dict{String,Any})
         new_load["$(i)"] = load
     end
     data["load"] = new_load
+    # reindex branches
+    new_branch = Dict{String,Any}()
+    branch_ordered = sort(collect(values(data["branch"])), by=(x) -> x["index"])
+    for (i, branch) in enumerate(branch_ordered)
+        branch["index"] = i
+        new_branch["$(i)"] = branch
+    end
     return data
 end
 
