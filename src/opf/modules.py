@@ -97,6 +97,7 @@ class OPFDual(pl.LightningModule):
         group.add_argument("--weight_decay", type=float, default=0.0)
         group.add_argument("--lr_dual", type=float, default=0.1)
         group.add_argument("--weight_decay_dual", type=float, default=0.0)
+        group.add_argument("--dual_interval", type=int, default=1)
         group.add_argument("--eps", type=float, default=1e-3)
         group.add_argument("--enforce_constraints", action="store_true", default=False)
         group.add_argument("--detailed_metrics", action="store_true", default=False)
