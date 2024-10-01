@@ -289,8 +289,8 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
     n_load = len(pm["load"])
     load_bus_ids = torch.zeros(n_load, dtype=torch.long)
     for load in pm["load"].values():
-        i = load["load_bus"] - 1
-        load_bus_ids[i] = load["index"] - 1
+        i = load["index"] - 1
+        load_bus_ids[i] = load["load_bus"] - 1
 
     # init branch
     n_branch = len(pm["branch"])
