@@ -129,7 +129,7 @@ class OPFDual(pl.LightningModule):
         Sd = self.parse_load(load)
         if self._enforce_constraints:
             V, Sg = self.enforce_constraints(V, Sg, powerflow_parameters)
-        return pf.powerflow(V, Sd, powerflow_parameters)
+        return pf.powerflow(V, Sd, Sg, powerflow_parameters)
 
     def sigmoid_bound(self, x, lb, ub):
         scale = ub - lb

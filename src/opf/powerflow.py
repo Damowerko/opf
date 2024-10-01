@@ -10,8 +10,9 @@ class PowerflowVariables:
     """
     V: Bus voltage
     S: But new power injected, satisfying S = y_shunt * V**2 + Cf.T Sf + Ct.T St
-    Sd: Bus load, from data
+    Sd: Load at each bus (n_bus, 2), from data
     Sg: Generated power at each generator (n_gen, 2)
+    Sg_bus: Generated power at each bus (n_bus, 2) calculated from Sg
     Sf: Power flow from each branch (n_branch, 2)
     St: Power flow to each branch (n_branch, 2)
     """
@@ -20,6 +21,7 @@ class PowerflowVariables:
     S: torch.Tensor
     Sd: torch.Tensor
     Sg: torch.Tensor
+    Sg_bus: torch.Tensor
     Sf: torch.Tensor
     St: torch.Tensor
 
@@ -220,6 +222,12 @@ def power_from_solution(load: dict, solution: dict, parameters: PowerflowParamet
 
 def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
     return {
+        "equality/active_power": EqualityConstraint(
+            True, False, d.S.real, d.Sg_bus.real - d.Sd.real, None
+        ),
+        "equality/reactive_power": EqualityConstraint(
+            True, False, d.S.imag, d.Sg_bus.imag - d.Sd.imag, None
+        ),
         "equality/bus_reference": EqualityConstraint(
             True, True, d.V.angle(), torch.zeros(p.n_bus, device=d.V.device), p.is_ref
         ),
@@ -357,7 +365,7 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
 
 
 def powerflow(
-    V: torch.Tensor, Sd: torch.Tensor, params: PowerflowParameters
+    V: torch.Tensor, Sd: torch.Tensor, Sg: torch.Tensor, params: PowerflowParameters
 ) -> PowerflowVariables:
     """
     Given the bus voltage and load, find all the other problem variables.
@@ -378,8 +386,5 @@ def powerflow(
     S_sh = params.Ybus_sh.conj() * V.abs() ** 2
     S_branch = Sf @ params.Cf + St @ params.Ct
     S = S_branch + S_sh
-    # I assume there is only one generator per bus.
-    # TODO: Support more than one generator per bus?
-    assert len(params.gen_bus_ids.unique()) == len(params.gen_bus_ids)
-    Sg = (S + Sd)[:, params.gen_bus_ids]
-    return PowerflowVariables(V, S, Sd, Sg, Sf, St)
+    Sg_bus = torch.zeros_like(Sd).index_add_(0, params.gen_bus_ids, Sg)
+    return PowerflowVariables(V, S, Sd, Sg, Sg_bus, Sf, St)
