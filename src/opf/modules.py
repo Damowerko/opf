@@ -152,7 +152,7 @@ class OPFDual(pl.LightningModule):
         constraint_loss = self.constraint_loss(constraints)
         return variables, constraints, cost, constraint_loss
 
-    def training_step(self, batch: PowerflowBatch, batch_idx: int):
+    def training_step(self, batch: PowerflowBatch):
         primal_optimizer, dual_optimizer = self.optimizers()  # type: ignore
         _, constraints, cost, constraint_loss = self._step_helper(
             self.forward(batch),
@@ -163,7 +163,7 @@ class OPFDual(pl.LightningModule):
         dual_optimizer.zero_grad()
         (cost + constraint_loss).backward()
         primal_optimizer.step()
-        if (batch_idx + 1) % self.dual_interval == 0:
+        if (self.global_step + 1) % self.dual_interval == 0:
             dual_optimizer.step()
 
         # enforce inequality multipliers to be non-negative
