@@ -138,6 +138,7 @@ Samples that did not converge are discarded. Outputs a dictionary with the follo
 function generate_samples_numpy(network_data, n_samples, min_load=0.9, max_load=1.1)
     count_atomic = Threads.Atomic{Int}(0)
     data = Dict(
+        "bus" => Array{Float64,3}(undef, 2, length(network_data["bus"]), n_samples),
         "load" => Array{Float64,3}(undef, 2, length(network_data["load"]), n_samples),
         "gen" => Array{Float64,3}(undef, 2, length(network_data["gen"]), n_samples),
         "termination_status" => Array{String}(undef, n_samples),
@@ -156,12 +157,16 @@ function generate_samples_numpy(network_data, n_samples, min_load=0.9, max_load=
             if !solved
                 continue
             end
+            for j = 1:length(network_data["bus"])
+                data["bus"][1, j, i] = network_data["bus"]["$(j)"]["vm"]
+                data["bus"][2, j, i] = network_data["bus"]["$(j)"]["va"]
+            end
             for j = 1:length(network_data["load"])
-                data["load"][2, j, i] = load["$(j)"]["pd"]
+                data["load"][1, j, i] = load["$(j)"]["pd"]
                 data["load"][2, j, i] = load["$(j)"]["qd"]
             end
             for j = 1:length(network_data["gen"])
-                data["gen"][2, j, i] = result["solution"]["gen"]["$(j)"]["pg"]
+                data["gen"][1, j, i] = result["solution"]["gen"]["$(j)"]["pg"]
                 data["gen"][2, j, i] = result["solution"]["gen"]["$(j)"]["qg"]
             end
             data["termination_status"][i] = string(result["termination_status"])
