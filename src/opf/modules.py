@@ -23,8 +23,10 @@ class OPFDual(pl.LightningModule):
         model: torch.nn.Module,
         n_nodes: tuple[int, int, int],
         lr=1e-4,
-        lr_dual_scale=0.1,
         weight_decay=0.0,
+        lr_dual=1e-3,
+        weight_decay_dual=0.0,
+        dual_interval=1,
         eps=1e-3,
         enforce_constraints=False,
         detailed_metrics=False,
@@ -45,8 +47,10 @@ class OPFDual(pl.LightningModule):
         self.save_hyperparameters(ignore=["model", "kwargs"])
         self.model = model
         self.lr = lr
-        self.lr_dual_scale = lr_dual_scale
         self.weight_decay = weight_decay
+        self.lr_dual = lr_dual
+        self.weight_decay_dual = weight_decay_dual
+        self.dual_interval = dual_interval
         self.eps = eps
         self._enforce_constraints = enforce_constraints
         self.detailed_metrics = detailed_metrics
@@ -90,8 +94,9 @@ class OPFDual(pl.LightningModule):
     def add_args(parser: argparse.ArgumentParser):
         group = parser.add_argument_group("OPFDual")
         group.add_argument("--lr", type=float, default=3e-4)
-        group.add_argument("--lr_dual_scale", type=float, default=0.1)
         group.add_argument("--weight_decay", type=float, default=0.0)
+        group.add_argument("--lr_dual", type=float, default=0.1)
+        group.add_argument("--weight_decay_dual", type=float, default=0.0)
         group.add_argument("--eps", type=float, default=1e-3)
         group.add_argument("--enforce_constraints", action="store_true", default=False)
         group.add_argument("--detailed_metrics", action="store_true", default=False)
@@ -146,7 +151,7 @@ class OPFDual(pl.LightningModule):
         constraint_loss = self.constraint_loss(constraints)
         return variables, constraints, cost, constraint_loss
 
-    def training_step(self, batch: PowerflowBatch):
+    def training_step(self, batch: PowerflowBatch, batch_idx: int):
         primal_optimizer, dual_optimizer = self.optimizers()  # type: ignore
         _, constraints, cost, constraint_loss = self._step_helper(
             self.forward(batch),
@@ -157,7 +162,8 @@ class OPFDual(pl.LightningModule):
         dual_optimizer.zero_grad()
         (cost + constraint_loss).backward()
         primal_optimizer.step()
-        dual_optimizer.step()
+        if (batch_idx + 1) % self.dual_interval == 0:
+            dual_optimizer.step()
 
         # enforce inequality multipliers to be non-negative
         for name in self.multipliers:
@@ -410,8 +416,8 @@ class OPFDual(pl.LightningModule):
         )
         dual_optimizer = torch.optim.Adam(
             self.multipliers.parameters(),
-            lr=self.lr * self.lr_dual_scale,
-            weight_decay=self.weight_decay,
+            lr=self.lr_dual,
+            weight_decay=self.weight_decay_dual,
             maximize=True,
         )
         return primal_optimizer, dual_optimizer
