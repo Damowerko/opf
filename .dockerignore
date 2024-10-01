@@ -6,6 +6,7 @@ cluster/
 figures/
 logs/
 checkpoints/
+hsl/
 **/wandb
 # data, it's symlink, but allow folders called data in src */
 data/
