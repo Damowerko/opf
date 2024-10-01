@@ -90,6 +90,13 @@ julia --project=OPFHelpers -e 'using Pkg; Pkg.develop(path="./hsl/HSL_jll.jl")'
 julia --project=. -e 'using Pkg; Pkg.develop(path="./hsl/HSL_jll.jl")' 
 ```
 
+### Git Filter Notebook 
+
+Strip out outputs and metadata from notebooks.
+```
+git config --local include.path '../.gitconfig'
+```
+
 
 ## Code Overview
 ### Files
