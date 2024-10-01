@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from typing import Optional
 from zipfile import ZipFile
 
+import h5py
 import pytorch_lightning as pl
 import torch
 import torch_geometric.transforms as T
@@ -86,7 +87,7 @@ def build_hetero_graph(
     graph["bus"].num_nodes = params.n_bus
     graph["branch"].num_nodes = params.n_branch
     graph["gen"].num_nodes = params.n_gen
-     
+
     branch_index = torch.arange(params.n_branch)
     gen_index = torch.arange(params.n_gen)
     reverse_coef = -1 if antisymmetric else 1
@@ -123,15 +124,12 @@ def build_hetero_graph(
     graph["bus", "tie", "gen"].edge_index = torch.stack(
         [params.gen_bus_ids, gen_index], dim=0
     )
-    graph["bus", "tie", "gen"].edge_weight = reverse_coef * torch.ones(
-        params.n_gen
-    )
+    graph["bus", "tie", "gen"].edge_weight = reverse_coef * torch.ones(params.n_gen)
     # G&B
     graph["gen", "tie", "bus"].edge_index = torch.stack(
         [gen_index, params.gen_bus_ids], dim=0
     )
     graph["gen", "tie", "bus"].edge_weight = torch.ones(params.n_gen)
-  
 
     # Self-loops
     if self_loops:
@@ -249,8 +247,11 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
             edge_attr: Edge attributes with shape (num_edges, num_edge_features)
         """
         super().__init__()
-        
-        if bus_features.shape[0] != branch_features.shape[0] or bus_features.shape[0] != gen_features.shape[0]:
+
+        if (
+            bus_features.shape[0] != branch_features.shape[0]
+            or bus_features.shape[0] != gen_features.shape[0]
+        ):
             raise ValueError(
                 f"Expected inputs to have the same number of samples, but got {bus_features.shape[0]}, {branch_features.shape[0]}, {gen_features.shape[0]}."
             )
@@ -292,6 +293,7 @@ class CaseDataModule(pl.LightningDataModule):
         num_workers=min(cpu_count(), 8),
         pin_memory=False,
         homo=False,
+        test_samples=1000,
         **kwargs,
     ):
         super().__init__()
@@ -302,6 +304,7 @@ class CaseDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.homo = homo
+        self.test_samples = test_samples
 
         self.powerflow_parameters = None
         self.graph = None
@@ -334,6 +337,25 @@ class CaseDataModule(pl.LightningDataModule):
         assert isinstance(dataset, StaticHeteroDataset)
         return dataset[0][0].metadata()
 
+    def build_dataset(self, bus_features, branch_features, gen_features):
+        assert self.powerflow_parameters is not None
+        if self.homo:
+            assert isinstance(self.graph, Data)
+            return StaticGraphDataset(
+                bus_features,
+                self.graph,
+                self.powerflow_parameters,
+            )
+        else:
+            assert isinstance(self.graph, HeteroData)
+
+            return StaticHeteroDataset(
+                bus_features,
+                branch_features,
+                gen_features,
+                self.graph,
+                self.powerflow_parameters,
+            )
 
     def setup(self, stage: Optional[str] = None):
         if self.powerflow_parameters is None:
@@ -350,79 +372,50 @@ class CaseDataModule(pl.LightningDataModule):
             else:
                 self.graph = build_hetero_graph(self.powerflow_parameters, True, False)
 
-        bus_parameters = self.powerflow_parameters.bus_parameters()
-        branch_parameters = self.powerflow_parameters.branch_parameters()
-        gen_parameters = self.powerflow_parameters.gen_parameters()
+        with h5py.File(self.data_dir / f"{self.case_name}.h5", "r") as f:
+            load = torch.from_numpy(f["load"][:]).float()  # type: ignore
 
+        n_samples = load.shape[0]
+        n_bus = self.powerflow_parameters.n_bus
 
-        def parse_dataset(dicts: list[dict]):
-            assert self.powerflow_parameters is not None
+        bus_load = torch.zeros((n_samples, n_bus, 2))
+        bus_load[:, self.powerflow_parameters.load_bus_ids, :] = load
+        # Concatenates the features along the last dimension (n_samples)
+        bus_features = _concat_features(
+            n_samples,
+            bus_load,
+            self.powerflow_parameters.bus_parameters(),
+        ).to(bus_load.dtype)
+        branch_features = _concat_features(
+            n_samples,
+            self.powerflow_parameters.branch_parameters(),
+        ).to(bus_load.dtype)
+        gen_features = _concat_features(
+            n_samples,
+            self.powerflow_parameters.gen_parameters(),
+        ).to(bus_load.dtype)
 
-            # convert to torch tensors
-            load = torch.stack(
-                [pf.powermodels_to_tensor(d["load"], ["pd", "qd"]) for d in dicts]
+        n_train = n_samples - 2 * self.test_samples
+        n_val = self.test_samples
+        n_test = self.test_samples
+
+        if stage == "fit" or stage is None:
+            self.train_dataset = self.build_dataset(
+                bus_features[:n_train],
+                branch_features[:n_train],
+                gen_features[:n_train],
             )
-            n_samples = load.shape[0]
-
-            bus_load = (load.mT @ self.powerflow_parameters.load_matrix).mT
-            # Concatenates the features along the last dimension (n_samples)
-            bus_features = _concat_features(
-                n_samples,
-                bus_load,
-                bus_parameters,
-            ).to(bus_load.dtype)
-
-            if self.homo:
-                assert isinstance(self.graph, Data)
-                return StaticGraphDataset(
-                    bus_features,
-                    self.graph,
-                    self.powerflow_parameters,
-                )
-            else:
-                assert isinstance(self.graph, HeteroData)
-                branch_features = _concat_features(
-                    n_samples,
-                    branch_parameters,
-                ).to(bus_load.dtype)
-                gen_features = _concat_features(
-                    n_samples,
-                    gen_parameters,
-                ).to(bus_load.dtype)
-                return StaticHeteroDataset(
-                    bus_features,
-                    branch_features,
-                    gen_features,
-                    self.graph,
-                    self.powerflow_parameters,
-                )
-
-        # Labeled data is stored as a json file, which describes a list of dictionaries
-        # Each dict contains {"load" => another dict describing all the loads, "solution" => a solution to the powermodels problem}
-        # The train, valid, and test datasets are stored together in a zip file
-        with ZipFile(self.case_path.with_suffix(".zip")) as z:
-            if stage in (None, "fit"):
-                with z.open(f"{self.case_name}_train.json") as f:
-                    train_dicts: list[dict] = json.load(f)
-                    self.train_dataset = parse_dataset(train_dicts)
-                with z.open(f"{self.case_name}_valid.json") as f:
-                    valid_dicts = json.load(f)
-                    self.val_dataset = parse_dataset(valid_dicts)
-                    # average objective value for the validation set
-                    self.powerflow_parameters.reference_cost = sum(
-                        [
-                            d["result"]["objective"] / len(valid_dicts)
-                            for d in valid_dicts
-                        ]
-                    )
-            if stage in (None, "test"):
-                with z.open(f"{self.case_name}_test.json") as f:
-                    test_dicts: list[dict] = json.load(f)
-                    self.test_dataset = parse_dataset(test_dicts)
-                    # average objective value for the test set
-                    self.powerflow_parameters.reference_cost = sum(
-                        [d["result"]["objective"] / len(test_dicts) for d in test_dicts]
-                    )
+            self.val_dataset = self.build_dataset(
+                bus_features[n_train : n_train + n_val],
+                branch_features[n_train : n_train + n_val],
+                gen_features[n_train : n_train + n_val],
+            )
+        if stage == "test" or stage is None:
+            self.test_dataset = self.build_dataset(
+                bus_features[-n_test:],
+                branch_features[-n_test:],
+                gen_features[-n_test:],
+            )
 
     def train_dataloader(self):
         if self.train_dataset is None:

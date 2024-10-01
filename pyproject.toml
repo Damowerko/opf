@@ -24,6 +24,7 @@ torchcps = {git = "https://github.com/Damowerko/torchcps"}
 optuna = "^3.3.0"
 psycopg2-binary = "^2.9.7"
 plotly = "^5.16.1"
+h5py = "^3.12.1"
 
 [[tool.poetry.source]]
 name = "PyPI"
