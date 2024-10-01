@@ -13,19 +13,8 @@ s = ArgParseSettings()
     help = "Output directory path."
     arg_type = String
     default = "./data"
-    "--label_train"
-    help = "If provided will label the training data else only generate the data."
-    action = :store_true
-    "--n_train"
+    "--n_samples"
     help = "Number of samples to generate if `--label_train` is provided the samples will be labeled."
-    arg_type = Int
-    required = true
-    "--n_valid"
-    help = "Number of (labeled) samples to generate."
-    arg_type = Int
-    required = true
-    "--n_test"
-    help = "Number of (labeled) samples to generate."
     arg_type = Int
     required = true
     "--min_load"
@@ -45,12 +34,13 @@ using Ipopt
 using Random
 using ProgressMeter
 using JSON
-using ZipFile
+using HDF5
 
 # load HSL if available
 try
     using HSL_jll
     global use_hsl = true
+    println("HSL available.")
 catch
     global use_hsl = false
     println("HSL not available.")
@@ -105,10 +95,9 @@ end
 
 """
 Generate `n_samples` from the power system network. Each sample is labeled with the optimal solution.
-Samples that did not converge are discarded. Outputs a dictionary with the following keys:
-- `load`: an array of (n_samples, n_load, 2) with the active and reactive load at each bus.
-- `gen`: an array of (n_samples, n_gen, 2) with the active and reactive power generated at each generator.
-- `info`: dictionary with: termination_status, primal_status, dual_status, solve_time, objective
+Samples that did not converge are discarded. Outputs an array of dictionaries with the following keys:
+- `load`: a dictionary with the active and reactive load at each bus.
+- `result`: the result of the optimization problem.
 """
 function generate_samples(network_data, n_samples, min_load=0.9, max_load=1.1)::Tuple{Array{Float64,3},Array{Float64,3},Array{Dict,1}}
     count_atomic = Threads.Atomic{Int}(0)
@@ -133,6 +122,59 @@ function generate_samples(network_data, n_samples, min_load=0.9, max_load=1.1)::
     count = count_atomic[]
     println("Generated $n_samples feasible samples using $count samples. Feasibility ratio: $(n_samples / count).")
     return samples
+end
+
+"""
+Generate `n_samples` from the power system network. Each sample is labeled with the optimal solution.
+Samples that did not converge are discarded. Outputs a dictionary with the following keys:
+- `load`: an array of (n_samples, n_load, 2) with the active and reactive load at each bus.
+- `gen`: an array of (n_samples, n_gen, 2) with the active and reactive power generated at each generator.
+- `termination_status`: an array of (n_samples,) with the termination status of the optimization problem.
+- `primal_status`: an array of (n_samples,) with the primal status of the optimization problem.
+- `dual_status`: an array of (n_samples,) with the dual status of the optimization problem.
+- `solve_time`: an array of (n_samples,) with the time taken to solve the optimization problem.
+- `objective`: an array of (n_samples,) with the objective value of the optimization problem.
+"""
+function generate_samples_numpy(network_data, n_samples, min_load=0.9, max_load=1.1)
+    count_atomic = Threads.Atomic{Int}(0)
+    data = Dict(
+        "load" => Array{Float64,3}(undef, n_samples, length(network_data["load"]), 2),
+        "gen" => Array{Float64,3}(undef, n_samples, length(network_data["gen"]), 2),
+        "termination_status" => Array{String}(undef, n_samples),
+        "primal_status" => Array{String}(undef, n_samples),
+        "dual_status" => Array{String}(undef, n_samples),
+        "solve_time" => Array{Float64}(undef, n_samples),
+        "objective" => Array{Float64}(undef, n_samples),
+    )
+    progress = Progress(n_samples, desc="Generating labeled samples:")
+    Threads.@threads for i = 1:n_samples
+        solved = false
+        while !solved
+            Threads.atomic_add!(count_atomic, 1)
+            load = sample_load(network_data, min_load, max_load)
+            result, solved = label_network(network_data, load)
+            if !solved
+                continue
+            end
+            for j = 1:length(network_data["load"])
+                data["load"][i, j, 1] = load["$(j)"]["pd"]
+                data["load"][i, j, 2] = load["$(j)"]["qd"]
+            end
+            for j = 1:length(network_data["gen"])
+                data["gen"][i, j, 1] = result["solution"]["gen"]["$(j)"]["pg"]
+                data["gen"][i, j, 2] = result["solution"]["gen"]["$(j)"]["qg"]
+            end
+            data["termination_status"][i] = string(result["termination_status"])
+            data["primal_status"][i] = string(result["primal_status"])
+            data["dual_status"][i] = string(result["dual_status"])
+            data["solve_time"][i] = result["solve_time"]
+            data["objective"][i] = result["objective"]
+        end
+        next!(progress)
+    end
+    count = count_atomic[]
+    println("Generated $n_samples feasible samples using $count samples. Feasibility ratio: $(n_samples / count).")
+    return data
 end
 
 function check_assumptions!(network_data)
@@ -182,13 +224,9 @@ function main()
     casefile = args["casefile"]
     casename = replace(splitext(basename(casefile))[1], "pglib_opf_" => "")
     out_dir = args["out"]
-    n_train = args["n_train"]
-    n_valid = args["n_valid"]
-    n_test = args["n_test"]
+    n_samples = args["n_samples"]
     min_load = args["min_load"]
     max_load = args["max_load"]
-    label_train = args["label_train"]
-
 
     if max_load <= min_load
         error("max_load must be greater than min_load")
@@ -208,36 +246,15 @@ function main()
         JSON.print(f, network_data, 4)
     end
 
-    if label_train
-        # generate the labeled samples
-        n_labeled = n_train + n_valid + n_test
-        samples = generate_samples(network_data, n_labeled, min_load, max_load)
-        samples_train = @view samples[1:n_train]
-        samples_valid = @view samples[(n_train+1):(n_train+n_valid)]
-        samples_test = @view samples[(n_train+n_valid+1):end]
-    else
-        samples_train = generate_samples_unlabeled(network_data, n_train, min_load, max_load)
-        n_labeled = n_valid + n_test
-        samples = generate_samples(network_data, n_labeled, min_load, max_load)
-        samples_valid = @view samples[1:n_valid]
-        samples_test = @view samples[(n_valid+1):end]
+    data = generate_samples_numpy(network_data, n_samples, min_load, max_load)
+    # write to h5 file
+    h5file = joinpath(out_dir, casename * ".h5")
+    h5open(h5file, "w") do file
+        for (k, v) in data
+            write(file, k, v)
+        end
     end
 
-    # write data to zip file
-    writer = ZipFile.Writer(joinpath(out_dir, casename * ".zip"))
-    if n_train > 0
-        f = ZipFile.addfile(writer, casename * "_train.json")
-        JSON.print(f, samples_train)
-    end
-    if n_valid > 0
-        f = ZipFile.addfile(writer, casename * "_valid.json")
-        JSON.print(f, samples_valid)
-    end
-    if n_test > 0
-        f = ZipFile.addfile(writer, casename * "_test.json")
-        JSON.print(f, samples_test)
-    end
-    close(writer)
 end
 
 main()
