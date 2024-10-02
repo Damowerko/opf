@@ -202,8 +202,8 @@ class OPFDual(pl.LightningModule):
             self.log(
                 "val/invariant",
                 cost
-                + metrics["val/equality/error_mean"]
-                + metrics["val/inequality/error_mean"],
+                + 1e3 * metrics["val/equality/error_mean"]
+                + 1e3 * metrics["val/inequality/error_mean"],
                 batch_size=batch_size,
                 prog_bar=True,
             )
