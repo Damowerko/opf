@@ -222,10 +222,10 @@ def power_from_solution(load: dict, solution: dict, parameters: PowerflowParamet
 
 def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
     return {
-        "equality/active_power": EqualityConstraint(
+        "equality/bus_active_power": EqualityConstraint(
             True, False, d.S.real, d.Sg_bus.real - d.Sd.real, None
         ),
-        "equality/reactive_power": EqualityConstraint(
+        "equality/bus_reactive_power": EqualityConstraint(
             True, False, d.S.imag, d.Sg_bus.imag - d.Sd.imag, None
         ),
         "equality/bus_reference": EqualityConstraint(
@@ -386,5 +386,5 @@ def powerflow(
     S_sh = params.Ybus_sh.conj() * V.abs() ** 2
     S_branch = Sf @ params.Cf + St @ params.Ct
     S = S_branch + S_sh
-    Sg_bus = torch.zeros_like(Sd).index_add_(0, params.gen_bus_ids, Sg)
+    Sg_bus = torch.zeros_like(Sd).index_add_(1, params.gen_bus_ids, Sg)
     return PowerflowVariables(V, S, Sd, Sg, Sg_bus, Sf, St)
