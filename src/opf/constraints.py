@@ -40,6 +40,19 @@ def _compute_mask(mask, constraint):
     return mask
 
 
+def loss_equality(u: torch.Tensor, multiplier: torch.Tensor):
+    loss_dual = (u @ multiplier).mean(dim=0)
+    loss_agumented = u.pow(2).mean(dim=0)
+    return loss_dual + loss_agumented
+
+
+def loss_inequality(u: torch.Tensor, multiplier: torch.Tensor):
+    loss_dual = (u @ multiplier).mean(dim=0)
+    # u <= 0, therefore we have violation when u > 0, loss = max(0, u)^2
+    loss_augmented = u.relu().pow(2).mean(dim=0)
+    return loss_dual + loss_augmented
+
+
 def equality(
     x: torch.Tensor,
     y: torch.Tensor,
@@ -123,16 +136,11 @@ def inequality(
 
     u_lower /= band[mask_lower]
     u_upper /= band[mask_upper]
-    u_all = torch.cat((u_lower, u_upper, u_equal), dim=1)
-    multiplier_all = torch.cat(
-        (
-            lower_multiplier[mask_lower],
-            upper_multiplier[mask_upper],
-            # We represent the equality multiplier (which can be any real number) as the difference between two positive numbers.
-            upper_multiplier[mask_equality] - lower_multiplier[mask_equality],
-        ),
-        dim=0,
+
+    loss_lower = loss_inequality(u_lower, lower_multiplier[mask_lower])
+    loss_upper = loss_inequality(u_upper, upper_multiplier[mask_upper])
+    # We represent the equality multiplier (which can be any real number) as the difference between two positive numbers.
+    loss_equal = loss_equality(
+        u_equal, upper_multiplier[mask_equality] - lower_multiplier[mask_equality]
     )
-    # The loss is the dot product of the constraint and the multiplier, averaged over the batch.
-    loss = (u_all @ multiplier_all).mean(dim=0)
-    return metrics(loss, u_all, eps, multiplier_all)
+    return loss_lower + loss_upper + loss_equal
