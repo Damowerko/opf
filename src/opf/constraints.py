@@ -42,14 +42,14 @@ def _compute_mask(mask, constraint):
 
 def loss_equality(u: torch.Tensor, multiplier: torch.Tensor):
     loss_dual = (u @ multiplier).mean(dim=0)
-    loss_agumented = u.pow(2).mean(dim=0)
+    loss_agumented = u.pow(2).sum(dim=-1).mean(dim=0)
     return loss_dual + loss_agumented
 
 
 def loss_inequality(u: torch.Tensor, multiplier: torch.Tensor):
     loss_dual = (u @ multiplier).mean(dim=0)
     # u <= 0, therefore we have violation when u > 0, loss = max(0, u)^2
-    loss_augmented = u.relu().pow(2).mean(dim=0)
+    loss_augmented = u.relu().pow(2).sum(dim=-1).mean(dim=0)
     return loss_dual + loss_augmented
 
 
@@ -81,11 +81,11 @@ def equality(
         multiplier = multiplier[..., mask]
     u = x - y if not angle else wrap_angle(x - y)
     # The loss is the dot product of the constraint and the multiplier, averaged over the batch.
-    loss = (u @ multiplier).mean(dim=0)
+    loss = loss_equality(u, multiplier)
 
     assert not torch.isnan(u).any()
     assert not torch.isinf(u).any()
-    return metrics(loss, u, eps, multiplier)
+    return metrics(loss, u.abs(), eps, multiplier)
 
 
 def inequality(
@@ -143,4 +143,16 @@ def inequality(
     loss_equal = loss_equality(
         u_equal, upper_multiplier[mask_equality] - lower_multiplier[mask_equality]
     )
-    return loss_lower + loss_upper + loss_equal
+    loss = loss_lower + loss_upper + loss_equal
+    # this is used for metrics only
+    u_all = torch.cat((u_lower, u_upper, u_equal.abs()), dim=1)
+    multiplier_all = torch.cat(
+        (
+            lower_multiplier[mask_lower],
+            upper_multiplier[mask_upper],
+            # We represent the equality multiplier (which can be any real number) as the difference between two positive numbers.
+            upper_multiplier[mask_equality] - lower_multiplier[mask_equality],
+        ),
+        dim=0,
+    )
+    return metrics(loss, u_all, eps, multiplier_all)
