@@ -161,7 +161,7 @@ class OPFDual(pl.LightningModule):
 
         primal_optimizer.zero_grad()
         dual_optimizer.zero_grad()
-        (cost + constraint_loss).backward()
+        (cost + 1e3 * constraint_loss).backward()
         primal_optimizer.step()
         if (self.global_step + 1) % self.dual_interval == 0:
             dual_optimizer.step()
