@@ -374,6 +374,7 @@ class CaseDataModule(pl.LightningDataModule):
 
         with h5py.File(self.data_dir / f"{self.case_name}.h5", "r") as f:
             load = torch.from_numpy(f["load"][:]).float()  # type: ignore
+            self.powerflow_parameters.reference_cost = f["objective"][:].mean()  # type: ignore
 
         n_samples = load.shape[0]
         n_bus = self.powerflow_parameters.n_bus
