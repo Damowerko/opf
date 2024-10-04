@@ -28,6 +28,7 @@ def main():
     parser.add_argument(
         "--hotstart", type=str, default=None, help="ID of run to hotstart with."
     )
+    parser.add_argument("--notes", type=str, default="")
 
     # data arguments
     parser.add_argument("--case_name", type=str, default="case179_goc__api")
@@ -69,6 +70,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
             save_dir=params["log_dir"],
             config=params,
             log_model=True,
+            notes=params["notes"],
         )
 
         logger.log_hyperparams(params)
