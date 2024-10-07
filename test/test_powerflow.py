@@ -33,11 +33,15 @@ def test_powerflow(execution_number):
     Sd = torch.zeros_like(V).index_put_(
         (parameters.load_bus_ids,), torch.complex(*load.T)
     )
+    # add batch dimensions
+    V = V.unsqueeze(0)
+    Sg = Sg.unsqueeze(0)
+    Sd = Sd.unsqueeze(0)
 
     variables = pf.powerflow(V, Sd, Sg, parameters)
 
-    Sf = torch.complex(*branch[:, :2].T).to(dtype)
-    St = torch.complex(*branch[:, 2:].T).to(dtype)
+    Sf = torch.complex(*branch[:, :2].T).to(dtype)[None, :]
+    St = torch.complex(*branch[:, 2:].T).to(dtype)[None, :]
 
     torch.testing.assert_close(Sf, variables.Sf, atol=eps, rtol=eps)
     torch.testing.assert_close(St, variables.St, atol=eps, rtol=eps)
@@ -54,5 +58,5 @@ def test_powerflow(execution_number):
         elif isinstance(constraint, pf.EqualityConstraint):
             difference = (constraint.value - constraint.target).abs()
             if constraint.mask is not None:
-                difference = difference[constraint.mask]
+                difference = difference[:, constraint.mask]
             assert (difference < eps).all(), f"Failed {constraint_name}"
