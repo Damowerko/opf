@@ -455,7 +455,7 @@ class CaseDataModule(pl.LightningDataModule):
             )
         return DataLoader(
             self.test_dataset,
-            batch_size=1,
+            batch_size=self.batch_size,
             shuffle=False,
             drop_last=False,
             num_workers=self.num_workers,

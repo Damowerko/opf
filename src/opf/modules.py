@@ -146,7 +146,10 @@ class OPFDual(pl.LightningModule):
         self,
         variables: pf.PowerflowVariables,
         parameters: pf.PowerflowParameters,
+        project_powermodels=False,
     ):
+        if project_powermodels:
+            variables = self.project_powermodels(variables, parameters)
         constraints = self.constraints(variables, parameters)
         cost = self.cost(variables, parameters)
         constraint_loss = self.constraint_loss(constraints)
@@ -217,6 +220,7 @@ class OPFDual(pl.LightningModule):
             _, constraints, cost, _ = self._step_helper(
                 self.forward(batch),
                 batch.powerflow_parameters,
+                project_powermodels=True,
             )
             test_metrics = self.metrics(
                 cost, constraints, "test", self.detailed_metrics
@@ -242,11 +246,10 @@ class OPFDual(pl.LightningModule):
 
     def project_powermodels(
         self,
-        V: torch.Tensor,
-        Sg: torch.Tensor,
-        Sd: torch.Tensor,
+        variables: pf.PowerflowVariables,
         parameters: pf.PowerflowParameters,
-    ):
+    ) -> pf.PowerflowVariables:
+        V, Sg, Sd = variables.V, variables.Sg, variables.Sd
         bus_shape = V.shape
         gen_shape = Sg.shape
         dtype = V.dtype
@@ -282,7 +285,7 @@ class OPFDual(pl.LightningModule):
         V = torch.complex(V[..., 0], V[..., 1]).to(device, dtype).view(bus_shape)
         Sg = torch.complex(Sg[..., 0], Sg[..., 1]).to(device, dtype).view(gen_shape)
         Sd = torch.complex(Sd[..., 0], Sd[..., 1]).to(device, dtype).view(bus_shape)
-        return V, Sg, Sd
+        return pf.powerflow(V, Sd, Sg, parameters)
 
     def parse_bus(self, bus: torch.Tensor):
         assert bus.shape[1] == 2
