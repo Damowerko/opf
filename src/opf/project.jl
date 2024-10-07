@@ -46,7 +46,7 @@ function main()
 
     n_bus = size(V, 1)
     Threads.@threads for i in 1:n_bus
-        V[i, :, :] = OPFHelpers.project(network_data, V[i, :, :], Sg[i, :, :], Sd[i, :, :])
+        V[i, :, :], Sg[i, :, :] = OPFHelpers.project(network_data, V[i, :, :], Sg[i, :, :], Sd[i, :, :])
     end
     # write the projected variables to file
     NPZ.npzwrite(busfile, Dict("V" => V, "Sd" => Sd, "Sg" => Sg))
