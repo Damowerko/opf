@@ -138,8 +138,10 @@ class OPFDual(pl.LightningModule):
     def enforce_constraints(self, V, Sg, params: pf.PowerflowParameters):
         vm = self.sigmoid_bound(V.abs(), params.vm_min, params.vm_max)
         V = torch.polar(vm, V.angle())
-        Sg.real = self.sigmoid_bound(Sg.real, params.Sg_min.real, params.Sg_max.real)
-        Sg.imag = self.sigmoid_bound(Sg.imag, params.Sg_min.imag, params.Sg_max.imag)
+        Sg = torch.complex(
+            self.sigmoid_bound(Sg.real, params.Sg_min.real, params.Sg_max.real),
+            self.sigmoid_bound(Sg.imag, params.Sg_min.imag, params.Sg_max.imag),
+        )
         return V, Sg
 
     def _step_helper(
