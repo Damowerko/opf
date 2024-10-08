@@ -370,7 +370,7 @@ class CaseDataModule(pl.LightningDataModule):
             if self.homo:
                 self.graph = build_graph(self.powerflow_parameters)
             else:
-                self.graph = build_hetero_graph(self.powerflow_parameters, True, False)
+                self.graph = build_hetero_graph(self.powerflow_parameters, False, False)
 
         with h5py.File(self.data_dir / f"{self.case_name}.h5", "r") as f:
             load = torch.from_numpy(f["load"][:]).float()  # type: ignore
