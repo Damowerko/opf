@@ -265,8 +265,11 @@ class OPFDual(pl.LightningModule):
         self,
         variables: pf.PowerflowVariables,
         parameters: pf.PowerflowParameters,
+        clamp=True,
     ) -> pf.PowerflowVariables:
         V, Sg, Sd = variables.V, variables.Sg, variables.Sd
+        if clamp:
+            V, Sg = self.enforce_constraints(V, Sg, parameters, strategy="clamp")
         bus_shape = V.shape
         gen_shape = Sg.shape
         dtype = V.dtype
@@ -274,7 +277,6 @@ class OPFDual(pl.LightningModule):
         V = torch.view_as_real(V.cpu()).view(-1, parameters.n_bus, 2).numpy()
         Sg = torch.view_as_real(Sg.cpu()).view(-1, parameters.n_gen, 2).numpy()
         Sd = torch.view_as_real(Sd.cpu()).view(-1, parameters.n_bus, 2).numpy()
-
         # TODO: make this more robust, maybe use PyJulia
         # currently what we do is save the data to a temporary directory
         # then run the julia script and load the data back
