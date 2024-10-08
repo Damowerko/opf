@@ -131,16 +131,31 @@ class OPFDual(pl.LightningModule):
             V, Sg = self.enforce_constraints(V, Sg, powerflow_parameters)
         return pf.powerflow(V, Sd, Sg, powerflow_parameters)
 
-    def sigmoid_bound(self, x, lb, ub):
-        scale = ub - lb
-        return scale * torch.sigmoid(x) + lb
+    def enforce_constraints(
+        self, V, Sg, params: pf.PowerflowParameters, strategy="sigmoid"
+    ):
+        """
+        Ensure that voltage and power generation are within the specified bounds.
 
-    def enforce_constraints(self, V, Sg, params: pf.PowerflowParameters):
-        vm = self.sigmoid_bound(V.abs(), params.vm_min, params.vm_max)
+        Args:
+            V: The bus voltage. Magnitude must be between params.vm_min and params.vm_max.
+            Sg: The generator power. Real and reactive power must be between params.Sg_min and params.Sg_max.
+            params: The powerflow parameters.
+            strategy: The strategy to use for enforcing the constraints. Defaults to "sigmoid".
+                "sigmoid" uses a sigmoid function to enforce the constraints.
+                "clamp" uses torch.clamp to enforce the constraints.
+        """
+        if strategy == "sigmoid":
+            fn = lambda x, lb, ub: (ub - lb) * torch.sigmoid(x) + lb
+        elif strategy == "clamp":
+            fn = lambda x, lb, ub: torch.clamp(x, lb, ub)
+        else:
+            raise ValueError(f"Unknown strategy: {strategy}")
+        vm = fn(V.abs(), params.vm_min, params.vm_max)
         V = torch.polar(vm, V.angle())
         Sg = torch.complex(
-            self.sigmoid_bound(Sg.real, params.Sg_min.real, params.Sg_max.real),
-            self.sigmoid_bound(Sg.imag, params.Sg_min.imag, params.Sg_max.imag),
+            fn(Sg.real, params.Sg_min.real, params.Sg_max.real),
+            fn(Sg.imag, params.Sg_min.imag, params.Sg_max.imag),
         )
         return V, Sg
 
