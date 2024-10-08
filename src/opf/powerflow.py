@@ -25,6 +25,17 @@ class PowerflowVariables:
     Sf: torch.Tensor
     St: torch.Tensor
 
+    def __getitem__(self, idx: int):
+        return PowerflowVariables(
+            self.V[None, idx],
+            self.S[None, idx],
+            self.Sd[None, idx],
+            self.Sg[None, idx],
+            self.Sg_bus[None, idx],
+            self.Sf[None, idx],
+            self.St[None, idx],
+        )
+
 
 @dataclass(eq=False, repr=False)
 class Constraint(torch.nn.Module):
