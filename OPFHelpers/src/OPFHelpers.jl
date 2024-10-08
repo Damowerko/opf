@@ -43,11 +43,6 @@ function project(network_data::Dict{String,Any}, V::Array{Float64,2}, Sg::Array{
         i = v["index"]
         pg = Sg[i, 1]
         qg = Sg[i, 2]
-        # enforce constraints
-        pg = max(pg, v["pmin"])
-        pg = min(pg, v["pmax"])
-        qg = max(qg, v["qmin"])
-        qg = min(qg, v["qmax"])
         v["pg"] = pg
         v["qg"] = qg
     end
