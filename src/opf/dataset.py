@@ -260,9 +260,9 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         self.x_gen = gen_features
 
         homogeneous_graph = graph.to_homogeneous()
-        homogeneous_graph.edge_index = homogeneous_graph.edge_index.to(torch.int64)
-        graph = T.GCNNorm(False)(homogeneous_graph).to_heterogeneous()
-        self.graph = T.ToSparseTensor()(graph)
+        homogeneous_graph.edge_index = homogeneous_graph.edge_index.to(torch.int64)  # type: ignore
+        # homogeneous_graph = T.GCNNorm(False)(homogeneous_graph)
+        self.graph = T.ToSparseTensor()(homogeneous_graph.to_heterogeneous())
         self.powerflow_parameters = copy.deepcopy(powerflow_parameters)
 
     def __len__(self) -> int:
@@ -442,7 +442,7 @@ class CaseDataModule(pl.LightningDataModule):
             self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
-            drop_last=False,
+            drop_last=True,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             collate_fn=self.val_dataset.collate_fn,

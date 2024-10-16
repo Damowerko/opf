@@ -6,85 +6,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.nn as gnn
-from torch_geometric.nn.aggr import Aggregation
-from torch_geometric.typing import Adj, EdgeType, NodeType
-
-
-class HeteroGraphFilter(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        n_taps: int,
-        metadata: tuple[list[NodeType], list[EdgeType]],
-        aggr: str | Aggregation = "sum",
-    ):
-        """
-        Args:
-            in_channels: Number of input channels.
-            out_channels: Number of output channels.
-            n_taps: Number of taps in the filter.
-            aggr: Aggregation scheme to use. For example, "add", "sum" "mean", "min", "max" or "mul".
-                In addition, can be any Aggregation module (or any string that automatically resolves to it).
-        """
-        super().__init__()
-        node_types, edge_types = metadata
-        self.shift = gnn.HeteroConv(
-            convs={
-                edge_type: gnn.SimpleConv(
-                    aggr=aggr,
-                    combine_root=None,
-                )
-                for edge_type in edge_types
-            }
-        )
-        self.taps = nn.ModuleList(
-            [
-                gnn.HeteroDictLinear(in_channels, out_channels, types=node_types)
-                for _ in range(n_taps + 1)
-            ]
-        )
-
-    def forward(self, x: dict[NodeType, torch.Tensor], adj_t: dict[EdgeType, Adj]):
-        z: dict[NodeType, torch.Tensor] = self.taps[0](x)
-        for i in range(1, len(self.taps)):
-            if not isinstance(x, dict):
-                raise AttributeError(f"Expected x type 'dict' but got type {type(x).__name__}")
-            if not isinstance(adj_t, dict):
-                raise AttributeError(f"Expected adj_t type 'dict' but got type {type(adj_t).__name__}")
-            x = self.shift(x, adj_t)
-            y = self.taps[i](x)
-            z = {t: z[t] + y[t] for t in z}
-        return z
-
-
-class HeteroMap(nn.Module):
-    def __init__(self, module: nn.Module) -> None:
-        super().__init__()
-        self.module = module
-
-    def forward(self, x: dict[NodeType, torch.Tensor]):
-        return {t: self.module(x[t]) for t in x}
-
-
-class HeteroDictWrapper(nn.Module):
-    def __init__(
-        self,
-        node_types: list[NodeType],
-        module: typing.Type[nn.Module],
-        *args,
-        **kwargs,
-    ) -> None:
-        super().__init__()
-        self.module = module
-        self.module_dict = nn.ModuleDict(
-            {t: module(*args, **kwargs) for t in node_types}
-        )
-
-    def forward(self, x: dict[NodeType, torch.Tensor]):
-        for t in x:
-            x[t] = self.module_dict[t](x[t])
-        return x
+from torch_geometric import EdgeIndex
+from torch_geometric.data import HeteroData
+from torch_geometric.typing import Adj, EdgeType, NodeType, Tensor
 
 
 class HeteroMLP(nn.Module):
@@ -102,6 +26,9 @@ class HeteroMLP(nn.Module):
     ) -> None:
         super().__init__()
 
+        if num_layers < 2:
+            raise ValueError("Currently only supports >= 2 layers.")
+
         self.num_layers = num_layers
         self.dropout = float(dropout)
         self.plain_last = plain_last
@@ -112,10 +39,11 @@ class HeteroMLP(nn.Module):
         )
         self.lins = nn.ModuleList(
             [
-                gnn.HeteroDictLinear(
+                gnn.HeteroLinear(
                     n_channels[i],
                     n_channels[i + 1],
-                    node_types,
+                    len(node_types),
+                    is_sorted=True,
                 )
                 for i in range(num_layers)
             ]
@@ -123,7 +51,9 @@ class HeteroMLP(nn.Module):
         self.norms = (
             nn.ModuleList(
                 [
-                    HeteroDictWrapper(node_types, gnn.BatchNorm, n_channels[i + 1])
+                    gnn.HeteroBatchNorm(
+                        hidden_channels, len(node_types), n_channels[i + 1]
+                    )
                     for i in range(num_layers - 1 if plain_last else num_layers)
                 ]
             )
@@ -131,18 +61,21 @@ class HeteroMLP(nn.Module):
             else None
         )
 
-    def forward(self, x: dict[NodeType, torch.Tensor]):
+    def forward(self, x: Tensor, node_type: Tensor):
+        """
+        Args:
+            x: Node feature tensor.
+            node_type: Type of each node.
+        """
         for i in range(self.num_layers):
             last_layer = i == self.num_layers - 1
-            x = self.lins[i](x)
-
+            x = self.lins[i](x, node_type)
             if last_layer and self.plain_last:
                 continue
-
             if self.norms:
-                x = self.norms[i](x)
-            x = {t: self.act(x[t]) for t in x}
-            x = {t: F.dropout(x[t], p=self.dropout, training=self.training) for t in x}
+                x = self.norms[i](x, node_type)
+            x = self.act(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
 
@@ -150,40 +83,89 @@ class HeteroResidualBlock(nn.Module):
     def __init__(
         self,
         conv: Callable,
-        act: Callable | None = None,
-        norm: HeteroDictWrapper | None = None,
+        conv_norm: Callable,
+        mlp: Callable,
+        mlp_norm: Callable,
+        act: Callable,
         dropout: float = 0.0,
         **kwargs,
     ) -> None:
         """
         Residual block with a RES+ connection.
-            Norm -> Activation -> Dropout -> Conv -> Residual
+            Norm -> Activation -> Dropout -> Module -> Residual
 
         Args:
-            conv: Convolutional layer with input arguments (x, adj_t).
+            conv: Convolutional layer with input arguments (x, adj_t, edge_type).
+            conv_norm: Normalization layer with input arguments (x, node_type).
+            mlp: MLP layer with input arguments (x, node_type).
+            mlp_norm: Normalization layer with input arguments (x, node_type).
+            act: Activation function. Input arguments (x,).
             dropout: Dropout probability.
-            act: Activation function.
-            norm: Normalization function with input arguments (x, type_vec).
         """
         super().__init__(**kwargs)
         self.conv = conv
+        self.conv_norm = conv_norm
+        self.mlp = mlp
+        self.mlp_norm = mlp_norm
         self.act = act or nn.Identity()
-        self.norm = norm
         self.dropout = float(dropout)
 
-    def forward(self, x, adj_t):
-        y_dict = {t: x[t] for t in x}
-        if self.norm:
-            y_dict = self.norm(y_dict)
-        y_dict = {t: self.act(y_dict[t]) for t in y_dict}
-        y_dict = {
-            t: F.dropout(y_dict[t], p=self.dropout, training=self.training)
-            for t in y_dict
-        }
-        y_dict = self.conv(y_dict, adj_t)
-        for t in x:
-            x[t] = x[t] + y_dict[t]
+    def forward(self, x: Tensor, adj_t: Adj, node_type: Tensor, edge_type: Tensor):
+        # Convolutional layer and residual connection
+        y = x
+        y = self.conv_norm(y, node_type)
+        y = self.act(y)
+        y = F.dropout(y, p=self.dropout, training=self.training)
+        x = x + self.conv(y, adj_t, edge_type)
+        # MLP layer and residual connection
+        y = x
+        y = self.mlp_norm(y, node_type)
+        y = self.act(y)
+        y = F.dropout(y, p=self.dropout, training=self.training)
+        x = x + self.mlp(y, node_type)
         return x
+
+
+class OPFReadout(torch.nn.Module):
+    def __init__(
+        self,
+        metadata: tuple[list[NodeType], list[EdgeType]],
+        n_channels: int,
+        mlp_hidden_channels: int,
+        mlp_read_layers: int,
+        dropout: float,
+        **kwargs,
+    ):
+        super().__init__()
+        self.metadata = metadata
+        self.bus_type_id = self.metadata[0].index("bus")
+        self.gen_type_id = self.metadata[0].index("gen")
+
+        self.bus_mlp = gnn.MLP(
+            in_channels=n_channels,
+            hidden_channels=mlp_hidden_channels,
+            out_channels=2,
+            num_layers=mlp_read_layers,
+            dropout=dropout,
+            plain_last=True,
+            act=nn.LeakyReLU(),
+        )
+        self.gen_mlp = gnn.MLP(
+            in_channels=n_channels,
+            hidden_channels=mlp_hidden_channels,
+            out_channels=2,
+            num_layers=mlp_read_layers,
+            dropout=dropout,
+            plain_last=True,
+            act=nn.LeakyReLU(),
+        )
+
+    def forward(self, x: Tensor, node_type: Tensor):
+        x_bus = x[node_type == self.bus_type_id]
+        x_gen = x[node_type == self.gen_type_id]
+        bus_out = self.bus_mlp(x_bus)
+        gen_out = self.gen_mlp(x_gen)
+        return bus_out, gen_out
 
 
 class HeteroGCN(nn.Module):
@@ -192,7 +174,6 @@ class HeteroGCN(nn.Module):
         "relu": nn.ReLU,
         "leaky_relu": nn.LeakyReLU,
     }
-
 
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
@@ -221,13 +202,13 @@ class HeteroGCN(nn.Module):
         group.add_argument(
             "--mlp_read_layers",
             type=int,
-            default=1,
+            default=2,
             help="Number of MLP layers to use for readin/readout.",
         )
         group.add_argument(
             "--mlp_per_gnn_layers",
             type=int,
-            default=0,
+            default=2,
             help="Number of MLP layers to use per GNN layer.",
         )
         group.add_argument(
@@ -246,9 +227,8 @@ class HeteroGCN(nn.Module):
     def __init__(
         self,
         metadata: tuple[list[NodeType], list[EdgeType]],
-        in_channels: int,
-        out_channels: int,
-        n_taps: int = 4,
+        in_channels: int | dict[NodeType, int],
+        out_channels: int | nn.Module,
         n_layers: int = 2,
         n_channels: int = 32,
         activation: typing.Union[nn.Module, str] = "leaky_relu",
@@ -256,18 +236,17 @@ class HeteroGCN(nn.Module):
         mlp_per_gnn_layers: int = 0,
         mlp_hidden_channels: int = 256,
         dropout: float = 0.0,
-        aggr: str | Aggregation = "sum",
+        aggr: str = "sum",
         **kwargs,
     ):
         """
         A simple GNN model with a readin and readout MLP. The structure of the architecture is expressed using hyperparameters. This allows for easy hyperparameter search.
 
         Args:
-            in_channels: Number of input features.
-            out_channels: Number of output features.
+            in_channels: Number of input features. Can be a dictionary with node types as keys.
+            out_channels: Number of output features. Can instead be a module that takes takes in the output of the last GNN layer and returns the final output.
             n_layers: Number of GNN layers.
             n_channels: Number of hidden features on each layer.
-            n_taps: Number of filter taps per layer.
             activation: Activation function to use.
             read_layers: Number of MLP layers to use for readin/readout.
             read_hidden_channels: Number of hidden features to use in the MLP layers.
@@ -277,7 +256,9 @@ class HeteroGCN(nn.Module):
         """
         super().__init__()
         if isinstance(activation, str):
-            activation = HeteroGCN.activation_choices[activation]()
+            self.activation = HeteroGCN.activation_choices[activation]()
+        else:
+            self.activation = activation
 
         if mlp_read_layers < 1:
             raise ValueError("mlp_read_layers must be >= 1.")
@@ -285,80 +266,82 @@ class HeteroGCN(nn.Module):
         self.node_types, self.edge_types = metadata
 
         # ensure that dropout is a float
-        dropout = float(dropout)
+        self.dropout = float(dropout)
 
+        # Input Projection: Changes the number of features from in_channels to n_channels
+        if isinstance(in_channels, int):
+            in_channels = {node_type: in_channels for node_type in self.node_types}
+        self.input_linear = gnn.HeteroDictLinear(in_channels, mlp_hidden_channels)
+        self.input_norm = gnn.HeteroBatchNorm(mlp_hidden_channels, len(self.node_types))
         # Readin MLP: Changes the number of features from in_channels to n_channels
         self.readin = HeteroMLP(
-            node_types=self.node_types,
-            in_channels=in_channels,
+            in_channels=mlp_hidden_channels,
             hidden_channels=mlp_hidden_channels,
             out_channels=n_channels,
             num_layers=mlp_read_layers,
-            dropout=dropout,
-            act=activation,
-            plain_last=True,
-        )
-
-        # Readout MLP: Changes the number of features from n_channels to out_channels
-        # could make changes here for shape of output
-        self.readout = HeteroMLP(
             node_types=self.node_types,
-            in_channels=n_channels,
-            hidden_channels=mlp_hidden_channels,
-            out_channels=out_channels,
-            num_layers=mlp_read_layers,
-            dropout=dropout,
-            act=activation,
+            dropout=self.dropout,
+            act=self.activation,
             plain_last=True,
         )
+        # Readout MLP: Changes the number of features from n_channels to out_channels
+        if isinstance(out_channels, int):
+            self.readout = HeteroMLP(
+                in_channels=n_channels,
+                hidden_channels=mlp_hidden_channels,
+                out_channels=(
+                    out_channels if isinstance(out_channels, int) else n_channels
+                ),
+                num_layers=mlp_read_layers,
+                node_types=self.node_types,
+                dropout=self.dropout,
+                act=self.activation,
+                plain_last=True,
+            )
+        else:
+            self.readout = out_channels
+
         self.residual_blocks = nn.ModuleList()
         for _ in range(n_layers):
-            conv: list[tuple[Callable, str] | Callable] = [
-                (
-                    HeteroGraphFilter(
-                        in_channels=n_channels,
-                        out_channels=n_channels,
-                        n_taps=n_taps,
-                        metadata=metadata,
-                        aggr=aggr,
-                    ),
-                    "x, adj_t -> x",
-                )
-            ]
-            if mlp_per_gnn_layers > 0:
-                conv += [
-                    (HeteroMap(activation), "x -> x"),
-                    (
-                        HeteroMLP(
-                            in_channels=n_channels,
-                            hidden_channels=mlp_hidden_channels,
-                            out_channels=n_channels,
-                            num_layers=mlp_per_gnn_layers,
-                            node_types=self.node_types,
-                            dropout=dropout,
-                            act=activation,
-                            plain_last=True,
-                        ),
-                        "x -> x",
-                    ),
-                ]
-            norm = HeteroDictWrapper(
-                self.node_types,
-                gnn.BatchNorm,
-                n_channels,
+            conv = gnn.RGCNConv(
+                in_channels=n_channels,
+                out_channels=n_channels,
+                num_relations=len(self.edge_types),
+                aggr=aggr,
             )
-            self.residual_blocks += [
+            mlp = HeteroMLP(
+                in_channels=n_channels,
+                hidden_channels=mlp_hidden_channels,
+                out_channels=n_channels,
+                num_layers=mlp_per_gnn_layers,
+                node_types=self.node_types,
+                dropout=dropout,
+                act=self.activation,
+                plain_last=True,
+            )
+            self.residual_blocks.append(
                 HeteroResidualBlock(
-                    gnn.Sequential("x, adj_t", conv),
+                    conv=conv,
+                    conv_norm=gnn.HeteroBatchNorm(n_channels, len(self.node_types)),
+                    mlp=mlp,
+                    mlp_norm=gnn.HeteroBatchNorm(n_channels, len(self.node_types)),
+                    act=self.activation,
                     dropout=dropout,
-                    act=activation,
-                    norm=norm,
                 )
-            ]
+            )
 
-    def forward(self, x, adj_t):
-        x = self.readin(x)
+    def forward(self, heterodata: HeteroData):
+        x_dict = self.input_linear(heterodata.x_dict)
+        data = heterodata.set_value_dict("x", x_dict).to_homogeneous()
+        x = data.x
+        assert data.num_nodes is not None
+        edge_index = data.edge_index
+        # norm, nonlinearity, dropout after projection
+        x = self.input_norm(data.x, data.node_type)
+        x = self.activation(x)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.readin(x, data.node_type)
         for block in self.residual_blocks:
-            x = block(x, adj_t)
-        x = self.readout(x)
+            x = block(x, edge_index, data.node_type, data.edge_type)
+        x = self.readout(x, data.node_type)
         return x

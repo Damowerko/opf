@@ -109,10 +109,8 @@ class OPFDual(pl.LightningModule):
         data, powerflow_parameters = input
         if isinstance(data, HeteroData):
             n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
-            output = self.model(data.x_dict, data.adj_t_dict)
-            bus = output["bus"][:, :2]
-            gen = output["gen"][:, :2]
             load = data["bus"].x[:, :2]
+            bus, gen = self.model(data)
         elif isinstance(data, Data):
             raise NotImplementedError("Removed support for homogenous data for now.")
         else:

@@ -13,7 +13,7 @@ from torchcps.gnn import GCN
 from wandb.wandb_run import Run
 
 from opf.dataset import CaseDataModule
-from opf.hetero import HeteroGCN
+from opf.hetero import HeteroGCN, OPFReadout
 from opf.modules import OPFDual
 
 
@@ -33,13 +33,13 @@ def main():
     # data arguments
     parser.add_argument("--case_name", type=str, default="case179_goc__api")
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--fast_dev_run", action="store_true", default=False)
+    parser.add_argument("--fast_dev_run", action="store_true")
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--homo", action="store_true", default=False)
 
     # trainer arguments
     group = parser.add_argument_group("Trainer")
-    group.add_argument("--gpu", type=bool, default=True)
+    group.add_argument("--no_gpu", action="store_false", dest="gpu")
     group.add_argument("--max_epochs", type=int, default=1000)
     group.add_argument("--patience", type=int, default=50)
     group.add_argument("--gradient_clip_val", type=float, default=0)
@@ -53,7 +53,7 @@ def main():
 
     # parse the data dir
 
-    torch.set_float32_matmul_precision("medium")
+    torch.set_float32_matmul_precision("high")
     if params.operation == "study":
         study(params_dict)
     elif params.operation == "train":
@@ -113,7 +113,13 @@ def train(trainer: Trainer, params):
         gcn = GCN(in_channels=-1, out_channels=4, **params)
     else:
         dm.setup()
-        gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
+        gcn = HeteroGCN(
+            dm.metadata(),
+            in_channels=-1,
+            out_channels=OPFReadout(dm.metadata(), **params),
+            **params,
+        )
+        # gcn = typing.cast(HeteroGCN, torch.compile(gcn.cuda(), dynamic=True))
 
     assert dm.powerflow_parameters is not None
     n_nodes = (
@@ -122,24 +128,6 @@ def train(trainer: Trainer, params):
         dm.powerflow_parameters.n_gen,
     )
     model = OPFDual(gcn, n_nodes, **params)
-    # need to pass through a dummy input
-    model(dm.train_dataset[0])  # type: ignore
-
-    # TODO: Add back once we can run ACOPF examples.
-    # figure out the cost weight normalization factor
-    # it is chosen so that for any network the IPOPT (ACOPF) cost is 1.0
-    # if not params["fast_dev_run"]:
-    #     print("Performing cost normalization.")
-    #     calibration_result = trainer.test(model, datamodule=dm, verbose=False)[0]
-    #     model.cost_normalization = 1.0 / calibration_result["acopf/cost"]
-    #     print(f"Cost normalization: {model.cost_normalization}")
-    # else:
-    #     logging.warning("fast_dev_run is True! Skipping calibration.")
-
-    # find the 'optimal' learning rate
-    # tuner = Tuner(trainer)
-    # tuner.lr_find(model, dm)
-
     trainer.fit(model, dm)
     # trainer.test(model, dm)
     for logger in trainer.loggers:
@@ -147,7 +135,6 @@ def train(trainer: Trainer, params):
 
 
 def study(params: dict):
-    torch.set_float32_matmul_precision("medium")
     study_name = "opf-3"
     storage = os.environ["OPTUNA_STORAGE"]
     pruner = optuna.pruners.HyperbandPruner(
@@ -197,7 +184,12 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
     dm = CaseDataModule(pin_memory=params["gpu"], **params)
     if params["hetero"]:
         dm.setup()
-        gcn = HeteroGCN(dm.metadata(), in_channels=-1, out_channels=4, **params)
+        gcn = HeteroGCN(
+            dm.metadata(),
+            in_channels=-1,
+            out_channels=OPFReadout(dm.metadata(), **params),
+            **params,
+        )
     else:
         gcn = GCN(in_channels=-1, out_channels=4, **params)
     # model = OPFLogBarrier(gcn, **params)
