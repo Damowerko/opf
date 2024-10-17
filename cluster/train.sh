@@ -44,7 +44,7 @@ spec:
           limits:
             cpu: 64
             memory: 128Gi
-            nvidia.com/gpu: 1
+            nvidia.com/gpu: 2
         volumeMounts:
         - mountPath: /home/default/opf/data
           name: opf-data

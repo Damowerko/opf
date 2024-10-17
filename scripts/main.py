@@ -99,7 +99,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         logger=logger,
         callbacks=callbacks,
         accelerator="cuda" if params["gpu"] else "cpu",
-        devices=1,
+        devices=2,
         max_epochs=params["max_epochs"],
         default_root_dir=params["log_dir"],
         fast_dev_run=params["fast_dev_run"],
@@ -110,16 +110,16 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
 def train(trainer: Trainer, params):
     dm = CaseDataModule(pin_memory=params["gpu"], **params)
     if params["homo"]:
-        gcn = GCN(in_channels=-1, out_channels=4, **params)
+        gcn = GCN(in_channels=dm.feature_dims, out_channels=4, **params)
     else:
         dm.setup()
         gcn = HeteroGCN(
             dm.metadata(),
-            in_channels=-1,
+            in_channels=dm.feature_dims,
             out_channels=OPFReadout(dm.metadata(), **params),
             **params,
         )
-        # gcn = typing.cast(HeteroGCN, torch.compile(gcn.cuda(), dynamic=True))
+        gcn = typing.cast(HeteroGCN, torch.compile(gcn.cuda(), dynamic=True))
 
     assert dm.powerflow_parameters is not None
     n_nodes = (

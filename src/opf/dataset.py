@@ -223,7 +223,7 @@ class StaticGraphDataset(Dataset[PowerflowData]):
 
     @staticmethod
     def collate_fn(input: list[PowerflowData]) -> PowerflowBatch:
-        return static_collate(input)
+        batch = static_collate(input)
 
 
 class StaticHeteroDataset(Dataset[PowerflowData]):
@@ -336,6 +336,18 @@ class CaseDataModule(pl.LightningDataModule):
         dataset = self.train_dataset or self.val_dataset or self.test_dataset
         assert isinstance(dataset, StaticHeteroDataset)
         return dataset[0][0].metadata()
+
+    @property
+    def feature_dims(self) -> dict[NodeType, int]:
+        if self.homo:
+            raise NotImplementedError(
+                "input_features is not implemented for homo graphs."
+            )
+        if self.graph is None:
+            raise ValueError("Graph is not initialized. Call `setup()` first.")
+        dataset = self.train_dataset or self.val_dataset or self.test_dataset
+        assert isinstance(dataset, StaticHeteroDataset)
+        return {k: v.shape[-1] for k, v in dataset[0].data.x_dict.items()}
 
     def build_dataset(self, bus_features, branch_features, gen_features):
         assert self.powerflow_parameters is not None

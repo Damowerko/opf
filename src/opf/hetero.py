@@ -6,9 +6,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.nn as gnn
-from torch_geometric import EdgeIndex
-from torch_geometric.data import HeteroData
+from torch_geometric.data import Data, HeteroData
 from torch_geometric.typing import Adj, EdgeType, NodeType, Tensor
+from torch_geometric.utils import index_sort
 
 
 class HeteroMLP(nn.Module):
@@ -23,11 +23,9 @@ class HeteroMLP(nn.Module):
         act: nn.Module = nn.LeakyReLU(),
         norm: bool = True,
         plain_last: bool = True,
+        is_sorted: bool = False,
     ) -> None:
         super().__init__()
-
-        if num_layers < 2:
-            raise ValueError("Currently only supports >= 2 layers.")
 
         self.num_layers = num_layers
         self.dropout = float(dropout)
@@ -43,7 +41,7 @@ class HeteroMLP(nn.Module):
                     n_channels[i],
                     n_channels[i + 1],
                     len(node_types),
-                    is_sorted=True,
+                    is_sorted=is_sorted,
                 )
                 for i in range(num_layers)
             ]
@@ -278,11 +276,12 @@ class HeteroGCN(nn.Module):
             in_channels=mlp_hidden_channels,
             hidden_channels=mlp_hidden_channels,
             out_channels=n_channels,
-            num_layers=mlp_read_layers,
+            num_layers=mlp_read_layers - 1,
             node_types=self.node_types,
             dropout=self.dropout,
             act=self.activation,
             plain_last=True,
+            is_sorted=True,
         )
         # Readout MLP: Changes the number of features from n_channels to out_channels
         if isinstance(out_channels, int):
@@ -297,6 +296,7 @@ class HeteroGCN(nn.Module):
                 dropout=self.dropout,
                 act=self.activation,
                 plain_last=True,
+                is_sorted=False,
             )
         else:
             self.readout = out_channels
@@ -330,18 +330,53 @@ class HeteroGCN(nn.Module):
                 )
             )
 
+    @staticmethod
+    def sort(
+        x: Tensor,
+        edge_index: Tensor,
+        node_type: Tensor,
+        edge_type: Tensor,
+        num_node_types: int | None = None,
+        num_edge_types: int | None = None,
+    ):
+        # first sort the edges by edge_type
+        edge_type, edge_perm = index_sort(edge_type, max_value=num_edge_types)
+        edge_index = edge_index[:, edge_perm]
+        # now sort the nodes by node_type
+        node_type, node_perm = index_sort(node_type, max_value=num_node_types)
+        x = x[node_perm]
+        # update edge_index to reflect sorted nodes
+        node_map = torch.zeros_like(node_perm)
+        node_map[node_perm] = torch.arange(
+            len(node_perm), device=node_perm.device, dtype=node_perm.dtype
+        )
+        edge_index = node_map[edge_index]
+        return x, edge_index, node_type, edge_type, node_perm
+
+    @staticmethod
+    def unsort(x, node_perm):
+        x = x[torch.argsort(node_perm)]
+        return x
+
     def forward(self, heterodata: HeteroData):
         x_dict = self.input_linear(heterodata.x_dict)
         data = heterodata.set_value_dict("x", x_dict).to_homogeneous()
-        x = data.x
-        assert data.num_nodes is not None
-        edge_index = data.edge_index
+        assert (data.x is not None) and (data.edge_index is not None)
+        x, edge_index, node_type, edge_type, node_perm = HeteroGCN.sort(
+            data.x,
+            data.edge_index,
+            data.node_type,
+            data.edge_type,
+            num_node_types=len(self.node_types),
+            num_edge_types=len(self.edge_types),
+        )
         # norm, nonlinearity, dropout after projection
-        x = self.input_norm(data.x, data.node_type)
+        x = self.input_norm(x, node_type)
         x = self.activation(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.readin(x, data.node_type)
+        x = self.readin(x, node_type)
         for block in self.residual_blocks:
-            x = block(x, edge_index, data.node_type, data.edge_type)
-        x = self.readout(x, data.node_type)
+            x = block(x, edge_index, node_type, edge_type)
+        x = HeteroGCN.unsort(x, node_perm)
+        x = self.readout(x, node_type)
         return x

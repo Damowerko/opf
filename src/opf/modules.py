@@ -212,6 +212,7 @@ class OPFDual(pl.LightningModule):
                 "val/loss",
                 cost + constraint_loss,
                 batch_size=batch_size,
+                sync_dist=True,
             )
             metrics = self.metrics(cost, constraints, "val", self.detailed_metrics)
             self.log_dict(metrics, batch_size=batch_size)
@@ -224,6 +225,7 @@ class OPFDual(pl.LightningModule):
                 + 1e3 * metrics["val/inequality/error_mean"],
                 batch_size=batch_size,
                 prog_bar=True,
+                sync_dist=True,
             )
 
     def test_step(self, batch: PowerflowBatch, *args):
@@ -243,6 +245,7 @@ class OPFDual(pl.LightningModule):
             self.log_dict(
                 test_metrics,
                 batch_size=batch.data.num_graphs,
+                sync_dist=True,
             )
             # TODO: rethink how to do comparison against ACOPF
             # Test the ACOPF solution for reference.
