@@ -1,0 +1,4 @@
+[filter "jupyter-notebook"]
+	clean = "nbstripout-fast -t"
+	smudge = "cat"
+	required

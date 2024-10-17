@@ -80,12 +80,21 @@ julia --project=. -e 'using Pkg; Pkg.test("PowerModels")'
 The HSL linear solver for IPOPT dramatically speeds up solving the problem by taking advantage of BLAS and LAPACK. PowerModels.jl (benchmarks)[https://lanl-ansi.github.io/PowerModels.jl/stable/experiment-results/] use the HSL_MA57 solver, which I use as well. If you **do not** want to use the HSL solver then in the repo root run the following.
 ```
 julia --project=OPFHelpers -e 'using Pkg; Pkg.rm("HSL_jll")'
+julia --project=. -e 'using Pkg; Pkg.rm("HSL_jll")'
 ```
 
-If you want to use HSL you will have to download it yourself from (here)[https://licences.stfc.ac.uk/product/julia-hsl]. You need a license to do so, but it is free for academic use.
-Once you obtain the archive download it and extract to a location of your choice. Then run the following with PATH_TO_HSL_JL replaced by the path to the extracted archive.
+If you want to use HSL you will have to download it yourself from (here)[https://licences.stfc.ac.uk/product/julia-hsl]. You need a license to do so, but it is free for academic use. Download the archive into `REPO_ROOT/hsl`.
+Then extract the contents into `hsl` so that you have a `REPO_ROOT/hsl/HSL_jll.jl` folder. Then run the following to update the path to the library.
 ``` 
-julia --project=OPFHelpers -e 'using Pkg; Pkg.develop(path="PATH_TO_HSL_JL")' 
+julia --project=OPFHelpers -e 'using Pkg; Pkg.develop(path="./hsl/HSL_jll.jl")' 
+julia --project=. -e 'using Pkg; Pkg.develop(path="./hsl/HSL_jll.jl")' 
+```
+
+### Git Filter Notebook 
+
+Strip out outputs and metadata from notebooks.
+```
+git config --local include.path '../.gitconfig'
 ```
 
 

@@ -5,6 +5,7 @@ logs/
 scripts/latest.ckpt
 **/wandb
 figures/
+/hsl
 
 ## IDE
 .idea/
