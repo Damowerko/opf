@@ -24,11 +24,13 @@ PGLIB_VERSION = "21.07"
 class PowerflowData(typing.NamedTuple):
     data: Data | HeteroData
     powerflow_parameters: pf.PowerflowParameters
+    index: torch.Tensor
 
 
 class PowerflowBatch(typing.NamedTuple):
     data: Batch
     powerflow_parameters: pf.PowerflowParameters
+    index: torch.Tensor
 
 
 class BipartiteData(Data):
@@ -173,7 +175,7 @@ def static_collate(input: list[PowerflowData]) -> PowerflowBatch:
     Collate function for static graphs.
     """
 
-    data_list, powerflow_parameters_list = zip(*input)
+    data_list, powerflow_parameters_list, indices = zip(*input)
     # cast to appropriate types
     data_list = typing.cast(tuple[Data | HeteroData], data_list)
     powerflow_parameters_list = typing.cast(
@@ -183,7 +185,7 @@ def static_collate(input: list[PowerflowData]) -> PowerflowBatch:
     # let's assume that all samples have the same powerflow parameters
     powerflow_parameters = powerflow_parameters_list[0]
     assert all(powerflow_parameters == p for p in powerflow_parameters_list)
-    return PowerflowBatch(batch, powerflow_parameters)
+    return PowerflowBatch(batch, powerflow_parameters, torch.cat(indices))
 
 
 class StaticGraphDataset(Dataset[PowerflowData]):
@@ -211,7 +213,7 @@ class StaticGraphDataset(Dataset[PowerflowData]):
     def __len__(self) -> int:
         return len(self.x)
 
-    def __getitem__(self, index) -> PowerflowData:
+    def __getitem__(self, index: int) -> PowerflowData:
         return PowerflowData(
             Data(
                 x=self.x[index],
@@ -219,11 +221,12 @@ class StaticGraphDataset(Dataset[PowerflowData]):
                 edge_attr=self.edge_attr,
             ),
             self.powerflow_parameters,
+            torch.tensor(index, dtype=torch.long),
         )
 
     @staticmethod
     def collate_fn(input: list[PowerflowData]) -> PowerflowBatch:
-        batch = static_collate(input)
+        return static_collate(input)
 
 
 class StaticHeteroDataset(Dataset[PowerflowData]):
@@ -277,6 +280,7 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         return PowerflowData(
             data,
             self.powerflow_parameters,
+            torch.tensor([index], dtype=torch.long),
         )
 
     @staticmethod
@@ -481,7 +485,9 @@ class CaseDataModule(pl.LightningDataModule):
         device,
         dataloader_idx: int,
     ) -> PowerflowBatch | PowerflowData:
-        input = typing.cast(PowerflowData, input)
-        input.data.to(device)
-        input.powerflow_parameters.to(device)
-        return input
+        cls = PowerflowBatch if isinstance(input, PowerflowBatch) else PowerflowData
+        return cls(
+            input.data.to(device),  # type: ignore
+            input.powerflow_parameters.to(device),
+            input.index.to(device),
+        )

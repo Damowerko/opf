@@ -3,7 +3,7 @@ from math import log, pi
 import torch
 
 
-def metrics(loss, u: torch.Tensor, eps: float, multiplier: torch.Tensor):
+def metrics(loss, u: torch.Tensor, eps: float, multiplier: torch.Tensor | None):
     # Consider two values equal if within numerical error.
     violated_mask = u >= eps
     violated = u[violated_mask]
@@ -15,14 +15,17 @@ def metrics(loss, u: torch.Tensor, eps: float, multiplier: torch.Tensor):
     # if u.numel() == 0:
     #     loss = torch.zeros(1, device=u.device, dtype=u.dtype).squeeze()
 
-    return dict(
-        loss=loss,
+    metrics = dict(
         rate=(violated_mask.sum() / violated_mask.numel()).nan_to_num(),
         error_mean=violated.abs().mean(),
         error_max=violated.abs().max(),
-        multiplier_mean=multiplier.mean(),
-        multiplier_max=multiplier.max(),
     )
+    if loss is not None:
+        metrics["loss"] = loss
+    if multiplier is not None:
+        metrics["multiplier_mean"] = multiplier.mean()
+        metrics["multiplier_max"] = multiplier.max()
+    return metrics
 
 
 def wrap_angle(u: torch.Tensor):
@@ -41,22 +44,22 @@ def _compute_mask(mask, constraint):
 
 
 def loss_equality(u: torch.Tensor, multiplier: torch.Tensor):
-    loss_dual = (u @ multiplier).mean(dim=0)
-    loss_agumented = u.pow(2).sum(dim=-1).mean(dim=0)
-    return loss_dual + loss_agumented
+    loss_dual = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(1, 2).mean(dim=0)
+    # loss_agumented = u.pow(2).sum(dim=-1).mean(dim=0)
+    return loss_dual  # + loss_agumented
 
 
 def loss_inequality(u: torch.Tensor, multiplier: torch.Tensor):
-    loss_dual = (u @ multiplier).mean(dim=0)
+    loss_dual = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(1, 2).mean(dim=0)
     # u <= 0, therefore we have violation when u > 0, loss = max(0, u)^2
-    loss_augmented = u.relu().pow(2).sum(dim=-1).mean(dim=0)
-    return loss_dual + loss_augmented
+    # loss_augmented = u.relu().pow(2).sum(dim=-1).mean(dim=0)
+    return loss_dual  # + loss_augmented
 
 
 def equality(
     x: torch.Tensor,
     y: torch.Tensor,
-    multiplier: torch.Tensor,
+    multiplier: torch.Tensor | None = None,
     mask: torch.Tensor | None = None,
     eps=1e-4,
     angle=False,
@@ -78,10 +81,11 @@ def equality(
     if mask is not None:
         x = x[..., mask]
         y = y[..., mask]
-        multiplier = multiplier[..., mask]
+        if multiplier is not None:
+            multiplier = multiplier[..., mask]
     u = x - y if not angle else wrap_angle(x - y)
     # The loss is the dot product of the constraint and the multiplier, averaged over the batch.
-    loss = loss_equality(u, multiplier)
+    loss = loss_equality(u, multiplier) if multiplier is not None else None
 
     assert not torch.isnan(u).any()
     assert not torch.isinf(u).any()
@@ -92,8 +96,8 @@ def inequality(
     value: torch.Tensor,
     lower_bound: torch.Tensor,
     upper_bound: torch.Tensor,
-    lower_multiplier: torch.Tensor,
-    upper_multiplier: torch.Tensor,
+    lower_multiplier: torch.Tensor | None = None,
+    upper_multiplier: torch.Tensor | None = None,
     eps=1e-4,
     angle=False,
 ):
@@ -111,10 +115,19 @@ def inequality(
     Returns:
         tuple: A tuple containing the loss and the metrics.
     """
+    assert (lower_multiplier is None) == (
+        upper_multiplier is None
+    ), "Both or none of the multipliers should be provided."
     # Inequality multipliers should be positive.
-    assert torch.all(lower_multiplier >= 0) and torch.all(
-        upper_multiplier >= 0
-    ), "There are negative values in the inequality multiplier"
+    if lower_multiplier is not None:
+        assert torch.all(
+            lower_multiplier >= 0
+        ), "There are negative values in the inequality multiplier"
+    if upper_multiplier is not None:
+        assert torch.all(
+            upper_multiplier >= 0
+        ), "There are negative values in the inequality multiplier"
+
     # To properly normalize the results we do not want any of these to be inf.
     assert not torch.isinf(upper_bound).any()
     assert not torch.isinf(lower_bound).any()
@@ -136,23 +149,26 @@ def inequality(
 
     u_lower /= band[mask_lower]
     u_upper /= band[mask_upper]
+    u_all = torch.cat((u_lower, u_upper, u_equal.abs()), dim=1)
 
-    loss_lower = loss_inequality(u_lower, lower_multiplier[mask_lower])
-    loss_upper = loss_inequality(u_upper, upper_multiplier[mask_upper])
+    if lower_multiplier is None or upper_multiplier is None:
+        return metrics(None, u_all, eps, None)
+
+    loss_lower = loss_inequality(u_lower, lower_multiplier[:, mask_lower])
+    loss_upper = loss_inequality(u_upper, upper_multiplier[:, mask_upper])
     # We represent the equality multiplier (which can be any real number) as the difference between two positive numbers.
     loss_equal = loss_equality(
-        u_equal, upper_multiplier[mask_equality] - lower_multiplier[mask_equality]
+        u_equal, upper_multiplier[:, mask_equality] - lower_multiplier[:, mask_equality]
     )
     loss = loss_lower + loss_upper + loss_equal
     # this is used for metrics only
-    u_all = torch.cat((u_lower, u_upper, u_equal.abs()), dim=1)
     multiplier_all = torch.cat(
         (
-            lower_multiplier[mask_lower],
-            upper_multiplier[mask_upper],
+            lower_multiplier[:, mask_lower],
+            upper_multiplier[:, mask_upper],
             # We represent the equality multiplier (which can be any real number) as the difference between two positive numbers.
-            upper_multiplier[mask_equality] - lower_multiplier[mask_equality],
+            upper_multiplier[:, mask_equality] - lower_multiplier[:, mask_equality],
         ),
-        dim=0,
+        dim=1,
     )
     return metrics(loss, u_all, eps, multiplier_all)

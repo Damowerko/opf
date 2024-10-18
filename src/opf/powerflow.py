@@ -121,6 +121,7 @@ class PowerflowParameters(torch.nn.Module):
         self.vad_max = fn(self.vad_max)
         self.rate_a = fn(self.rate_a)
         self.is_ref = fn(self.is_ref)
+        return self
 
     def bus_parameters(self) -> torch.Tensor:
         return torch.stack(

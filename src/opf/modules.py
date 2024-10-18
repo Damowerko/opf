@@ -1,9 +1,9 @@
 import argparse
 import subprocess
-import typing
+from collections import OrderedDict
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Dict
+from typing import Dict
 
 import numpy as np
 import pytorch_lightning as pl
@@ -30,6 +30,7 @@ class OPFDual(pl.LightningModule):
         eps=1e-3,
         enforce_constraints=False,
         detailed_metrics=False,
+        multiplier_table_length=0,
         **kwargs,
     ):
         """
@@ -41,7 +42,7 @@ class OPFDual(pl.LightningModule):
             eps (float, optional): Numerical threshold, below which values will be assumed to be approximately zero. Defaults to 1e-3.
             enforce_constraints (bool, optional): Whether to enforce the constraints. Defaults to False.
             detailed_metrics (bool, optional): Whether to log detailed metrics. Defaults to False.
-
+            multiplier_table_length (int, optional): The number of entries in the multiplier table. Defaults to 0.
         """
         super().__init__()
         self.save_hyperparameters(ignore=["model", "kwargs"])
@@ -55,39 +56,86 @@ class OPFDual(pl.LightningModule):
         self._enforce_constraints = enforce_constraints
         self.detailed_metrics = detailed_metrics
         self.automatic_optimization = False
+        self.multiplier_table_length = multiplier_table_length
 
         # setup the multipliers
         n_bus, n_branch, n_gen = n_nodes
-        self.multipliers = torch.nn.ParameterDict(
-            {
-                "equality/bus_active_power": Parameter(
-                    torch.zeros([n_bus], device=self.device)
-                ),
-                "equality/bus_reactive_power": Parameter(
-                    torch.zeros([n_bus], device=self.device)
-                ),
-                "equality/bus_reference": Parameter(
-                    torch.zeros([n_bus], device=self.device)
-                ),
-                "inequality/voltage_magnitude": Parameter(
-                    torch.zeros([n_bus, 2], device=self.device)
-                ),
-                "inequality/active_power": Parameter(
-                    torch.zeros([n_gen, 2], device=self.device)
-                ),
-                "inequality/reactive_power": Parameter(
-                    torch.zeros([n_gen, 2], device=self.device)
-                ),
-                "inequality/forward_rate": Parameter(
-                    torch.zeros([n_branch, 2], device=self.device)
-                ),
-                "inequality/backward_rate": Parameter(
-                    torch.zeros([n_branch, 2], device=self.device)
-                ),
-                "inequality/voltage_angle_difference": Parameter(
-                    torch.zeros([n_branch, 2], device=self.device)
-                ),
-            }
+        self.init_multipliers(n_bus, n_gen, n_branch, multiplier_table_length)
+
+    def init_multipliers(self, n_bus, n_gen, n_branch, multiplier_table_length: int):
+        with torch.no_grad():
+            self.multiplier_metadata = OrderedDict(
+                [
+                    ("equality/bus_active_power", torch.Size([n_bus])),
+                    ("equality/bus_reactive_power", torch.Size([n_bus])),
+                    ("equality/bus_reference", torch.Size([n_bus])),
+                    ("inequality/voltage_magnitude", torch.Size([n_bus, 2])),
+                    ("inequality/active_power", torch.Size([n_gen, 2])),
+                    ("inequality/reactive_power", torch.Size([n_gen, 2])),
+                    ("inequality/forward_rate", torch.Size([n_branch, 2])),
+                    ("inequality/backward_rate", torch.Size([n_branch, 2])),
+                    ("inequality/voltage_angle_difference", torch.Size([n_branch, 2])),
+                ]
+            )
+            self.multiplier_numel = torch.tensor(
+                [x.numel() for _, x in self.multiplier_metadata.items()]
+            )
+            self.multiplier_offsets = torch.cumsum(self.multiplier_numel, 0)
+
+            multiplier_inequality_mask_list = []
+            for name, numel in zip(
+                self.multiplier_metadata.keys(), self.multiplier_numel
+            ):
+                if "inequality" in name:
+                    multiplier_inequality_mask_list.append(
+                        torch.ones(int(numel.item()), dtype=torch.bool)
+                    )
+                else:
+                    multiplier_inequality_mask_list.append(
+                        torch.zeros(int(numel.item()), dtype=torch.bool)
+                    )
+            self.register_buffer(
+                "multiplier_inequality_mask",
+                torch.cat(multiplier_inequality_mask_list),
+                persistent=False,
+            )
+
+        self.multipliers = torch.nn.Embedding(
+            num_embeddings=multiplier_table_length + 1,
+            embedding_dim=int(self.multiplier_offsets[-1].item()),
+        )
+        self.multipliers.weight.data.zero_()
+
+    def get_multipliers(self, idx: torch.Tensor) -> dict[str, torch.Tensor]:
+        """
+        Get the multiplier for the tensor corresponding to the given index.
+        """
+        # The fist entry is a shared multiplier common to all entries
+        common = self.multipliers(torch.tensor([0], device=idx.device))
+        if self.multiplier_table_length > 0:
+            # The remaining entries are personalized multipliers one for each sample in the training dataset
+            personalized = self.multipliers(idx + 1)
+            multipliers = common + personalized
+        else:
+            # If there are no personalized multipliers, just use the common multiplier
+            multipliers = common.expand(idx.shape[0], -1)
+
+        multiplier_dict = {}
+        for data, (name, shape) in zip(
+            torch.tensor_split(multipliers, self.multiplier_offsets, dim=1),
+            self.multiplier_metadata.items(),
+        ):
+            multiplier_dict[name] = data.view((-1,) + shape)
+        return multiplier_dict
+
+    def project_multipliers(self):
+        """
+        Project the inequality multipliers to be non-negative.
+        """
+        # use .data to avoid autograd tracking since we are modifying the data in place
+        # no need for autograd since we are not backpropagating through this operation
+        self.multipliers.weight.data[:, self.multiplier_inequality_mask] = (
+            self.multipliers.weight.data[:, self.multiplier_inequality_mask].relu_()
         )
 
     @staticmethod
@@ -106,7 +154,7 @@ class OPFDual(pl.LightningModule):
         self,
         input: PowerflowBatch | PowerflowData,
     ) -> pf.PowerflowVariables:
-        data, powerflow_parameters = input
+        data, powerflow_parameters, index = input
         if isinstance(data, HeteroData):
             n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
             load = data["bus"].x[:, :2]
@@ -161,21 +209,22 @@ class OPFDual(pl.LightningModule):
         self,
         variables: pf.PowerflowVariables,
         parameters: pf.PowerflowParameters,
+        multipliers: Dict[str, torch.Tensor] | None = None,
         project_powermodels=False,
     ):
         if project_powermodels:
             variables = self.project_powermodels(variables, parameters)
-        constraints = self.constraints(variables, parameters)
+        constraints = self.constraints(variables, parameters, multipliers)
         cost = self.cost(variables, parameters)
-        constraint_loss = self.constraint_loss(constraints)
-        return variables, constraints, cost, constraint_loss
+        return variables, constraints, cost
 
     def training_step(self, batch: PowerflowBatch):
         primal_optimizer, dual_optimizer = self.optimizers()  # type: ignore
-        _, constraints, cost, constraint_loss = self._step_helper(
-            self.forward(batch),
-            batch.powerflow_parameters,
+        multipliers = self.get_multipliers(batch.index)
+        _, constraints, cost = self._step_helper(
+            self.forward(batch), batch.powerflow_parameters, multipliers
         )
+        constraint_loss = self.constraint_loss(constraints)
 
         primal_optimizer.zero_grad()
         dual_optimizer.zero_grad()
@@ -185,37 +234,29 @@ class OPFDual(pl.LightningModule):
             dual_optimizer.step()
 
         # enforce inequality multipliers to be non-negative
-        for name in self.multipliers:
-            if not name.startswith("inequality/"):
-                continue
-            self.multipliers[name].data.relu_()
+        self.project_multipliers()
 
         self.log(
             "train/loss",
             cost + constraint_loss,
             prog_bar=True,
             batch_size=batch.data.num_graphs,
+            sync_dist=True,
         )
         self.log_dict(
-            self.metrics(cost, constraints, "train", self.detailed_metrics),
+            self.metrics(cost, constraints, "train", self.detailed_metrics, train=True),
             batch_size=batch.data.num_graphs,
+            sync_dist=True,
         )
 
     def validation_step(self, batch: PowerflowBatch, *args):
         with torch.no_grad():
             batch_size = batch.data.num_graphs
-            _, constraints, cost, constraint_loss = self._step_helper(
-                self.forward(batch),
-                batch.powerflow_parameters,
-            )
-            self.log(
-                "val/loss",
-                cost + constraint_loss,
-                batch_size=batch_size,
-                sync_dist=True,
+            _, constraints, cost = self._step_helper(
+                self.forward(batch), batch.powerflow_parameters
             )
             metrics = self.metrics(cost, constraints, "val", self.detailed_metrics)
-            self.log_dict(metrics, batch_size=batch_size)
+            self.log_dict(metrics, batch_size=batch_size, sync_dist=True)
 
             # Metric that does not depend on the loss function shape
             self.log(
@@ -234,7 +275,7 @@ class OPFDual(pl.LightningModule):
         # project_powermodels taking too long
         # go over batch w/ project pm, then individual steps without
         with torch.no_grad():
-            _, constraints, cost, _ = self._step_helper(
+            _, constraints, cost = self._step_helper(
                 self.forward(batch),
                 batch.powerflow_parameters,
                 project_powermodels=True,
@@ -359,20 +400,20 @@ class OPFDual(pl.LightningModule):
         self,
         variables: pf.PowerflowVariables,
         powerflow_parameters: pf.PowerflowParameters,
+        multipliers: Dict[str, torch.Tensor] | None,
     ) -> Dict[str, Dict[str, torch.Tensor]]:
         """
         Calculates the powerflow constraints.
         :returns: Nested map from constraint name => (value name => tensor value)
         """
         constraints = pf.build_constraints(variables, powerflow_parameters)
-
         values = {}
         for name, constraint in constraints.items():
             if isinstance(constraint, pf.EqualityConstraint):
                 values[name] = equality(
                     constraint.value,
                     constraint.target,
-                    self.multipliers[name],
+                    multipliers[name] if multipliers is not None else None,
                     constraint.mask,
                     self.eps,
                     constraint.isAngle,
@@ -382,29 +423,44 @@ class OPFDual(pl.LightningModule):
                     constraint.variable,
                     constraint.min,
                     constraint.max,
-                    self.multipliers[name][..., 0],
-                    self.multipliers[name][..., 1],
+                    multipliers[name][..., 0] if multipliers is not None else None,
+                    multipliers[name][..., 1] if multipliers is not None else None,
                     self.eps,
                     constraint.isAngle,
                 )
         return values
 
-    def metrics(self, cost, constraints, prefix, detailed=False):
+    def metrics(self, cost, constraints, prefix, detailed=False, train=False):
+        """
+        Args:
+            cost: The cost of the powerflow.
+            constraints: The constraints of the powerflow.
+            prefix: The prefix to use for the metric names.
+            detailed: Whether to log detailed
+            train: Whether the metrics are for training or validation/test.
+        """
+
         aggregate_metrics = {
             f"{prefix}/cost": [cost],
-            f"{prefix}/equality/loss": [],
             f"{prefix}/equality/rate": [],
             f"{prefix}/equality/error_mean": [],
             f"{prefix}/equality/error_max": [],
-            f"{prefix}/equality/multiplier_mean": [],
-            f"{prefix}/equality/multiplier_max": [],
-            f"{prefix}/inequality/loss": [],
             f"{prefix}/inequality/rate": [],
             f"{prefix}/inequality/error_mean": [],
             f"{prefix}/inequality/error_max": [],
-            f"{prefix}/inequality/multiplier_mean": [],
-            f"{prefix}/inequality/multiplier_max": [],
         }
+        if train:
+            aggregate_metrics.update(
+                **{
+                    f"{prefix}/equality/loss": [],
+                    f"{prefix}/equality/multiplier_mean": [],
+                    f"{prefix}/equality/multiplier_max": [],
+                    f"{prefix}/inequality/loss": [],
+                    f"{prefix}/inequality/multiplier_mean": [],
+                    f"{prefix}/inequality/multiplier_max": [],
+                }
+            )
+
         detailed_metrics = {}
         reduce_fn = {
             "default": torch.sum,
@@ -433,16 +489,18 @@ class OPFDual(pl.LightningModule):
         return {**aggregate_metrics, **detailed_metrics}
 
     def configure_optimizers(self):
-        primal_optimizer = torch.optim.Adam(
+        primal_optimizer = torch.optim.AdamW(  # type: ignore
             self.model.parameters(),
             lr=self.lr,
             weight_decay=self.weight_decay,
+            fused=True,
         )
-        dual_optimizer = torch.optim.Adam(
+        dual_optimizer = torch.optim.AdamW(  # type: ignore
             self.multipliers.parameters(),
             lr=self.lr_dual,
             weight_decay=self.weight_decay_dual,
             maximize=True,
+            fused=True,
         )
         return primal_optimizer, dual_optimizer
 

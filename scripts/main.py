@@ -1,15 +1,11 @@
 import argparse
-import os
 import typing
-from functools import partial
 from pathlib import Path
 
-import optuna
 import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers.wandb import WandbLogger
-from torchcps.gnn import GCN
 from wandb.wandb_run import Run
 
 from opf.dataset import CaseDataModule
@@ -29,6 +25,7 @@ def main():
         "--hotstart", type=str, default=None, help="ID of run to hotstart with."
     )
     parser.add_argument("--notes", type=str, default="")
+    parser.add_argument("--no_compile", action="store_false", dest="compile")
 
     # data arguments
     parser.add_argument("--case_name", type=str, default="case179_goc__api")
@@ -51,11 +48,11 @@ def main():
     params = parser.parse_args()
     params_dict = vars(params)
 
-    # parse the data dir
-
     torch.set_float32_matmul_precision("high")
     if params.operation == "study":
-        study(params_dict)
+        raise NotImplementedError(
+            "Removed it. Need to rewrite to avoid confusion between train and optuna."
+        )
     elif params.operation == "train":
         train(make_trainer(params_dict), params_dict)
     else:
@@ -71,6 +68,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
             config=params,
             log_model=True,
             notes=params["notes"],
+            **wandb_kwargs,
         )
 
         logger.log_hyperparams(params)
@@ -99,7 +97,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         logger=logger,
         callbacks=callbacks,
         accelerator="cuda" if params["gpu"] else "cpu",
-        devices=2,
+        devices=-1,
         max_epochs=params["max_epochs"],
         default_root_dir=params["log_dir"],
         fast_dev_run=params["fast_dev_run"],
@@ -110,7 +108,8 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
 def train(trainer: Trainer, params):
     dm = CaseDataModule(pin_memory=params["gpu"], **params)
     if params["homo"]:
-        gcn = GCN(in_channels=dm.feature_dims, out_channels=4, **params)
+        # gcn = GCN(in_channels=dm.feature_dims, out_channels=4, **params)
+        raise NotImplementedError("Homogenous model not currently implemented.")
     else:
         dm.setup()
         gcn = HeteroGCN(
@@ -119,7 +118,8 @@ def train(trainer: Trainer, params):
             out_channels=OPFReadout(dm.metadata(), **params),
             **params,
         )
-        gcn = typing.cast(HeteroGCN, torch.compile(gcn.cuda(), dynamic=True))
+        if params["compile"]:
+            gcn = typing.cast(HeteroGCN, torch.compile(gcn.cuda(), dynamic=True))
 
     assert dm.powerflow_parameters is not None
     n_nodes = (
@@ -127,85 +127,13 @@ def train(trainer: Trainer, params):
         dm.powerflow_parameters.n_branch,
         dm.powerflow_parameters.n_gen,
     )
-    model = OPFDual(gcn, n_nodes, **params)
+    model = OPFDual(
+        gcn, n_nodes, multiplier_table_length=len(dm.train_dataset), **params  # type: ignore
+    )
     trainer.fit(model, dm)
     # trainer.test(model, dm)
     for logger in trainer.loggers:
         logger.finalize("finished")
-
-
-def study(params: dict):
-    study_name = "opf-3"
-    storage = os.environ["OPTUNA_STORAGE"]
-    pruner = optuna.pruners.HyperbandPruner(
-        min_resource=10, max_resource="auto", reduction_factor=3
-    )
-    study = optuna.create_study(
-        study_name=study_name,
-        storage=storage,
-        load_if_exists=True,
-        pruner=pruner,
-        directions=["minimize"],
-    )
-    study.optimize(
-        partial(objective, default_params=params),
-        n_trials=1,
-    )
-
-
-def objective(trial: optuna.trial.Trial, default_params: dict):
-    params: dict[str, typing.Any] = dict(
-        lr=trial.suggest_float("lr", 1e-8, 1e-1, log=True),
-        weight_decay=trial.suggest_float("weight_decay", 1e-16, 1, log=True),
-        n_layers=trial.suggest_int("n_layers", 1, 128),
-        dropout=trial.suggest_float("dropout", 0, 1),
-        n_channels=32,
-        activation="leaky_relu",
-        # loss function parameters, should be kept constant within study
-        cost_weight=1e-6,
-        equality_weight=1e3,
-        # MLP parameteers
-        mlp_hidden_channels=256,
-        mlp_read_layers=trial.suggest_int("mlp_read_layers", 1, 4),
-        mlp_per_gnn_layers=trial.suggest_int("mlp_per_gnn_layers", 0, 4),
-        enforce_constraints=True,
-    )
-    params = {**default_params, **params}
-    trainer = make_trainer(
-        params,
-        callbacks=[
-            optuna.integration.PyTorchLightningPruningCallback(
-                trial, monitor="val/loss"
-            )
-        ],
-        wandb_kwargs=dict(group=trial.study.study_name),
-    )
-
-    dm = CaseDataModule(pin_memory=params["gpu"], **params)
-    if params["hetero"]:
-        dm.setup()
-        gcn = HeteroGCN(
-            dm.metadata(),
-            in_channels=-1,
-            out_channels=OPFReadout(dm.metadata(), **params),
-            **params,
-        )
-    else:
-        gcn = GCN(in_channels=-1, out_channels=4, **params)
-    # model = OPFLogBarrier(gcn, **params)
-    model = OPFDual(gcn, **params)
-
-    # train the model
-    trainer.fit(model, dm)
-
-    # finish up
-    if isinstance(trainer.logger, WandbLogger):
-        trial.set_user_attr("wandb_id", trainer.logger.experiment.id)
-
-    for logger in trainer.loggers:
-        logger.finalize("finished")
-    print(trainer.callback_metrics)
-    return trainer.callback_metrics["val/loss"].item()
 
 
 if __name__ == "__main__":
