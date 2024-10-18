@@ -38,10 +38,13 @@ spec:
               name: wandb
               key: api_key
         resources:
+          requests:
+            cpu: 8
+            memory: 16Gi
           limits:
-            nvidia.com/gpu-24gb: 1
-            cpu: 32
-            memory: 24Gi
+            cpu: 64
+            memory: 128Gi
+            nvidia.com/gpu: 2
         volumeMounts:
         - mountPath: /home/default/opf/data
           name: opf-data
