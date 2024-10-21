@@ -308,6 +308,7 @@ class HeteroGCN(nn.Module):
                 out_channels=n_channels,
                 num_relations=len(self.edge_types),
                 aggr=aggr,
+                is_sorted=True,
             )
             mlp = HeteroMLP(
                 in_channels=n_channels,
@@ -318,6 +319,7 @@ class HeteroGCN(nn.Module):
                 dropout=dropout,
                 act=self.activation,
                 plain_last=True,
+                is_sorted=False,
             )
             self.residual_blocks.append(
                 HeteroResidualBlock(

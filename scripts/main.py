@@ -25,7 +25,12 @@ def main():
         "--hotstart", type=str, default=None, help="ID of run to hotstart with."
     )
     parser.add_argument("--notes", type=str, default="")
-    parser.add_argument("--no_compile", action="store_false", dest="compile")
+    parser.add_argument(
+        "--no_compile", action="store_false", dest="compile", default=True
+    )
+    parser.add_argument(
+        "--no_personalize", action="store_false", dest="personalize", default=True
+    )
 
     # data arguments
     parser.add_argument("--case_name", type=str, default="case179_goc__api")
@@ -101,6 +106,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         max_epochs=params["max_epochs"],
         default_root_dir=params["log_dir"],
         fast_dev_run=params["fast_dev_run"],
+        gradient_clip_val=params["gradient_clip_val"],
     )
     return trainer
 
@@ -128,7 +134,7 @@ def train(trainer: Trainer, params):
         dm.powerflow_parameters.n_gen,
     )
     model = OPFDual(
-        gcn, n_nodes, multiplier_table_length=len(dm.train_dataset), **params  # type: ignore
+        gcn, n_nodes, multiplier_table_length=len(dm.train_dataset) if params["personalize"] else 0, **params  # type: ignore
     )
     trainer.fit(model, dm)
     # trainer.test(model, dm)

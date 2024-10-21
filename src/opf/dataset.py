@@ -458,7 +458,7 @@ class CaseDataModule(pl.LightningDataModule):
             self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
-            drop_last=True,
+            drop_last=False,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             collate_fn=self.val_dataset.collate_fn,

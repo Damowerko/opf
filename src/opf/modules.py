@@ -125,7 +125,7 @@ class OPFDual(pl.LightningModule):
             torch.tensor_split(multipliers, self.multiplier_offsets, dim=1),
             self.multiplier_metadata.items(),
         ):
-            multiplier_dict[name] = data.view((-1,) + shape)
+            multiplier_dict[name] = data.view((idx.shape[0],) + shape)
         return multiplier_dict
 
     def project_multipliers(self):
@@ -250,58 +250,54 @@ class OPFDual(pl.LightningModule):
         )
 
     def validation_step(self, batch: PowerflowBatch, *args):
-        with torch.no_grad():
-            batch_size = batch.data.num_graphs
-            _, constraints, cost = self._step_helper(
-                self.forward(batch), batch.powerflow_parameters
-            )
-            metrics = self.metrics(cost, constraints, "val", self.detailed_metrics)
-            self.log_dict(metrics, batch_size=batch_size, sync_dist=True)
+        batch_size = batch.data.num_graphs
+        _, constraints, cost = self._step_helper(
+            self.forward(batch), batch.powerflow_parameters
+        )
+        metrics = self.metrics(cost, constraints, "val", self.detailed_metrics)
+        self.log_dict(metrics, batch_size=batch_size, sync_dist=True)
 
-            # Metric that does not depend on the loss function shape
-            self.log(
-                "val/invariant",
-                cost
-                + 1e3 * metrics["val/equality/error_mean"]
-                + 1e3 * metrics["val/inequality/error_mean"],
-                batch_size=batch_size,
-                prog_bar=True,
-                sync_dist=True,
-            )
+        # Metric that does not depend on the loss function shape
+        self.log(
+            "val/invariant",
+            cost
+            + 1e3 * metrics["val/equality/error_mean"]
+            + 1e3 * metrics["val/inequality/error_mean"],
+            batch_size=batch_size,
+            prog_bar=True,
+            sync_dist=True,
+        )
 
     def test_step(self, batch: PowerflowBatch, *args):
         # TODO
         # change to make faster
         # project_powermodels taking too long
         # go over batch w/ project pm, then individual steps without
-        with torch.no_grad():
-            _, constraints, cost = self._step_helper(
-                self.forward(batch),
-                batch.powerflow_parameters,
-                project_powermodels=True,
-            )
-            test_metrics = self.metrics(
-                cost, constraints, "test", self.detailed_metrics
-            )
-            self.log_dict(
-                test_metrics,
-                batch_size=batch.data.num_graphs,
-                sync_dist=True,
-            )
-            # TODO: rethink how to do comparison against ACOPF
-            # Test the ACOPF solution for reference.
-            # acopf_bus = self.bus_from_polar(acopf_bus)
-            # _, constraints, cost, _ = self._step_helper(
-            #     *self.parse_bus(acopf_bus),
-            #     self.parse_load(load),
-            #     project_pandapower=False,
-            # )
-            # acopf_metrics = self.metrics(
-            #     cost, constraints, "acopf", self.detailed_metrics
-            # )
-            # self.log_dict(acopf_metrics)
-            # return dict(**test_metrics, **acopf_metrics)
-            return test_metrics
+        _, constraints, cost = self._step_helper(
+            self.forward(batch),
+            batch.powerflow_parameters,
+            project_powermodels=True,
+        )
+        test_metrics = self.metrics(cost, constraints, "test", self.detailed_metrics)
+        self.log_dict(
+            test_metrics,
+            batch_size=batch.data.num_graphs,
+            sync_dist=True,
+        )
+        # TODO: rethink how to do comparison against ACOPF
+        # Test the ACOPF solution for reference.
+        # acopf_bus = self.bus_from_polar(acopf_bus)
+        # _, constraints, cost, _ = self._step_helper(
+        #     *self.parse_bus(acopf_bus),
+        #     self.parse_load(load),
+        #     project_pandapower=False,
+        # )
+        # acopf_metrics = self.metrics(
+        #     cost, constraints, "acopf", self.detailed_metrics
+        # )
+        # self.log_dict(acopf_metrics)
+        # return dict(**test_metrics, **acopf_metrics)
+        return test_metrics
 
     def project_powermodels(
         self,
@@ -453,11 +449,13 @@ class OPFDual(pl.LightningModule):
             aggregate_metrics.update(
                 **{
                     f"{prefix}/equality/loss": [],
-                    f"{prefix}/equality/multiplier_mean": [],
-                    f"{prefix}/equality/multiplier_max": [],
+                    f"{prefix}/equality/multiplier/mean": [],
+                    f"{prefix}/equality/multiplier/max": [],
+                    f"{prefix}/equality/multiplier/min": [],
                     f"{prefix}/inequality/loss": [],
-                    f"{prefix}/inequality/multiplier_mean": [],
-                    f"{prefix}/inequality/multiplier_max": [],
+                    f"{prefix}/inequality/multiplier/mean": [],
+                    f"{prefix}/inequality/multiplier/max": [],
+                    f"{prefix}/inequality/multiplier/min": [],
                 }
             )
 
@@ -467,6 +465,8 @@ class OPFDual(pl.LightningModule):
             "error_mean": torch.mean,
             "error_max": torch.max,
             "rate": torch.mean,
+            "multiplier/mean": torch.mean,
+            "multiplier/max": torch.max,
         }
 
         for constraint_name, constraint_values in constraints.items():
@@ -489,13 +489,13 @@ class OPFDual(pl.LightningModule):
         return {**aggregate_metrics, **detailed_metrics}
 
     def configure_optimizers(self):
-        primal_optimizer = torch.optim.AdamW(  # type: ignore
+        primal_optimizer = torch.optim.Adam(  # type: ignore
             self.model.parameters(),
             lr=self.lr,
             weight_decay=self.weight_decay,
             fused=True,
         )
-        dual_optimizer = torch.optim.AdamW(  # type: ignore
+        dual_optimizer = torch.optim.SGD(  # type: ignore
             self.multipliers.parameters(),
             lr=self.lr_dual,
             weight_decay=self.weight_decay_dual,

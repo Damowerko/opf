@@ -1,5 +1,3 @@
-from math import log, pi
-
 import torch
 
 
@@ -23,8 +21,9 @@ def metrics(loss, u: torch.Tensor, eps: float, multiplier: torch.Tensor | None):
     if loss is not None:
         metrics["loss"] = loss
     if multiplier is not None:
-        metrics["multiplier_mean"] = multiplier.mean()
-        metrics["multiplier_max"] = multiplier.max()
+        metrics["multiplier/mean"] = multiplier.mean()
+        metrics["multiplier/max"] = multiplier.max()
+        metrics["multiplier/min"] = multiplier.min()
     return metrics
 
 
@@ -43,17 +42,19 @@ def _compute_mask(mask, constraint):
     return mask
 
 
-def loss_equality(u: torch.Tensor, multiplier: torch.Tensor):
-    loss_dual = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(1, 2).mean(dim=0)
-    # loss_agumented = u.pow(2).sum(dim=-1).mean(dim=0)
-    return loss_dual  # + loss_agumented
+def loss_equality(u: torch.Tensor, multiplier: torch.Tensor, augmented=False):
+    loss = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(1, 2).mean(dim=0)
+    if augmented:
+        loss = loss + u.pow(2).sum(dim=-1).mean(dim=0)
+    return loss  # + loss_agumented
 
 
-def loss_inequality(u: torch.Tensor, multiplier: torch.Tensor):
-    loss_dual = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(1, 2).mean(dim=0)
+def loss_inequality(u: torch.Tensor, multiplier: torch.Tensor, augmented=False):
+    loss = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(1, 2).mean(dim=0)
     # u <= 0, therefore we have violation when u > 0, loss = max(0, u)^2
-    # loss_augmented = u.relu().pow(2).sum(dim=-1).mean(dim=0)
-    return loss_dual  # + loss_augmented
+    if augmented:
+        loss = loss + u.relu().pow(2).sum(dim=-1).mean(dim=0)
+    return loss
 
 
 def equality(
@@ -63,6 +64,7 @@ def equality(
     mask: torch.Tensor | None = None,
     eps=1e-4,
     angle=False,
+    augmented=False,
 ):
     """
     Computes the equality constraint between two tensors `x` and `y`.
@@ -74,6 +76,7 @@ def equality(
         mask (torch.Tensor | None, optional): A boolean mask tensor. If provided, only the elements where `mask` is `True` will be considered. Defaults to `None`.
         eps (float, optional): A small constant used to avoid division by zero. Defaults to `1e-4`.
         angle (bool, optional): If `True`, the input tensors are treated as angles in radians and the difference is wrapped to the range `[-pi, pi]`. Defaults to `False`.
+        augmented (bool, optional): Whether to use the augmented loss. Defaults to False.
 
     Returns:
         A tuple containing the loss value, the constraint violation vector, and the number of violated constraints.
@@ -85,7 +88,11 @@ def equality(
             multiplier = multiplier[..., mask]
     u = x - y if not angle else wrap_angle(x - y)
     # The loss is the dot product of the constraint and the multiplier, averaged over the batch.
-    loss = loss_equality(u, multiplier) if multiplier is not None else None
+    loss = (
+        loss_equality(u, multiplier, augmented=augmented)
+        if multiplier is not None
+        else None
+    )
 
     assert not torch.isnan(u).any()
     assert not torch.isinf(u).any()
@@ -100,6 +107,7 @@ def inequality(
     upper_multiplier: torch.Tensor | None = None,
     eps=1e-4,
     angle=False,
+    augmented=False,
 ):
     """
     Computes the inequality constraint loss for a given tensor.
@@ -111,7 +119,7 @@ def inequality(
         upper_bound (torch.Tensor): The upper bound tensor.
         eps (float, optional): The epsilon value. Defaults to 1e-4.
         angle (bool, optional): Whether to fix the angle. Defaults to False.
-
+        augmented (bool, optional): Whether to use the augmented loss. Defaults to False.
     Returns:
         tuple: A tuple containing the loss and the metrics.
     """
@@ -154,8 +162,12 @@ def inequality(
     if lower_multiplier is None or upper_multiplier is None:
         return metrics(None, u_all, eps, None)
 
-    loss_lower = loss_inequality(u_lower, lower_multiplier[:, mask_lower])
-    loss_upper = loss_inequality(u_upper, upper_multiplier[:, mask_upper])
+    loss_lower = loss_inequality(
+        u_lower, lower_multiplier[:, mask_lower], augmented=augmented
+    )
+    loss_upper = loss_inequality(
+        u_upper, upper_multiplier[:, mask_upper], augmented=augmented
+    )
     # We represent the equality multiplier (which can be any real number) as the difference between two positive numbers.
     loss_equal = loss_equality(
         u_equal, upper_multiplier[:, mask_equality] - lower_multiplier[:, mask_equality]

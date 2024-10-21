@@ -41,6 +41,7 @@ class PowerflowVariables:
 class Constraint(torch.nn.Module):
     isBus: bool  # True if bus constraint. False if branch constraint.
     isAngle: bool  # Is the constraint an angle.
+    augmented: bool  # Is the constraint augmented.
 
     @property
     def isBranch(self) -> bool:
@@ -235,35 +236,75 @@ def power_from_solution(load: dict, solution: dict, parameters: PowerflowParamet
 def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
     return {
         "equality/bus_active_power": EqualityConstraint(
-            True, False, d.S.real, d.Sg_bus.real - d.Sd.real, None
+            isBus=True,
+            isAngle=False,
+            augmented=False,
+            value=d.S.real,
+            target=d.Sg_bus.real - d.Sd.real,
         ),
         "equality/bus_reactive_power": EqualityConstraint(
-            True, False, d.S.imag, d.Sg_bus.imag - d.Sd.imag, None
+            isBus=True,
+            isAngle=False,
+            augmented=False,
+            value=d.S.imag,
+            target=d.Sg_bus.imag - d.Sd.imag,
+            mask=None,
         ),
         "equality/bus_reference": EqualityConstraint(
-            True, True, d.V.angle(), torch.zeros(p.n_bus, device=d.V.device), p.is_ref
+            isBus=True,
+            isAngle=True,
+            augmented=True,
+            value=d.V.angle(),
+            target=torch.zeros(p.n_bus, device=d.V.device),
+            mask=p.is_ref,
         ),
         "inequality/voltage_magnitude": InequalityConstraint(
-            True, False, d.V.abs(), p.vm_min, p.vm_max
+            isBus=True,
+            isAngle=False,
+            augmented=True,
+            variable=d.V.abs(),
+            min=p.vm_min,
+            max=p.vm_max,
         ),
         "inequality/active_power": InequalityConstraint(
-            True, False, d.Sg.real, p.Sg_min.real, p.Sg_max.real
+            isBus=True,
+            isAngle=False,
+            augmented=True,
+            variable=d.Sg.real,
+            min=p.Sg_min.real,
+            max=p.Sg_max.real,
         ),
         "inequality/reactive_power": InequalityConstraint(
-            True, False, d.Sg.imag, p.Sg_min.imag, p.Sg_max.imag
+            isBus=True,
+            isAngle=False,
+            augmented=False,
+            variable=d.Sg.imag,
+            min=p.Sg_min.imag,
+            max=p.Sg_max.imag,
         ),
         "inequality/forward_rate": InequalityConstraint(
-            False, False, d.Sf.abs(), torch.zeros_like(p.rate_a), p.rate_a
+            isBus=False,
+            isAngle=False,
+            augmented=False,
+            variable=d.Sf.abs(),
+            min=torch.zeros_like(p.rate_a),
+            max=p.rate_a,
         ),
         "inequality/backward_rate": InequalityConstraint(
-            False, False, d.St.abs(), torch.zeros_like(p.rate_a), p.rate_a
+            isBus=False,
+            isAngle=False,
+            augmented=False,
+            variable=d.St.abs(),
+            min=torch.zeros_like(p.rate_a),
+            max=p.rate_a,
         ),
         "inequality/voltage_angle_difference": InequalityConstraint(
-            False,
-            True,
-            ((d.V @ p.Cf.T) * (d.V @ p.Ct.T).conj()).angle(),
-            p.vad_min,
-            p.vad_max,
+            isBus=False,
+            isAngle=True,
+            augmented=False,
+            variable=((d.V @ p.Cf.T) * (d.V @ p.Ct.T).conj()).angle(),
+            min=p.vad_min,
+            max=p.vad_max,
         ),
     }
 
