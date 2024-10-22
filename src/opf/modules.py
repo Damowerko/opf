@@ -228,7 +228,7 @@ class OPFDual(pl.LightningModule):
 
         primal_optimizer.zero_grad()
         dual_optimizer.zero_grad()
-        (cost + constraint_loss).backward()
+        (cost + 100 * constraint_loss).backward()
         primal_optimizer.step()
         if (self.global_step + 1) % self.dual_interval == 0:
             dual_optimizer.step()
@@ -388,7 +388,7 @@ class OPFDual(pl.LightningModule):
         for i in range(p_coeff.shape[1]):
             cost += p_coeff[:, i] * p.squeeze() ** i
         # cost cannot be negative
-        cost = torch.clamp(cost, min=0)
+        # cost = torch.clamp(cost, min=0)
         # # normalize the cost by the number of generators
         return cost.mean(0).sum() / powerflow_parameters.reference_cost
 
