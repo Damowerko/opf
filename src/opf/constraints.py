@@ -31,7 +31,7 @@ def wrap_angle(u: torch.Tensor):
     """
     Wrap angle to the range [-pi, pi].
     """
-    return torch.fmod(u, torch.pi)
+    return torch.remainder(u + torch.pi, 2 * torch.pi) - torch.pi
 
 
 def _compute_mask(mask, constraint):
@@ -42,18 +42,18 @@ def _compute_mask(mask, constraint):
     return mask
 
 
-def loss_equality(u: torch.Tensor, multiplier: torch.Tensor, augmented=False):
+def loss_equality(u: torch.Tensor, multiplier: torch.Tensor, augmented_weight=0.0):
     loss = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(1, 2).mean(dim=0)
-    if augmented:
-        loss = loss + u.pow(2).sum(dim=-1).mean(dim=0)
-    return loss  # + loss_agumented
+    if augmented_weight > 0:
+        loss = loss + augmented_weight * u.pow(2).sum(dim=-1).mean(dim=0)
+    return loss
 
 
-def loss_inequality(u: torch.Tensor, multiplier: torch.Tensor, augmented=False):
+def loss_inequality(u: torch.Tensor, multiplier: torch.Tensor, augmented_weight=0.0):
     loss = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(1, 2).mean(dim=0)
     # u <= 0, therefore we have violation when u > 0, loss = max(0, u)^2
-    if augmented:
-        loss = loss + u.relu().pow(2).sum(dim=-1).mean(dim=0)
+    if augmented_weight > 0:
+        loss = loss + augmented_weight * u.relu().pow(2).sum(dim=-1).mean(dim=0)
     return loss
 
 
@@ -64,7 +64,7 @@ def equality(
     mask: torch.Tensor | None = None,
     eps=1e-4,
     angle=False,
-    augmented=False,
+    augmented_weight=0.0,
 ):
     """
     Computes the equality constraint between two tensors `x` and `y`.
@@ -76,7 +76,7 @@ def equality(
         mask (torch.Tensor | None, optional): A boolean mask tensor. If provided, only the elements where `mask` is `True` will be considered. Defaults to `None`.
         eps (float, optional): A small constant used to avoid division by zero. Defaults to `1e-4`.
         angle (bool, optional): If `True`, the input tensors are treated as angles in radians and the difference is wrapped to the range `[-pi, pi]`. Defaults to `False`.
-        augmented (bool, optional): Whether to use the augmented loss. Defaults to False.
+        augmented_weight (float, optional): The weight of the augmented loss. Defaults to `0.0`.
 
     Returns:
         A tuple containing the loss value, the constraint violation vector, and the number of violated constraints.
@@ -89,7 +89,7 @@ def equality(
     u = x - y if not angle else wrap_angle(x - y)
     # The loss is the dot product of the constraint and the multiplier, averaged over the batch.
     loss = (
-        loss_equality(u, multiplier, augmented=augmented)
+        loss_equality(u, multiplier, augmented_weight=augmented_weight)
         if multiplier is not None
         else None
     )
@@ -107,7 +107,7 @@ def inequality(
     upper_multiplier: torch.Tensor | None = None,
     eps=1e-4,
     angle=False,
-    augmented=False,
+    augmented_weight=0.0,
 ):
     """
     Computes the inequality constraint loss for a given tensor.
@@ -119,7 +119,7 @@ def inequality(
         upper_bound (torch.Tensor): The upper bound tensor.
         eps (float, optional): The epsilon value. Defaults to 1e-4.
         angle (bool, optional): Whether to fix the angle. Defaults to False.
-        augmented (bool, optional): Whether to use the augmented loss. Defaults to False.
+        augmented_weight (float, optional): The augmented weight. Defaults to 0.0.
     Returns:
         tuple: A tuple containing the loss and the metrics.
     """
@@ -140,46 +140,33 @@ def inequality(
     assert not torch.isinf(upper_bound).any()
     assert not torch.isinf(lower_bound).any()
 
-    band = (upper_bound - lower_bound).abs()
-    mask_equality = band < eps
-    mask_lower = _compute_mask(~mask_equality, lower_bound)
-    mask_upper = _compute_mask(~mask_equality, upper_bound)
+    mask_lower = _compute_mask(None, lower_bound)
+    mask_upper = _compute_mask(None, upper_bound)
 
-    target = (upper_bound[mask_equality] + lower_bound[mask_equality]) / 2
-    u_equal = target - value[:, mask_equality]
     u_lower = lower_bound[mask_lower] - value[:, mask_lower]
     u_upper = value[:, mask_upper] - upper_bound[mask_upper]
 
     if angle:
-        u_equal = wrap_angle(u_equal)
         u_lower = wrap_angle(u_lower)
         u_upper = wrap_angle(u_upper)
 
-    u_lower /= band[mask_lower]
-    u_upper /= band[mask_upper]
-    u_all = torch.cat((u_lower, u_upper, u_equal.abs()), dim=1)
+    u_all = torch.cat((u_lower, u_upper), dim=1)
 
     if lower_multiplier is None or upper_multiplier is None:
         return metrics(None, u_all, eps, None)
 
     loss_lower = loss_inequality(
-        u_lower, lower_multiplier[:, mask_lower], augmented=augmented
+        u_lower, lower_multiplier[:, mask_lower], augmented_weight=augmented_weight
     )
     loss_upper = loss_inequality(
-        u_upper, upper_multiplier[:, mask_upper], augmented=augmented
+        u_upper, upper_multiplier[:, mask_upper], augmented_weight=augmented_weight
     )
-    # We represent the equality multiplier (which can be any real number) as the difference between two positive numbers.
-    loss_equal = loss_equality(
-        u_equal, upper_multiplier[:, mask_equality] - lower_multiplier[:, mask_equality]
-    )
-    loss = loss_lower + loss_upper + loss_equal
+    loss = loss_lower + loss_upper
     # this is used for metrics only
     multiplier_all = torch.cat(
         (
             lower_multiplier[:, mask_lower],
             upper_multiplier[:, mask_upper],
-            # We represent the equality multiplier (which can be any real number) as the difference between two positive numbers.
-            upper_multiplier[:, mask_equality] - lower_multiplier[:, mask_equality],
         ),
         dim=1,
     )

@@ -138,6 +138,7 @@ class OPFReadout(torch.nn.Module):
         self.metadata = metadata
         self.bus_type_id = self.metadata[0].index("bus")
         self.gen_type_id = self.metadata[0].index("gen")
+        dropout = float(dropout)
 
         self.bus_mlp = gnn.MLP(
             in_channels=n_channels,

@@ -26,11 +26,15 @@ class OPFDual(pl.LightningModule):
         weight_decay=0.0,
         lr_dual=1e-3,
         weight_decay_dual=0.0,
-        dual_interval=1,
         eps=1e-3,
         enforce_constraints=False,
         detailed_metrics=False,
         multiplier_table_length=0,
+        augmented_weight: float = 0.0,
+        supervised_weight: float = 0.0,
+        warmup: int = 0,
+        supervised_decay: float = 0.0,
+        common: bool = True,
         **kwargs,
     ):
         """
@@ -43,6 +47,11 @@ class OPFDual(pl.LightningModule):
             enforce_constraints (bool, optional): Whether to enforce the constraints. Defaults to False.
             detailed_metrics (bool, optional): Whether to log detailed metrics. Defaults to False.
             multiplier_table_length (int, optional): The number of entries in the multiplier table. Defaults to 0.
+            augmented_weight (float, optional): The weight of the augmented loss. Defaults to 0.0.
+            supervised_weight (float, optional): The weight of the supervised loss. Defaults to 0.0.
+            warmup (int, optional): Number of epochs before starting to update the multipliers. Defaults to 0.
+            supervised_decay (float, optional): The decay rate of the supervised loss. Defaults to 0.0.
+            common (bool, optional): Whether to use a common multiplier for all constraints. Defaults to True.
         """
         super().__init__()
         self.save_hyperparameters(ignore=["model", "kwargs"])
@@ -51,13 +60,16 @@ class OPFDual(pl.LightningModule):
         self.weight_decay = weight_decay
         self.lr_dual = lr_dual
         self.weight_decay_dual = weight_decay_dual
-        self.dual_interval = dual_interval
         self.eps = eps
         self._enforce_constraints = enforce_constraints
         self.detailed_metrics = detailed_metrics
         self.automatic_optimization = False
         self.multiplier_table_length = multiplier_table_length
-
+        self.augmented_weight = augmented_weight
+        self.supervised_weight = supervised_weight
+        self.warmup = warmup
+        self.supervised_decay = supervised_decay
+        self.common = common
         # setup the multipliers
         n_bus, n_branch, n_gen = n_nodes
         self.init_multipliers(n_bus, n_gen, n_branch, multiplier_table_length)
@@ -81,6 +93,7 @@ class OPFDual(pl.LightningModule):
                 [x.numel() for _, x in self.multiplier_metadata.items()]
             )
             self.multiplier_offsets = torch.cumsum(self.multiplier_numel, 0)
+            self.n_multipliers = int(self.multiplier_offsets[-1].item())
 
             multiplier_inequality_mask_list = []
             for name, numel in zip(
@@ -100,25 +113,26 @@ class OPFDual(pl.LightningModule):
                 persistent=False,
             )
 
-        self.multipliers = torch.nn.Embedding(
-            num_embeddings=multiplier_table_length + 1,
-            embedding_dim=int(self.multiplier_offsets[-1].item()),
+        self.multipliers_table = torch.nn.Embedding(
+            num_embeddings=multiplier_table_length,
+            embedding_dim=self.n_multipliers,
         )
-        self.multipliers.weight.data.zero_()
+        self.multipliers_table.weight.data.zero_()
+        self.multipliers_common = Parameter(
+            torch.zeros(self.n_multipliers, device=self.device)
+        )
 
     def get_multipliers(self, idx: torch.Tensor) -> dict[str, torch.Tensor]:
         """
         Get the multiplier for the tensor corresponding to the given index.
         """
         # The fist entry is a shared multiplier common to all entries
-        common = self.multipliers(torch.tensor([0], device=idx.device))
+        multipliers = torch.zeros(idx.shape[0], self.n_multipliers, device=self.device)
+        if self.common:
+            multipliers = multipliers + self.multipliers_common.expand(idx.shape[0], -1)
         if self.multiplier_table_length > 0:
             # The remaining entries are personalized multipliers one for each sample in the training dataset
-            personalized = self.multipliers(idx + 1)
-            multipliers = common + personalized
-        else:
-            # If there are no personalized multipliers, just use the common multiplier
-            multipliers = common.expand(idx.shape[0], -1)
+            multipliers = multipliers + self.multipliers_table(idx)
 
         multiplier_dict = {}
         for data, (name, shape) in zip(
@@ -134,8 +148,14 @@ class OPFDual(pl.LightningModule):
         """
         # use .data to avoid autograd tracking since we are modifying the data in place
         # no need for autograd since we are not backpropagating through this operation
-        self.multipliers.weight.data[:, self.multiplier_inequality_mask] = (
-            self.multipliers.weight.data[:, self.multiplier_inequality_mask].relu_()
+        self.multipliers_table.weight.data[:, self.multiplier_inequality_mask] = (
+            self.multipliers_table.weight.data[
+                :, self.multiplier_inequality_mask
+            ].relu_()
+        )
+        # also project the common multiplier
+        self.multipliers_common.data[self.multiplier_inequality_mask] = (
+            self.multipliers_common.data[self.multiplier_inequality_mask].relu_()
         )
 
     @staticmethod
@@ -149,6 +169,11 @@ class OPFDual(pl.LightningModule):
         group.add_argument("--eps", type=float, default=1e-3)
         group.add_argument("--enforce_constraints", action="store_true", default=False)
         group.add_argument("--detailed_metrics", action="store_true", default=False)
+        group.add_argument("--augmented_weight", type=float, default=0.0)
+        group.add_argument("--supervised_weight", type=float, default=0.0)
+        group.add_argument("--warmup", type=int, default=0)
+        group.add_argument("--supervised_decay", type=float, default=0.0)
+        group.add_argument("--no_common", dest="common", action="store_false")
 
     def forward(
         self,
@@ -158,7 +183,7 @@ class OPFDual(pl.LightningModule):
         if isinstance(data, HeteroData):
             n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
             load = data["bus"].x[:, :2]
-            bus, gen = self.model(data)
+            bus, gen = self.model(data.clone())
         elif isinstance(data, Data):
             raise NotImplementedError("Removed support for homogenous data for now.")
         else:
@@ -205,6 +230,20 @@ class OPFDual(pl.LightningModule):
         )
         return V, Sg
 
+    def supervised_mse(self, batch: PowerflowBatch, variables: pf.PowerflowVariables):
+        """
+        Calculate the MSE between the predicted and target bus voltage and generator power.
+        """
+        data, powerflow_parameters, _ = batch
+        V_target = data["bus"]["V"].view(-1, powerflow_parameters.n_bus, 2).mT
+        Sg_target = data["gen"]["Sg"].view(-1, powerflow_parameters.n_gen, 2).mT
+        V_target = torch.complex(V_target[:, 0, :], V_target[:, 1, :])
+        Sg_target = torch.complex(Sg_target[:, 0, :], Sg_target[:, 1, :])
+
+        loss_voltage = (variables.V - V_target).abs().pow(2).mean()
+        loss_gen = (variables.Sg - Sg_target).abs().pow(2).mean()
+        return loss_voltage + loss_gen
+
     def _step_helper(
         self,
         variables: pf.PowerflowVariables,
@@ -220,18 +259,39 @@ class OPFDual(pl.LightningModule):
 
     def training_step(self, batch: PowerflowBatch):
         primal_optimizer, dual_optimizer = self.optimizers()  # type: ignore
+        dual_scheduler = self.lr_schedulers()  # type: ignore
         multipliers = self.get_multipliers(batch.index)
+        multipliers_detached = {k: v.detach() for k, v in multipliers.items()}
+
+        variables = self(batch)
         _, constraints, cost = self._step_helper(
-            self.forward(batch), batch.powerflow_parameters, multipliers
+            variables, batch.powerflow_parameters, multipliers_detached
         )
         constraint_loss = self.constraint_loss(constraints)
 
+        supervised_mse = self.supervised_mse(batch, variables)
+        supervised_weight = (
+            self.supervised_decay**self.current_epoch * self.supervised_weight
+        )
+
         primal_optimizer.zero_grad()
-        dual_optimizer.zero_grad()
-        (cost + 100 * constraint_loss).backward()
+        (cost + constraint_loss + supervised_weight * supervised_mse).backward()
         primal_optimizer.step()
-        if (self.global_step + 1) % self.dual_interval == 0:
-            dual_optimizer.step()
+
+        # dual step
+        dual_optimizer.zero_grad()
+        with torch.no_grad():
+            # detach the variables to avoid backpropagating through the powerflow
+            batch.data.detach_()
+            variables = self(batch)
+        constraints = self.constraints(
+            variables, batch.powerflow_parameters, multipliers
+        )
+        self.constraint_loss(constraints).backward()
+        dual_optimizer.step()
+
+        if self.trainer.is_last_batch:
+            dual_scheduler.step()  # type: ignore
 
         # enforce inequality multipliers to be non-negative
         self.project_multipliers()
@@ -239,6 +299,13 @@ class OPFDual(pl.LightningModule):
         self.log(
             "train/loss",
             cost + constraint_loss,
+            prog_bar=True,
+            batch_size=batch.data.num_graphs,
+            sync_dist=True,
+        )
+        self.log(
+            "train/supervised_mse",
+            supervised_mse,
             prog_bar=True,
             batch_size=batch.data.num_graphs,
             sync_dist=True,
@@ -413,6 +480,7 @@ class OPFDual(pl.LightningModule):
                     constraint.mask,
                     self.eps,
                     constraint.isAngle,
+                    self.augmented_weight if constraint.augmented else 0.0,
                 )
             elif isinstance(constraint, pf.InequalityConstraint):
                 values[name] = inequality(
@@ -423,6 +491,7 @@ class OPFDual(pl.LightningModule):
                     multipliers[name][..., 1] if multipliers is not None else None,
                     self.eps,
                     constraint.isAngle,
+                    self.augmented_weight if constraint.augmented else 0.0,
                 )
         return values
 
@@ -489,20 +558,34 @@ class OPFDual(pl.LightningModule):
         return {**aggregate_metrics, **detailed_metrics}
 
     def configure_optimizers(self):
-        primal_optimizer = torch.optim.Adam(  # type: ignore
+        primal_optimizer = torch.optim.AdamW(  # type: ignore
             self.model.parameters(),
             lr=self.lr,
             weight_decay=self.weight_decay,
             fused=True,
         )
         dual_optimizer = torch.optim.SGD(  # type: ignore
-            self.multipliers.parameters(),
-            lr=self.lr_dual,
+            [
+                {
+                    "params": self.multipliers_table.parameters(),
+                    "lr": self.lr_dual,
+                },
+                {
+                    "params": [self.multipliers_common],
+                    "lr": self.lr_dual * 0.01,
+                },
+            ],
             weight_decay=self.weight_decay_dual,
             maximize=True,
             fused=True,
         )
-        return primal_optimizer, dual_optimizer
+        optimizers = [primal_optimizer, dual_optimizer]
+        schedulers = [
+            torch.optim.lr_scheduler.LambdaLR(
+                dual_optimizer, lambda n: 10 ** max(0, n - self.warmup)
+            )
+        ]
+        return optimizers, schedulers
 
     @staticmethod
     def bus_from_polar(bus):

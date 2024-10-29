@@ -238,14 +238,14 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
         "equality/bus_active_power": EqualityConstraint(
             isBus=True,
             isAngle=False,
-            augmented=False,
+            augmented=True,
             value=d.S.real,
             target=d.Sg_bus.real - d.Sd.real,
         ),
         "equality/bus_reactive_power": EqualityConstraint(
             isBus=True,
             isAngle=False,
-            augmented=False,
+            augmented=True,
             value=d.S.imag,
             target=d.Sg_bus.imag - d.Sd.imag,
             mask=None,
@@ -277,7 +277,7 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
         "inequality/reactive_power": InequalityConstraint(
             isBus=True,
             isAngle=False,
-            augmented=False,
+            augmented=True,
             variable=d.Sg.imag,
             min=p.Sg_min.imag,
             max=p.Sg_max.imag,
@@ -285,7 +285,7 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
         "inequality/forward_rate": InequalityConstraint(
             isBus=False,
             isAngle=False,
-            augmented=False,
+            augmented=True,
             variable=d.Sf.abs(),
             min=torch.zeros_like(p.rate_a),
             max=p.rate_a,
@@ -293,7 +293,7 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
         "inequality/backward_rate": InequalityConstraint(
             isBus=False,
             isAngle=False,
-            augmented=False,
+            augmented=True,
             variable=d.St.abs(),
             min=torch.zeros_like(p.rate_a),
             max=p.rate_a,
@@ -301,8 +301,8 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
         "inequality/voltage_angle_difference": InequalityConstraint(
             isBus=False,
             isAngle=True,
-            augmented=False,
-            variable=((d.V @ p.Cf.T) * (d.V @ p.Ct.T).conj()).angle(),
+            augmented=True,
+            variable=((d.V[..., p.fr_bus]) * (d.V[..., p.to_bus]).conj()).angle(),
             min=p.vad_min,
             max=p.vad_max,
         ),

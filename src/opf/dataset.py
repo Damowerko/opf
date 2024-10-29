@@ -237,6 +237,7 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         gen_features: torch.Tensor,
         graph: HeteroData,
         powerflow_parameters: pf.PowerflowParameters,
+        additional_features: dict[tuple[NodeType, str], torch.Tensor] = {},
     ):
         """
         A datapipe that wraps a torch_geometric.data.Data object with a single graphs but
@@ -248,6 +249,8 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
             x_gen: Gen features with shape (n_samples, n_gen, n_features_gen)
             edge_index: Edge index with shape (2, num_edges)
             edge_attr: Edge attributes with shape (num_edges, num_edge_features)
+            additional_features: Additional features for each node type. The key is a tuple of the node type and the feature name.
+                The tensors should have shape (n_samples, n_{node_type}, n_dim_{feature_name})
         """
         super().__init__()
 
@@ -261,6 +264,7 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         self.x_bus = bus_features
         self.x_branch = branch_features
         self.x_gen = gen_features
+        self.additional_features = additional_features
 
         homogeneous_graph = graph.to_homogeneous()
         homogeneous_graph.edge_index = homogeneous_graph.edge_index.to(torch.int64)  # type: ignore
@@ -277,6 +281,9 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         data["bus"].x = self.x_bus[index]
         data["branch"].x = self.x_branch[index]
         data["gen"].x = self.x_gen[index]
+        for (node_type, feature_name), feature in self.additional_features.items():
+            data[node_type][feature_name] = feature[index]
+
         return PowerflowData(
             data,
             self.powerflow_parameters,
@@ -353,7 +360,9 @@ class CaseDataModule(pl.LightningDataModule):
         assert isinstance(dataset, StaticHeteroDataset)
         return {k: v.shape[-1] for k, v in dataset[0].data.x_dict.items()}
 
-    def build_dataset(self, bus_features, branch_features, gen_features):
+    def build_dataset(
+        self, bus_features, branch_features, gen_features, additional_features
+    ):
         assert self.powerflow_parameters is not None
         if self.homo:
             assert isinstance(self.graph, Data)
@@ -371,6 +380,7 @@ class CaseDataModule(pl.LightningDataModule):
                 gen_features,
                 self.graph,
                 self.powerflow_parameters,
+                additional_features,
             )
 
     def setup(self, stage: Optional[str] = None):
@@ -389,6 +399,17 @@ class CaseDataModule(pl.LightningDataModule):
                 self.graph = build_hetero_graph(self.powerflow_parameters, False, False)
 
         with h5py.File(self.data_dir / f"{self.case_name}.h5", "r") as f:
+            # load bus voltage in rectangular coordinates
+            bus_voltage = torch.from_numpy(f["bus"][:]).float()  # type: ignore
+            bus_voltage = torch.view_as_real(
+                torch.polar(bus_voltage[..., 0], bus_voltage[..., 1])
+            )
+            # gen power is already in rectangular coordinates
+            gen_power = torch.from_numpy(f["gen"][:]).float()  # type: ignore
+            additional_features = {
+                ("bus", "V"): bus_voltage,
+                ("gen", "Sg"): gen_power,
+            }
             load = torch.from_numpy(f["load"][:]).float()  # type: ignore
             self.powerflow_parameters.reference_cost = f["objective"][:].mean()  # type: ignore
 
@@ -421,17 +442,23 @@ class CaseDataModule(pl.LightningDataModule):
                 bus_features[:n_train],
                 branch_features[:n_train],
                 gen_features[:n_train],
+                {k: v[:n_train] for k, v in additional_features.items()},
             )
             self.val_dataset = self.build_dataset(
                 bus_features[n_train : n_train + n_val],
                 branch_features[n_train : n_train + n_val],
                 gen_features[n_train : n_train + n_val],
+                {
+                    k: v[n_train : n_train + n_val]
+                    for k, v in additional_features.items()
+                },
             )
         if stage == "test" or stage is None:
             self.test_dataset = self.build_dataset(
                 bus_features[-n_test:],
                 branch_features[-n_test:],
                 gen_features[-n_test:],
+                {k: v[-n_test:] for k, v in additional_features.items()},
             )
 
     def train_dataloader(self):
