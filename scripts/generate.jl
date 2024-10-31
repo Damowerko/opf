@@ -73,9 +73,9 @@ function label_network(network_data::Dict{String,Any}, load::Dict{String,Any})::
     network_data = deepcopy(network_data)
     network_data["load"] = load
     if use_hsl
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 1, "linear_solver" => "ma27", "hsllib" => HSL_jll.libhsl_path, "sb" => "yes")
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-8, "print_level" => 1, "linear_solver" => "ma27", "hsllib" => HSL_jll.libhsl_path, "sb" => "yes")
     else
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 1, "sb" => "yes")
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-8, "print_level" => 1, "sb" => "yes")
     end
     result = solve_ac_opf(network_data, solver)
     solved = result["termination_status"] == LOCALLY_SOLVED
