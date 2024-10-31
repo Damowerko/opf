@@ -9,7 +9,7 @@ from pytorch_lightning.loggers.wandb import WandbLogger
 from wandb.wandb_run import Run
 
 from opf.dataset import CaseDataModule
-from opf.hetero import HeteroGCN, OPFReadout
+from opf.hetero import HeteroGCN
 from opf.modules import OPFDual
 
 
@@ -122,8 +122,8 @@ def train(trainer: Trainer, params):
         dm.setup()
         gcn = HeteroGCN(
             dm.metadata(),
-            in_channels=dm.feature_dims,
-            out_channels=OPFReadout(dm.metadata(), **params),
+            in_channels=max(dm.feature_dims.values()),
+            out_channels=4,
             **params,
         )
         if params["compile"]:

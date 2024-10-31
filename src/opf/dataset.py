@@ -40,6 +40,20 @@ class BipartiteData(Data):
         return super().__inc__(key, value, *args, **kwargs)
 
 
+def pad_node_features(graph: HeteroData):
+    """
+    Pad the node features to the same length.
+    """
+    max_dim = max(graph.num_node_features.values())
+    for nt, dim in graph.num_node_features.items():
+        if dim < max_dim:
+            graph[nt].x = torch.cat(
+                (graph[nt].x, torch.zeros(graph[nt].x.shape[0], max_dim - dim)),
+                dim=-1,
+            )
+    return graph
+
+
 def build_graph(
     params: pf.PowerflowParameters,
 ) -> Data:
@@ -81,8 +95,8 @@ def build_graph(
 
 def build_hetero_graph(
     params: pf.PowerflowParameters,
-    self_loops: bool = True,
-    antisymmetric: bool = True,
+    self_loops: bool = False,
+    antisymmetric: bool = False,
 ) -> HeteroData:
     graph = HeteroData()
 
@@ -266,10 +280,11 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         self.x_gen = gen_features
         self.additional_features = additional_features
 
-        homogeneous_graph = graph.to_homogeneous()
-        homogeneous_graph.edge_index = homogeneous_graph.edge_index.to(torch.int64)  # type: ignore
+        self.graph = graph
+        # homogeneous_graph = graph.to_homogeneous()
+        # homogeneous_graph.edge_index = homogeneous_graph.edge_index.to(torch.int64)  # type: ignore
         # homogeneous_graph = T.GCNNorm(False)(homogeneous_graph)
-        self.graph = T.ToSparseTensor()(homogeneous_graph.to_heterogeneous())
+        # self.graph = T.ToSparseTensor()(homogeneous_graph.to_heterogeneous())
         self.powerflow_parameters = copy.deepcopy(powerflow_parameters)
 
     def __len__(self) -> int:
@@ -406,9 +421,15 @@ class CaseDataModule(pl.LightningDataModule):
             )
             # gen power is already in rectangular coordinates
             gen_power = torch.from_numpy(f["gen"][:]).float()  # type: ignore
+            # branch flow Sf and St
+            branch = torch.from_numpy(f["branch"][:]).float()  # type: ignore
+            Sf = branch[..., :2]
+            St = branch[..., 2:]
             additional_features = {
                 ("bus", "V"): bus_voltage,
                 ("gen", "Sg"): gen_power,
+                ("branch", "Sf"): Sf,
+                ("branch", "St"): St,
             }
             load = torch.from_numpy(f["load"][:]).float()  # type: ignore
             self.powerflow_parameters.reference_cost = f["objective"][:].mean()  # type: ignore
@@ -433,6 +454,7 @@ class CaseDataModule(pl.LightningDataModule):
             self.powerflow_parameters.gen_parameters(),
         ).to(bus_load.dtype)
 
+        # figure out the number of samples for each set
         n_train = n_samples - 2 * self.test_samples
         n_val = self.test_samples
         n_test = self.test_samples

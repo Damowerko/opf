@@ -30,8 +30,10 @@ class OPFDual(pl.LightningModule):
         enforce_constraints=False,
         detailed_metrics=False,
         multiplier_table_length=0,
+        cost_weight=1.0,
         augmented_weight: float = 0.0,
         supervised_weight: float = 0.0,
+        powerflow_weight: float = 0.0,
         warmup: int = 0,
         supervised_decay: float = 0.0,
         common: bool = True,
@@ -49,6 +51,7 @@ class OPFDual(pl.LightningModule):
             multiplier_table_length (int, optional): The number of entries in the multiplier table. Defaults to 0.
             augmented_weight (float, optional): The weight of the augmented loss. Defaults to 0.0.
             supervised_weight (float, optional): The weight of the supervised loss. Defaults to 0.0.
+            powerflow_weight (float, optional): The weight of the powerflow loss. Defaults to 0.0.
             warmup (int, optional): Number of epochs before starting to update the multipliers. Defaults to 0.
             supervised_decay (float, optional): The decay rate of the supervised loss. Defaults to 0.0.
             common (bool, optional): Whether to use a common multiplier for all constraints. Defaults to True.
@@ -65,8 +68,10 @@ class OPFDual(pl.LightningModule):
         self.detailed_metrics = detailed_metrics
         self.automatic_optimization = False
         self.multiplier_table_length = multiplier_table_length
+        self.cost_weight = cost_weight
         self.augmented_weight = augmented_weight
         self.supervised_weight = supervised_weight
+        self.powerflow_weight = powerflow_weight
         self.warmup = warmup
         self.supervised_decay = supervised_decay
         self.common = common
@@ -169,8 +174,10 @@ class OPFDual(pl.LightningModule):
         group.add_argument("--eps", type=float, default=1e-3)
         group.add_argument("--enforce_constraints", action="store_true", default=False)
         group.add_argument("--detailed_metrics", action="store_true", default=False)
+        group.add_argument("--cost_weight", type=float, default=1.0)
         group.add_argument("--augmented_weight", type=float, default=0.0)
         group.add_argument("--supervised_weight", type=float, default=0.0)
+        group.add_argument("--powerflow_weight", type=float, default=0.0)
         group.add_argument("--warmup", type=int, default=0)
         group.add_argument("--supervised_decay", type=float, default=0.0)
         group.add_argument("--no_common", dest="common", action="store_false")
@@ -182,25 +189,27 @@ class OPFDual(pl.LightningModule):
         data, powerflow_parameters, index = input
         if isinstance(data, HeteroData):
             n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
-            load = data["bus"].x[:, :2]
-            bus, gen = self.model(data.clone())
+            homo = data.to_homogeneous()
+            homo.y = self.model(homo.x, homo.edge_index, homo.node_type, homo.edge_type)
+            y_dict = homo.to_heterogeneous().y_dict
+            # reshape data to size (batch_size, n_nodes_of_type, n_features)
+            load = data["bus"].x[:, :2].view(n_batch, powerflow_parameters.n_bus, 2)
+            bus = y_dict["bus"].view(n_batch, powerflow_parameters.n_bus, 4)[..., :2]
+            gen = y_dict["gen"].view(n_batch, powerflow_parameters.n_gen, 4)[..., :2]
+            branch = y_dict["branch"].view(n_batch, powerflow_parameters.n_branch, 4)
         elif isinstance(data, Data):
             raise NotImplementedError("Removed support for homogenous data for now.")
         else:
             raise ValueError(
                 f"Unsupported data type {type(data)}, expected Data or HeteroData."
             )
-
-        # Reshape the output to (batch_size, n_features, n_bus or n_gen)
-        bus = bus.view(n_batch, powerflow_parameters.n_bus, 2).mT
-        gen = gen.view(n_batch, powerflow_parameters.n_gen, 2).mT
-        load = load.view(n_batch, powerflow_parameters.n_bus, 2).mT
         V = self.parse_bus(bus)
         Sg = self.parse_gen(gen)
         Sd = self.parse_load(load)
+        Sf_pred, St_pred = self.parse_branch(branch)
         if self._enforce_constraints:
             V, Sg = self.enforce_constraints(V, Sg, powerflow_parameters)
-        return pf.powerflow(V, Sd, Sg, powerflow_parameters)
+        return pf.powerflow(V, Sd, Sg, powerflow_parameters), Sf_pred, St_pred
 
     def enforce_constraints(
         self, V, Sg, params: pf.PowerflowParameters, strategy="sigmoid"
@@ -230,19 +239,65 @@ class OPFDual(pl.LightningModule):
         )
         return V, Sg
 
-    def supervised_mse(self, batch: PowerflowBatch, variables: pf.PowerflowVariables):
+    def supervised_loss(
+        self,
+        batch: PowerflowBatch,
+        variables: pf.PowerflowVariables,
+        Sf_pred: torch.Tensor,
+        St_pred: torch.Tensor,
+    ):
         """
         Calculate the MSE between the predicted and target bus voltage and generator power.
         """
         data, powerflow_parameters, _ = batch
-        V_target = data["bus"]["V"].view(-1, powerflow_parameters.n_bus, 2).mT
-        Sg_target = data["gen"]["Sg"].view(-1, powerflow_parameters.n_gen, 2).mT
-        V_target = torch.complex(V_target[:, 0, :], V_target[:, 1, :])
-        Sg_target = torch.complex(Sg_target[:, 0, :], Sg_target[:, 1, :])
+        # parse auxiliary data from the batch
+        V_target = data["bus"]["V"].view(-1, powerflow_parameters.n_bus, 2)
+        Sg_target = data["gen"]["Sg"].view(-1, powerflow_parameters.n_gen, 2)
+        Sf_target = data["branch"]["Sf"].view(-1, powerflow_parameters.n_branch, 2)
+        St_target = data["branch"]["St"].view(-1, powerflow_parameters.n_branch, 2)
+        # convert to complex numbers
+        V_target = torch.complex(V_target[..., 0], V_target[..., 1])
+        Sg_target = torch.complex(Sg_target[..., 0], Sg_target[..., 1])
+        Sf_target = torch.complex(Sf_target[..., 0], Sf_target[..., 1])
+        St_target = torch.complex(St_target[..., 0], St_target[..., 1])
 
         loss_voltage = (variables.V - V_target).abs().pow(2).mean()
         loss_gen = (variables.Sg - Sg_target).abs().pow(2).mean()
-        return loss_voltage + loss_gen
+        loss_sf = (Sf_pred - Sf_target).abs().pow(2).mean()
+        loss_st = (St_pred - St_target).abs().pow(2).mean()
+        loss_power = loss_sf + loss_st
+        loss_supervised = loss_voltage + loss_gen + loss_power
+        self.log_dict(
+            {
+                "train/supervised_voltage": loss_voltage,
+                "train/supervised_gen": loss_gen,
+                "train/supervised_power": loss_power,
+            },
+            batch_size=batch.data.num_graphs,
+        )
+        self.log(
+            "train/supervised_loss",
+            loss_supervised,
+            batch_size=batch.data.num_graphs,
+        )
+        return loss_supervised
+
+    def powerflow_loss(
+        self, batch: PowerflowBatch, variables: pf.PowerflowVariables, Sf_pred, St_pred
+    ):
+        """
+        Loss between the predicted Sf and St by the model and the Sf and St implied by the powerflow equations.
+        Assumes variables.Sf and variables.St are computed from powerflow(V).
+        """
+        Sf_loss = (variables.Sf - Sf_pred).abs().pow(2).mean()
+        St_loss = (variables.St - St_pred).abs().pow(2).mean()
+        powerflow_loss = Sf_loss + St_loss
+        self.log(
+            "train/powerflow_loss",
+            powerflow_loss,
+            batch_size=batch.data.num_graphs,
+        )
+        return powerflow_loss
 
     def _step_helper(
         self,
@@ -259,53 +314,38 @@ class OPFDual(pl.LightningModule):
 
     def training_step(self, batch: PowerflowBatch):
         primal_optimizer, dual_optimizer = self.optimizers()  # type: ignore
-        dual_scheduler = self.lr_schedulers()  # type: ignore
-        multipliers = self.get_multipliers(batch.index)
-        multipliers_detached = {k: v.detach() for k, v in multipliers.items()}
-
-        variables = self(batch)
+        variables, Sf_pred, St_pred = self(batch)
         _, constraints, cost = self._step_helper(
-            variables, batch.powerflow_parameters, multipliers_detached
+            variables, batch.powerflow_parameters, self.get_multipliers(batch.index)
         )
         constraint_loss = self.constraint_loss(constraints)
 
-        supervised_mse = self.supervised_mse(batch, variables)
+        supervised_loss = self.supervised_loss(batch, variables, Sf_pred, St_pred)
         supervised_weight = (
             self.supervised_decay**self.current_epoch * self.supervised_weight
         )
+        powerflow_loss = self.powerflow_loss(batch, variables, Sf_pred, St_pred)
+
+        loss = (
+            self.cost_weight * cost
+            + constraint_loss
+            + self.powerflow_weight * powerflow_loss
+            + supervised_weight * supervised_loss
+        )
 
         primal_optimizer.zero_grad()
-        (cost + constraint_loss + supervised_weight * supervised_mse).backward()
-        primal_optimizer.step()
-
-        # dual step
         dual_optimizer.zero_grad()
-        with torch.no_grad():
-            # detach the variables to avoid backpropagating through the powerflow
-            batch.data.detach_()
-            variables = self(batch)
-        constraints = self.constraints(
-            variables, batch.powerflow_parameters, multipliers
-        )
-        self.constraint_loss(constraints).backward()
-        dual_optimizer.step()
-
-        if self.trainer.is_last_batch:
-            dual_scheduler.step()  # type: ignore
+        loss.backward()
+        primal_optimizer.step()
+        if self.current_epoch >= self.warmup:
+            dual_optimizer.step()
 
         # enforce inequality multipliers to be non-negative
         self.project_multipliers()
 
         self.log(
             "train/loss",
-            cost + constraint_loss,
-            prog_bar=True,
-            batch_size=batch.data.num_graphs,
-            sync_dist=True,
-        )
-        self.log(
-            "train/supervised_mse",
-            supervised_mse,
+            loss,
             prog_bar=True,
             batch_size=batch.data.num_graphs,
             sync_dist=True,
@@ -319,7 +359,7 @@ class OPFDual(pl.LightningModule):
     def validation_step(self, batch: PowerflowBatch, *args):
         batch_size = batch.data.num_graphs
         _, constraints, cost = self._step_helper(
-            self.forward(batch), batch.powerflow_parameters
+            self(batch)[0], batch.powerflow_parameters
         )
         metrics = self.metrics(cost, constraints, "val", self.detailed_metrics)
         self.log_dict(metrics, batch_size=batch_size, sync_dist=True)
@@ -341,7 +381,7 @@ class OPFDual(pl.LightningModule):
         # project_powermodels taking too long
         # go over batch w/ project pm, then individual steps without
         _, constraints, cost = self._step_helper(
-            self.forward(batch),
+            self(batch),
             batch.powerflow_parameters,
             project_powermodels=True,
         )
@@ -412,8 +452,8 @@ class OPFDual(pl.LightningModule):
         return pf.powerflow(V, Sd, Sg, parameters)
 
     def parse_bus(self, bus: torch.Tensor):
-        assert bus.shape[1] == 2
-        V = torch.complex(bus[:, 0, :], bus[:, 1, :])
+        assert bus.shape[-1] == 2
+        V = torch.complex(bus[..., 0], bus[..., 1])
         return V
 
     def parse_load(self, load: torch.Tensor):
@@ -424,14 +464,20 @@ class OPFDual(pl.LightningModule):
             load: A tensor of shape (batch_size, n_features, n_bus). The first two features should contain the active and reactive load.
 
         """
-        assert load.shape[1] == 2
-        Sd = torch.complex(load[:, 0, :], load[:, 1, :])
+        assert load.shape[-1] == 2
+        Sd = torch.complex(load[..., 0], load[..., 1])
         return Sd
 
     def parse_gen(self, gen: torch.Tensor):
-        assert gen.shape[1] == 2
-        Sg = torch.complex(gen[:, 0, :], gen[:, 1, :])
+        assert gen.shape[-1] == 2
+        Sg = torch.complex(gen[..., 0], gen[..., 1])
         return Sg
+
+    def parse_branch(self, branch: torch.Tensor):
+        assert branch.shape[-1] == 4
+        Sf = torch.complex(branch[..., 0], branch[..., 1])
+        St = torch.complex(branch[..., 2], branch[..., 3])
+        return Sf, St
 
     def constraint_loss(self, constraints) -> torch.Tensor:
         constraint_losses = [
@@ -580,12 +626,7 @@ class OPFDual(pl.LightningModule):
             fused=True,
         )
         optimizers = [primal_optimizer, dual_optimizer]
-        schedulers = [
-            torch.optim.lr_scheduler.LambdaLR(
-                dual_optimizer, lambda n: 10 ** max(0, n - self.warmup)
-            )
-        ]
-        return optimizers, schedulers
+        return optimizers
 
     @staticmethod
     def bus_from_polar(bus):

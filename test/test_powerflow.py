@@ -7,29 +7,40 @@ import torch
 
 import opf.powerflow as pf
 
-case_path = Path(__file__).parent / "case30_ieee.json"
-data_path = Path(__file__).parent / "case30_ieee.h5"
 
-
-@pytest.mark.parametrize("execution_number", range(10))
+@pytest.mark.parametrize("execution_number", range(20))
 def test_powerflow(execution_number):
-    # set the precision to 32 bit floats
-    precision: int = 32
-    dtype = torch.complex64
     eps = 1e-4
+    precision: int = 32
+    if precision == 32:
+        dtype = torch.float32
+        cdtype = torch.complex64
+    elif precision == 64:
+        dtype = torch.float64
+        cdtype = torch.complex128
+
+    if execution_number < 10:
+        case_path = Path(__file__).parent / "case30_ieee.json"
+        data_path = Path(__file__).parent / "case30_ieee.h5"
+        idx = execution_number
+    else:
+        case_path = Path(__file__).parent / "case118_ieee.json"
+        data_path = Path(__file__).parent / "case118_ieee.h5"
+        idx = execution_number - 10
 
     parameters = pf.parameters_from_powermodels(
-        json.loads(case_path.read_text()), case_path.as_posix(), precision
+        json.loads(case_path.read_text()), case_path.as_posix(), precision=precision
     )
+
     # get a random sample
     with h5py.File(data_path, "r") as f:
-        bus = torch.tensor(f["bus"][execution_number], dtype=torch.float32)  # type: ignore
-        load = torch.tensor(f["load"][execution_number], dtype=torch.float32)  # type: ignore
-        gen = torch.tensor(f["gen"][execution_number], dtype=torch.float32)  # type: ignore
-        branch = torch.tensor(f["branch"][execution_number], dtype=torch.float32)  # type: ignore
+        bus = torch.tensor(f["bus"][idx], dtype=dtype)  # type: ignore
+        load = torch.tensor(f["load"][idx], dtype=dtype)  # type: ignore
+        gen = torch.tensor(f["gen"][idx], dtype=dtype)  # type: ignore
+        branch = torch.tensor(f["branch"][idx], dtype=dtype)  # type: ignore
 
-    V = torch.polar(*bus.T).to(dtype)
-    Sg = torch.complex(*gen.T).to(dtype)
+    V = torch.polar(*bus.T).to(cdtype)
+    Sg = torch.complex(*gen.T).to(cdtype)
     Sd = torch.zeros_like(V).index_put_(
         (parameters.load_bus_ids,), torch.complex(*load.T)
     )
@@ -40,11 +51,11 @@ def test_powerflow(execution_number):
 
     variables = pf.powerflow(V, Sd, Sg, parameters)
 
-    Sf = torch.complex(*branch[:, :2].T).to(dtype)[None, :]
-    St = torch.complex(*branch[:, 2:].T).to(dtype)[None, :]
+    Sf = torch.complex(*branch[:, :2].T).to(cdtype)[None, :]
+    St = torch.complex(*branch[:, 2:].T).to(cdtype)[None, :]
 
-    torch.testing.assert_close(Sf, variables.Sf, atol=eps, rtol=eps)
-    torch.testing.assert_close(St, variables.St, atol=eps, rtol=eps)
+    assert (Sf - variables.Sf).abs().max() < eps
+    assert (St - variables.St).abs().max() < eps
 
     constraints = pf.build_constraints(variables, parameters)
     for constraint_name, constraint in constraints.items():
