@@ -25,6 +25,7 @@ class OPFDual(pl.LightningModule):
         lr=1e-4,
         weight_decay=0.0,
         lr_dual=1e-3,
+        lr_common=1e-4,
         weight_decay_dual=0.0,
         eps=1e-3,
         enforce_constraints=False,
@@ -62,6 +63,7 @@ class OPFDual(pl.LightningModule):
         self.lr = lr
         self.weight_decay = weight_decay
         self.lr_dual = lr_dual
+        self.lr_common = lr_common
         self.weight_decay_dual = weight_decay_dual
         self.eps = eps
         self._enforce_constraints = enforce_constraints
@@ -169,6 +171,7 @@ class OPFDual(pl.LightningModule):
         group.add_argument("--lr", type=float, default=3e-4)
         group.add_argument("--weight_decay", type=float, default=0.0)
         group.add_argument("--lr_dual", type=float, default=0.1)
+        group.add_argument("--lr_common", type=float, default=0.01)
         group.add_argument("--weight_decay_dual", type=float, default=0.0)
         group.add_argument("--dual_interval", type=int, default=1)
         group.add_argument("--eps", type=float, default=1e-3)
@@ -618,7 +621,7 @@ class OPFDual(pl.LightningModule):
                 },
                 {
                     "params": [self.multipliers_common],
-                    "lr": self.lr_dual * 0.01,
+                    "lr": self.lr_common,
                 },
             ],
             weight_decay=self.weight_decay_dual,
