@@ -34,7 +34,7 @@ def plot_inequality(title, value, lower, upper, eps=1e-4):
     lower = np.squeeze(lower)
     upper = np.squeeze(upper)
 
-    violation = (value > upper + eps) | (lower > value - eps)
+    violation = (value > upper + eps) | (lower - eps > value)
 
     fig = plt.figure()
     n = np.arange(len(value))
