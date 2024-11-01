@@ -1,14 +1,19 @@
-import pytorch_lightning as pl
-import torch
-from opf.utils import model_from_parameters
-from glob import glob
-import wandb
 import os
+from glob import glob
+
+import lightning.pytorch as pl
+import torch
+import wandb
 from tqdm import tqdm
+
+from opf.utils import model_from_parameters
 
 api = wandb.Api()
 # runs = api.runs("damowerko/opf", filters={"tag": "foo"})
-runs = [api.run(f"damowerko/opf/{id}") for id in ["2zdzkf7r", "2ng1ftuc", "2lllzf30", "h3lsl9hr"]]
+runs = [
+    api.run(f"damowerko/opf/{id}")
+    for id in ["2zdzkf7r", "2ng1ftuc", "2lllzf30", "h3lsl9hr"]
+]
 print(runs)
 
 for run in tqdm(runs):

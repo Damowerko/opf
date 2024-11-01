@@ -5,8 +5,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict
 
+import lightning.pytorch as pl
 import numpy as np
-import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from torch.nn import Parameter
@@ -173,7 +173,6 @@ class OPFDual(pl.LightningModule):
         group.add_argument("--lr_dual", type=float, default=0.1)
         group.add_argument("--lr_common", type=float, default=0.01)
         group.add_argument("--weight_decay_dual", type=float, default=0.0)
-        group.add_argument("--dual_interval", type=int, default=1)
         group.add_argument("--eps", type=float, default=1e-3)
         group.add_argument("--enforce_constraints", action="store_true", default=False)
         group.add_argument("--detailed_metrics", action="store_true", default=False)
@@ -332,7 +331,11 @@ class OPFDual(pl.LightningModule):
 
         supervised_loss = self.supervised_loss(batch, variables, Sf_pred, St_pred)
         # linearly decay the supervised loss until 0 at self.current_epoch > self.supervised_warmup
-        supervised_weight = max(1.0 - self.current_epoch / self.supervised_warmup, 0.0)
+        supervised_weight = (
+            max(1.0 - self.current_epoch / self.supervised_warmup, 0.0)
+            if self.supervised_warmup > 0
+            else 1.0
+        )
         powerflow_loss = self.powerflow_loss(batch, variables, Sf_pred, St_pred)
 
         loss = (

@@ -4,14 +4,14 @@ import io
 import os
 import tempfile
 
+import lightning.pytorch as pl
 import matplotlib.pyplot as plt
 import pandas as pd
-import pytorch_lightning as pl
 import torch
 import wandb
 import wandb.apis.public
 from IPython.display import HTML
-from pytorch_lightning.callbacks import Callback
+from lightning.pytorch.callbacks import Callback
 
 from opf.modules import OPFDual
 

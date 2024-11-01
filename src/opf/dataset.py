@@ -9,7 +9,7 @@ from typing import Optional
 from zipfile import ZipFile
 
 import h5py
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
 import torch_geometric.transforms as T
 from torch.utils.data import DataLoader, Dataset
