@@ -36,7 +36,7 @@ class OPFDual(pl.LightningModule):
         supervised_weight: float = 0.0,
         powerflow_weight: float = 0.0,
         warmup: int = 0,
-        supervised_decay: float = 0.0,
+        supervised_warmup: int = 0,
         common: bool = True,
         **kwargs,
     ):
@@ -54,7 +54,7 @@ class OPFDual(pl.LightningModule):
             supervised_weight (float, optional): The weight of the supervised loss. Defaults to 0.0.
             powerflow_weight (float, optional): The weight of the powerflow loss. Defaults to 0.0.
             warmup (int, optional): Number of epochs before starting to update the multipliers. Defaults to 0.
-            supervised_decay (float, optional): The decay rate of the supervised loss. Defaults to 0.0.
+            supervised_warmup (int, optional): Number of epochs during which supervised loss is used. Defaults to 0.
             common (bool, optional): Whether to use a common multiplier for all constraints. Defaults to True.
         """
         super().__init__()
@@ -75,7 +75,7 @@ class OPFDual(pl.LightningModule):
         self.supervised_weight = supervised_weight
         self.powerflow_weight = powerflow_weight
         self.warmup = warmup
-        self.supervised_decay = supervised_decay
+        self.supervised_warmup = supervised_warmup
         self.common = common
         # setup the multipliers
         n_bus, n_branch, n_gen = n_nodes
@@ -182,13 +182,20 @@ class OPFDual(pl.LightningModule):
         group.add_argument("--supervised_weight", type=float, default=0.0)
         group.add_argument("--powerflow_weight", type=float, default=0.0)
         group.add_argument("--warmup", type=int, default=0)
-        group.add_argument("--supervised_decay", type=float, default=0.0)
+        group.add_argument("--supervised_warmup", type=int, default=0)
         group.add_argument("--no_common", dest="common", action="store_false")
 
     def forward(
         self,
         input: PowerflowBatch | PowerflowData,
-    ) -> pf.PowerflowVariables:
+    ) -> tuple[pf.PowerflowVariables, torch.Tensor, torch.Tensor]:
+        """
+        Returns:
+            tuple[pf.PowerflowVariables, torch.Tensor, torch.Tensor]:
+              - The powerflow variables,
+              - the predicted forward power,
+              - and the predicted backward power.
+        """
         data, powerflow_parameters, index = input
         if isinstance(data, HeteroData):
             n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
@@ -324,9 +331,8 @@ class OPFDual(pl.LightningModule):
         constraint_loss = self.constraint_loss(constraints)
 
         supervised_loss = self.supervised_loss(batch, variables, Sf_pred, St_pred)
-        supervised_weight = (
-            self.supervised_decay**self.current_epoch * self.supervised_weight
-        )
+        # linearly decay the supervised loss until 0 at self.current_epoch > self.supervised_warmup
+        supervised_weight = max(1.0 - self.current_epoch / self.supervised_warmup, 0.0)
         powerflow_loss = self.powerflow_loss(batch, variables, Sf_pred, St_pred)
 
         loss = (
