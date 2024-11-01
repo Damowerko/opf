@@ -21,6 +21,7 @@ optuna = "^4.0.0"
 psycopg2-binary = "^2.9.7"
 plotly = "^5.16.1"
 h5py = "^3.12.1"
+optuna-integration = {extras = ["pytorch-lightning"], version = "^4.0.0"}
 
 [[tool.poetry.source]]
 name = "PyPI"
