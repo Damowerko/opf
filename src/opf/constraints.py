@@ -43,17 +43,21 @@ def _compute_mask(mask, constraint):
 
 
 def loss_equality(u: torch.Tensor, multiplier: torch.Tensor, augmented_weight=0.0):
-    loss = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(1, 2).mean(dim=0)
+    loss = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(
+        1, 2
+    ).mean() / multiplier.size(1)
     if augmented_weight > 0:
-        loss = loss + augmented_weight * u.pow(2).sum(dim=-1).mean(dim=0)
+        loss = loss + augmented_weight * u.pow(2).mean()
     return loss
 
 
 def loss_inequality(u: torch.Tensor, multiplier: torch.Tensor, augmented_weight=0.0):
-    loss = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(1, 2).mean(dim=0)
+    loss = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(
+        1, 2
+    ).mean() / multiplier.size(1)
     # u <= 0, therefore we have violation when u > 0, loss = max(0, u)^2
     if augmented_weight > 0:
-        loss = loss + augmented_weight * u.relu().pow(2).sum(dim=-1).mean(dim=0)
+        loss = loss + augmented_weight * u.relu().pow(2).mean()
     return loss
 
 

@@ -330,7 +330,7 @@ class OPFDual(pl.LightningModule):
         powerflow_loss = self.powerflow_loss(batch, variables, Sf_pred, St_pred)
 
         loss = (
-            self.cost_weight * cost
+            self.cost_weight * cost / batch.powerflow_parameters.n_gen
             + constraint_loss
             + self.powerflow_weight * powerflow_loss
             + supervised_weight * supervised_loss
