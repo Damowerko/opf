@@ -150,7 +150,7 @@ def train(trainer: Trainer, params):
 
 
 def study(params: dict):
-    study_name = "opf-4"
+    study_name = "opf-5"
     storage = os.environ["OPTUNA_STORAGE"]
     pruner = optuna.pruners.HyperbandPruner(
         min_resource=50, max_resource=1000, reduction_factor=3
@@ -176,8 +176,8 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         lr_common=trial.suggest_float("lr_common", 1e-5, 1.0, log=True),
         weight_decay_dual=trial.suggest_float("weight_decay_dual", 1e-16, 1, log=True),
         dropout=trial.suggest_float("dropout", 0, 1),
-        augmented_weight=10.0,
         supervised_weight=100.0,
+        augmented_weight=10.0,
         powerflow_weight=1.0,
         case_name="case118_ieee",
         n_layers=20,
