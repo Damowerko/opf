@@ -9,9 +9,6 @@ spec:
   ttlSecondsAfterFinished: 3600
   template:
     spec:
-      hostIPC: true
-      securityContext:
-        runAsUser: 1000
       restartPolicy: Never
       volumes:
       - name: opf-data
@@ -36,10 +33,13 @@ spec:
               name: wandb
               key: api_key
         resources:
+          requests:
+            cpu: 8
+            memory: 16Gi
           limits:
-            nvidia.com/gpu-24gb: 1
-            cpu: 32
-            memory: 32Gi
+            cpu: 64
+            memory: 128Gi
+            nvidia.com/gpu: 1
         volumeMounts:
         - mountPath: /home/default/opf/data
           name: opf-data
