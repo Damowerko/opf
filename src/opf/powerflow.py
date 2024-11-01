@@ -339,14 +339,14 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
             min=torch.zeros_like(p.rate_a),
             max=p.rate_a,
         ),
-        # "inequality/voltage_angle_difference": InequalityConstraint(
-        #     isBus=False,
-        #     isAngle=True,
-        #     augmented=True,
-        #     variable=(d.V[..., p.fr_bus] * d.V[..., p.to_bus].conj()).angle(),
-        #     min=p.vad_min,
-        #     max=p.vad_max,
-        # ),
+        "inequality/voltage_angle_difference": InequalityConstraint(
+            isBus=False,
+            isAngle=True,
+            augmented=True,
+            variable=(d.V[..., p.fr_bus] * d.V[..., p.to_bus].conj()).angle(),
+            min=p.vad_min,
+            max=p.vad_max,
+        ),
     }
 
 
