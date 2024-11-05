@@ -198,7 +198,6 @@ def static_collate(input: list[PowerflowData]) -> PowerflowBatch:
     batch: Batch = Batch.from_data_list(data_list)  # type: ignore
     # let's assume that all samples have the same powerflow parameters
     powerflow_parameters = powerflow_parameters_list[0]
-    assert all(powerflow_parameters == p for p in powerflow_parameters_list)
     return PowerflowBatch(batch, powerflow_parameters, torch.cat(indices))
 
 
@@ -281,10 +280,6 @@ class StaticHeteroDataset(Dataset[PowerflowData]):
         self.additional_features = additional_features
 
         self.graph = graph
-        # homogeneous_graph = graph.to_homogeneous()
-        # homogeneous_graph.edge_index = homogeneous_graph.edge_index.to(torch.int64)  # type: ignore
-        # homogeneous_graph = T.GCNNorm(False)(homogeneous_graph)
-        # self.graph = T.ToSparseTensor()(homogeneous_graph.to_heterogeneous())
         self.powerflow_parameters = copy.deepcopy(powerflow_parameters)
 
     def __len__(self) -> int:
@@ -496,6 +491,7 @@ class CaseDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             collate_fn=self.train_dataset.collate_fn,
+            persistent_workers=True,
         )
 
     def val_dataloader(self):
@@ -511,6 +507,7 @@ class CaseDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             collate_fn=self.val_dataset.collate_fn,
+            persistent_workers=True,
         )
 
     def test_dataloader(self):
