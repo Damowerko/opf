@@ -149,9 +149,9 @@ class OPFDual(pl.LightningModule):
             multiplier_dict[name] = data.view((idx.shape[0],) + shape)
         return multiplier_dict
 
-    def project_multipliers(self):
+    def project_multipliers_table(self):
         """
-        Project the inequality multipliers to be non-negative.
+        Project the inequality multipliers to be non-negative. Only the (sample-wise) table multipliers are projected.
         """
         # use .data to avoid autograd tracking since we are modifying the data in place
         # no need for autograd since we are not backpropagating through this operation
@@ -160,7 +160,13 @@ class OPFDual(pl.LightningModule):
                 :, self.multiplier_inequality_mask
             ].relu_()
         )
-        # also project the common multiplier
+
+    def project_multipliers_common(self):
+        """
+        Project the inequality multipliers to be non-negative. Only the common multipliers are projected.
+        """
+        # use .data to avoid autograd tracking since we are modifying the data in place
+        # no need for autograd since we are not backpropagating through this operation
         self.multipliers_common.data[self.multiplier_inequality_mask] = (
             self.multipliers_common.data[self.multiplier_inequality_mask].relu_()
         )
@@ -198,9 +204,7 @@ class OPFDual(pl.LightningModule):
         data, powerflow_parameters, index = input
         if isinstance(data, HeteroData):
             n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
-            homo = data.to_homogeneous()
-            homo.y = self.model(homo.x, homo.edge_index, homo.node_type, homo.edge_type)
-            y_dict = homo.to_heterogeneous().y_dict
+            y_dict = self.model(data.x_dict, data.edge_index_dict)
             # reshape data to size (batch_size, n_nodes_of_type, n_features)
             load = data["bus"].x[:, :2].view(n_batch, powerflow_parameters.n_bus, 2)
             bus = y_dict["bus"].view(n_batch, powerflow_parameters.n_bus, 4)[..., :2]
@@ -321,8 +325,18 @@ class OPFDual(pl.LightningModule):
         cost = self.cost(variables, parameters)
         return variables, constraints, cost
 
+    def on_train_epoch_start(self):
+        _, dual_optimizer, _ = self.optimizers()  # type: ignore
+        dual_optimizer.zero_grad()
+
+    def on_train_epoch_end(self):
+        _, dual_optimizer, _ = self.optimizers()  # type: ignore
+        if self.current_epoch >= self.warmup:
+            dual_optimizer.step()
+            self.project_multipliers_table()
+
     def training_step(self, batch: PowerflowBatch):
-        primal_optimizer, dual_optimizer = self.optimizers()  # type: ignore
+        primal_optimizer, _, common_optimizer = self.optimizers()  # type: ignore
         variables, Sf_pred, St_pred = self(batch)
         _, constraints, cost = self._step_helper(
             variables, batch.powerflow_parameters, self.get_multipliers(batch.index)
@@ -346,14 +360,12 @@ class OPFDual(pl.LightningModule):
         )
 
         primal_optimizer.zero_grad()
-        dual_optimizer.zero_grad()
+        common_optimizer.zero_grad()
         loss.backward()
         primal_optimizer.step()
         if self.current_epoch >= self.warmup:
-            dual_optimizer.step()
-
-        # enforce inequality multipliers to be non-negative
-        self.project_multipliers()
+            common_optimizer.step()
+            self.project_multipliers_common()
 
         self.log(
             "train/loss",
@@ -622,22 +634,22 @@ class OPFDual(pl.LightningModule):
             weight_decay=self.weight_decay,
             fused=True,
         )
-        dual_optimizer = torch.optim.SGD(  # type: ignore
-            [
-                {
-                    "params": self.multipliers_table.parameters(),
-                    "lr": self.lr_dual,
-                },
-                {
-                    "params": [self.multipliers_common],
-                    "lr": self.lr_common,
-                },
-            ],
+        dual_optimizer = torch.optim.AdamW(  # type: ignore
+            self.multipliers_table.parameters(),
+            lr=self.lr_dual,
             weight_decay=self.weight_decay_dual,
             maximize=True,
             fused=True,
         )
-        optimizers = [primal_optimizer, dual_optimizer]
+        common_optimizer = torch.optim.AdamW(  # type: ignore
+            [self.multipliers_common],
+            lr=self.lr_common,
+            weight_decay=self.weight_decay_dual,
+            fused=True,
+            maximize=True,
+        )
+
+        optimizers = [primal_optimizer, dual_optimizer, common_optimizer]
         return optimizers
 
     @staticmethod

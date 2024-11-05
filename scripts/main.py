@@ -12,7 +12,7 @@ from lightning.pytorch.loggers.wandb import WandbLogger
 from wandb.wandb_run import Run
 
 from opf.dataset import CaseDataModule
-from opf.hetero import HeteroGCN
+from opf.hetero import HeteroGCN, HeteroSage
 from opf.modules import OPFDual
 
 
@@ -38,7 +38,7 @@ def main():
     # data arguments
     parser.add_argument("--case_name", type=str, default="case179_goc__api")
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--fast_dev_run", action="store_true")
+    parser.add_argument("--fast_dev_run", type=int, default=0)
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--homo", action="store_true", default=False)
 
@@ -50,7 +50,7 @@ def main():
     group.add_argument("--gradient_clip_val", type=float, default=0)
 
     # the gnn being used
-    HeteroGCN.add_args(parser)
+    HeteroSage.add_args(parser)
     OPFDual.add_args(parser)
 
     params = parser.parse_args()
@@ -121,14 +121,18 @@ def _train(trainer: Trainer, params):
         raise NotImplementedError("Homogenous model not currently implemented.")
     else:
         dm.setup()
-        gcn = HeteroGCN(
+        gcn = HeteroSage(
             dm.metadata(),
             in_channels=max(dm.feature_dims.values()),
             out_channels=4,
             **params,
         )
-        if params["compile"]:
-            gcn = typing.cast(HeteroGCN, torch.compile(gcn.cuda()))
+        gcn = typing.cast(
+            HeteroSage,
+            torch.compile(
+                gcn.cuda(), dynamic=False, fullgraph=True, disable=not params["compile"]
+            ),
+        )
 
     assert dm.powerflow_parameters is not None
     n_nodes = (

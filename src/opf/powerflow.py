@@ -7,7 +7,7 @@ from torch_geometric.data import HeteroData
 
 
 @dataclass
-class PowerflowVariables:
+class PowerflowVariables(torch.nn.Module):
     """
     V: Bus voltage
     S: But new power injected, satisfying S = y_shunt * V**2 + Cf.T Sf + Ct.T St
@@ -25,6 +25,19 @@ class PowerflowVariables:
     Sg_bus: torch.Tensor
     Sf: torch.Tensor
     St: torch.Tensor
+
+    def __post_init__(self):
+        super().__init__()
+
+    def _apply(self, fn):
+        super()._apply(fn)
+        self.V = fn(self.V)
+        self.S = fn(self.S)
+        self.Sd = fn(self.Sd)
+        self.Sg = fn(self.Sg)
+        self.Sg_bus = fn(self.Sg_bus)
+        self.Sf = fn(self.Sf)
+        self.St = fn(self.St)
 
     def __getitem__(self, idx: int):
         return PowerflowVariables(
@@ -339,14 +352,14 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
             min=torch.zeros_like(p.rate_a),
             max=p.rate_a,
         ),
-        "inequality/voltage_angle_difference": InequalityConstraint(
-            isBus=False,
-            isAngle=True,
-            augmented=True,
-            variable=(d.V[..., p.fr_bus] * d.V[..., p.to_bus].conj()).angle(),
-            min=p.vad_min,
-            max=p.vad_max,
-        ),
+        # "inequality/voltage_angle_difference": InequalityConstraint(
+        #     isBus=False,
+        #     isAngle=True,
+        #     augmented=True,
+        #     variable=(d.V[..., p.fr_bus] * d.V[..., p.to_bus].conj()).angle(),
+        #     min=p.vad_min,
+        #     max=p.vad_max,
+        # ),
     }
 
 
