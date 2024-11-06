@@ -15,6 +15,7 @@ from torch_geometric.data import Data, HeteroData
 import opf.powerflow as pf
 from opf.constraints import equality, inequality
 from opf.dataset import PowerflowBatch, PowerflowData
+from opf.hetero import HeteroGCN
 
 
 class OPFDual(pl.LightningModule):
@@ -204,7 +205,15 @@ class OPFDual(pl.LightningModule):
         data, powerflow_parameters, index = input
         if isinstance(data, HeteroData):
             n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
-            y_dict = self.model(data.x_dict, data.edge_index_dict)
+            if isinstance(self.model, HeteroGCN):
+                # hetero GCN expect hetero graph in homogeneous form
+                homo = data.to_homogeneous()
+                homo.y = self.model(
+                    homo.x, homo.edge_index, homo.node_type, homo.edge_type
+                )
+                y_dict = homo.to_heterogeneous().y_dict
+            else:
+                y_dict = self.model(data.x_dict, data.edge_index_dict)
             # reshape data to size (batch_size, n_nodes_of_type, n_features)
             load = data["bus"].x[:, :2].view(n_batch, powerflow_parameters.n_bus, 2)
             bus = y_dict["bus"].view(n_batch, powerflow_parameters.n_bus, 4)[..., :2]
