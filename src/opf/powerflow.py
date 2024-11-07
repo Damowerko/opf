@@ -38,6 +38,7 @@ class PowerflowVariables(torch.nn.Module):
         self.Sg_bus = fn(self.Sg_bus)
         self.Sf = fn(self.Sf)
         self.St = fn(self.St)
+        return self
 
     def __getitem__(self, idx: int):
         return PowerflowVariables(
