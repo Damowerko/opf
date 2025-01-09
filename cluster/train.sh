@@ -28,6 +28,8 @@ spec:
         imagePullPolicy: Always
         command: ["bash", "-c", "python -u scripts/main.py train $args && sleep 1"]
         env:
+        - name: WANDB_ENTITY
+          value: damowerko-academic
         - name: WANDB_USERNAME
           value: damowerko
         - name: WANDB_PROJECT

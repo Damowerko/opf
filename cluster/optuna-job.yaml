@@ -4,7 +4,7 @@ metadata:
   name: optuna-job
   namespace: owerko
 spec:
-  completions: 1000
+  completions: 59
   parallelism: 8
   ttlSecondsAfterFinished: 3600
   template:
@@ -23,6 +23,8 @@ spec:
         env:
         - name: OPTUNA_STORAGE
           value: postgresql://optuna:optuna@optuna-db.owerko.svc.cluster.local:5432/optuna
+        - name: WANDB_ENTITY
+          value: damowerko-academic
         - name: WANDB_USERNAME
           value: damowerko
         - name: WANDB_PROJECT
