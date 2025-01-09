@@ -25,6 +25,9 @@ s = ArgParseSettings()
     help = "Width of the uniform distribution to sample the load."
     arg_type = Float64
     default = 1.1
+    "--simple"
+    help = "Simplify the network model."
+    action = :store_true
 end
 args = parse_args(ARGS, s)
 
@@ -122,6 +125,57 @@ function generate_samples(network_data, n_samples, min_load=0.9, max_load=1.1)::
     count = count_atomic[]
     println("Generated $n_samples feasible samples using $count samples. Feasibility ratio: $(n_samples / count).")
     return samples
+end
+
+"""
+Simplify network by performing the following.
+- Ensure that there is only one generator per bus. Combine multiple generators by summing their output bounds and averaging their costs.
+- no dclines, switches, inactive components
+- no storage,
+- components numbered from 1 to N
+- quadratic cost model
+- single connected component
+- only one reference bus
+- branches have explicity thermal limits
+- no shunts
+- transformers have zero phase-shift
+"""
+function simplify_network(network_data::Dict{String,Any})::Dict{String,Any}
+    network_data = PowerModels.make_basic_network(network_data)
+    # combine generators so that there is only one generator per bus
+    gen_buses = Dict{Int,Vector{Dict{String,Any}}}()
+    for (k, v) in network_data["gen"]
+        if haskey(gen_buses, v["gen_bus"])
+            push!(gen_buses[v["gen_bus"]], v)
+        else
+            gen_buses[v["gen_bus"]] = [v]
+        end
+    end
+    network_data["gen"] = Dict{String,Any}()
+    i = 1
+    for (k, gens) in gen_buses
+        key = "$(i)"
+        network_data["gen"]["$(i)"] = gens[1]
+        network_data["gen"]["$(i)"]["index"] = i
+        network_data["gen"]["$(i)"]["pmin"] = sum([gen["pmin"] for gen in gens])
+        network_data["gen"]["$(i)"]["pmax"] = sum([gen["pmax"] for gen in gens])
+        network_data["gen"]["$(i)"]["qmin"] = sum([gen["qmin"] for gen in gens])
+        network_data["gen"]["$(i)"]["qmax"] = sum([gen["qmax"] for gen in gens])
+        # assert model is quadratic
+        if network_data["gen"]["$(i)"]["model"] != 2 
+             throw(ArgumentError("Only the quadratic cost model is supported."))
+        end
+        # compute average of the cost functions
+        ncost = maximum([gen["ncost"] for gen in gens])
+        cost = zeros(ncost)
+        for j = 1:ncost
+            cost[j] = sum([length(gen["cost"]) >= j ? gen["cost"][j] : 0.0 for gen in gens]) / length(gens)
+        end
+        network_data["gen"]["$(i)"]["ncost"] = ncost
+        network_data["gen"]["$(i)"]["cost"] = cost
+        i += 1
+    end
+    return network_data
 end
 
 """
@@ -246,6 +300,7 @@ function main()
     n_samples = args["n_samples"]
     min_load = args["min_load"]
     max_load = args["max_load"]
+    simple = args["simple"]
 
     if max_load <= min_load
         error("max_load must be greater than min_load")
@@ -257,17 +312,22 @@ function main()
     network_data = PowerModels.parse_file(casefile)
     # reindex bus ids to be contiguous from 1 to N
     network_data = reindex(network_data)
+    # simplify network if requested
+    if simple
+        network_data = simplify_network(network_data)
+    end
 
     check_assumptions!(network_data)
 
+    casename_suffix = simple ? "_simple" : ""
     # save network data in JSON format
-    open(joinpath(out_dir, casename * ".json"), "w") do f
+    open(joinpath(out_dir, casename * casename_suffix * ".json"), "w") do f
         JSON.print(f, network_data, 4)
     end
 
     data = generate_samples_numpy(network_data, n_samples, min_load, max_load)
     # write to h5 file
-    h5file = joinpath(out_dir, casename * ".h5")
+    h5file = joinpath(out_dir, casename * casename_suffix * ".h5")
     h5open(h5file, "w") do file
         for (k, v) in data
             write(file, k, v)
