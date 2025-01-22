@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import Callable, Dict
+from typing import Callable, Dict, NamedTuple
 
 import numpy as np
 import torch
@@ -134,7 +134,25 @@ class PowerflowParameters(torch.nn.Module):
         self.is_ref = fn(self.is_ref)
         return self
 
-    def bus_parameters(self) -> torch.Tensor:
+
+class BusParameters(NamedTuple):
+    Ybus_sh: torch.Tensor
+    base_kv: torch.Tensor
+    vm_min: torch.Tensor
+    vm_max: torch.Tensor
+    is_ref: torch.Tensor
+
+    @staticmethod
+    def from_pf_parameters(p: PowerflowParameters) -> "BusParameters":
+        return BusParameters(
+            p.Ybus_sh,
+            p.base_kv,
+            p.vm_min,
+            p.vm_max,
+            p.is_ref,
+        )
+
+    def to_tensor(self) -> torch.Tensor:
         return torch.stack(
             [
                 self.Ybus_sh.real,
@@ -147,13 +165,39 @@ class PowerflowParameters(torch.nn.Module):
             dim=1,
         )
 
-    def branch_parameters(self) -> torch.Tensor:
-        """
-        Return a list of graph edge signals for the forward direction.
+    @staticmethod
+    def from_tensor(x: torch.Tensor) -> "BusParameters":
+        return BusParameters(
+            torch.view_as_complex(x[:, 0:2].contiguous()),
+            x[:, 2],
+            x[:, 3],
+            x[:, 4],
+            x[:, 5],
+        )
 
-        Returns:
-            (n_branch, 12) tensor.
-        """
+
+class BranchParameters(NamedTuple):
+    Y: torch.Tensor
+    Yc_fr: torch.Tensor
+    Yc_to: torch.Tensor
+    ratio: torch.Tensor
+    vad_min: torch.Tensor
+    vad_max: torch.Tensor
+    rate_a: torch.Tensor
+
+    @staticmethod
+    def from_pf_parameters(p: PowerflowParameters) -> "BranchParameters":
+        return BranchParameters(
+            p.Y,
+            p.Yc_fr,
+            p.Yc_to,
+            p.ratio,
+            p.vad_min,
+            p.vad_max,
+            p.rate_a,
+        )
+
+    def to_tensor(self) -> torch.Tensor:
         return torch.stack(
             [
                 self.Y.real,
@@ -171,11 +215,35 @@ class PowerflowParameters(torch.nn.Module):
             dim=1,
         )
 
-    def gen_parameters(self) -> torch.Tensor:
+    @staticmethod
+    def from_tensor(x: torch.Tensor) -> "BranchParameters":
+        return BranchParameters(
+            torch.view_as_complex(x[:, 0:2].contiguous()),
+            torch.view_as_complex(x[:, 2:4].contiguous()),
+            torch.view_as_complex(x[:, 4:6].contiguous()),
+            torch.view_as_complex(x[:, 6:8].contiguous()),
+            x[:, 8],
+            x[:, 9],
+            x[:, 10],
+        )
+
+
+class GenParameters(NamedTuple):
+    Sg_min: torch.Tensor
+    Sg_max: torch.Tensor
+    cost_coeff: torch.Tensor
+
+    @staticmethod
+    def from_pf_parameters(p: PowerflowParameters) -> "GenParameters":
+        return GenParameters(
+            p.Sg_min,
+            p.Sg_max,
+            p.cost_coeff,
+        )
+
+    def to_tensor(self) -> torch.Tensor:
         return torch.stack(
             [
-                self.vm_min[self.gen_bus_ids],
-                self.vm_max[self.gen_bus_ids],
                 self.Sg_min.real,
                 self.Sg_min.imag,
                 self.Sg_max.real,
@@ -185,50 +253,13 @@ class PowerflowParameters(torch.nn.Module):
             dim=1,
         )
 
-    # @staticmethod
-    # def from_graph(graph: HeteroData) -> PowerflowParameters:
-
-    #     bus = graph["bus"].parameters
-    #     Ybus_sh = torch.view_as_complex(bus[:, 0:2])
-    #     base_kv = bus[:, 2]
-    #     vm_min = bus[:, 3]
-    #     vm_max = bus[:, 4]
-    #     is_ref = bus[:, 5]
-    #     # load bus ids
-    #     load_bus_idx, load_index = graph["bus", "tie", "load"].edge_index
-
-    #     branch = graph["branch"].parameters
-    #     Y = torch.view_as_complex(branch[:, 0:2])
-    #     Yc_fr = torch.view_as_complex(branch[:, 2:4])
-    #     Yc_to = torch.view_as_complex(branch[:, 4:6])
-    #     ratio = torch.view_as_complex(branch[:, 6:8])
-    #     vad_min = branch[:, 8]
-    #     vad_max = branch[:, 9]
-    #     rate_a = branch[:, 10]
-    #     # from bus indices, make sure they are sorted by branch index
-    #     fr_bus, branch_index = graph["bus", "from", "branch"].edge_index
-    #     fr_bus = fr_bus[branch_index.argsort()]
-    #     # to bus indices, make sure they are sorted by branch index
-    #     to_bus, branch_index = graph["bus", "to", "branch"].edge_index
-    #     to_bus = to_bus[branch_index.argsort()]
-
-    #     gen = graph["gen"].parameters
-    #     Sg_min = torch.view_as_complex(gen[:, 2:4])
-    #     Sg_max = torch.view_as_complex(gen[:, 4:6])
-    #     cost_coeff = gen[:, 6:].T
-
-    #     return PowerflowParameters(
-    #         bus.shape[0],
-    #         branch.shape[0],
-    #         gen.shape[0],
-    #         Y,
-    #         Yc_fr,
-    #         Yc_to,
-    #         ratio,
-    #         Ybus_sh,
-    #         cost_coeff,
-    #         fr_bus,
-    #         to_bus,
+    @staticmethod
+    def from_tensor(x: torch.Tensor) -> "GenParameters":
+        return GenParameters(
+            torch.view_as_complex(x[:, 0:2].contiguous()),
+            torch.view_as_complex(x[:, 2:4].contiguous()),
+            x[:, 4:].T,
+        )
 
 
 @dataclass(eq=False, repr=False)
@@ -288,7 +319,18 @@ def power_from_solution(load: dict, solution: dict, parameters: PowerflowParamet
     return V, Sg, Sd
 
 
-def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
+def build_constraints(
+    d: PowerflowVariables,
+    graph: HeteroData,
+) -> Dict[str, Constraint]:
+    bus_params = BusParameters.from_tensor(graph["bus"]["params"])
+    branch_params = BranchParameters.from_tensor(graph["branch"]["params"])
+    gen_params = GenParameters.from_tensor(graph["gen"]["params"])
+
+    # get indices from graph edges
+    fr_bus = graph["bus", "from", "branch"].edge_index[0]
+    to_bus = graph["bus", "to", "branch"].edge_index[0]
+
     return {
         "equality/bus_active_power": EqualityConstraint(
             isBus=True,
@@ -310,57 +352,57 @@ def build_constraints(d: PowerflowVariables, p: PowerflowParameters):
             isAngle=True,
             augmented=True,
             value=d.V.angle(),
-            target=torch.zeros(p.n_bus, device=d.V.device),
-            mask=p.is_ref,
+            target=torch.zeros_like(d.V.angle(), device=d.V.device),
+            mask=bus_params.is_ref > 0,
         ),
         "inequality/voltage_magnitude": InequalityConstraint(
             isBus=True,
             isAngle=False,
             augmented=True,
             variable=d.V.abs(),
-            min=p.vm_min,
-            max=p.vm_max,
+            min=bus_params.vm_min,
+            max=bus_params.vm_max,
         ),
         "inequality/active_power": InequalityConstraint(
             isBus=True,
             isAngle=False,
             augmented=True,
             variable=d.Sg.real,
-            min=p.Sg_min.real,
-            max=p.Sg_max.real,
+            min=gen_params.Sg_min.real,
+            max=gen_params.Sg_max.real,
         ),
         "inequality/reactive_power": InequalityConstraint(
             isBus=True,
             isAngle=False,
             augmented=True,
             variable=d.Sg.imag,
-            min=p.Sg_min.imag,
-            max=p.Sg_max.imag,
+            min=gen_params.Sg_min.imag,
+            max=gen_params.Sg_max.imag,
         ),
         "inequality/forward_rate": InequalityConstraint(
             isBus=False,
             isAngle=False,
             augmented=True,
             variable=d.Sf.abs(),
-            min=torch.zeros_like(p.rate_a),
-            max=p.rate_a,
+            min=torch.zeros_like(branch_params.rate_a),
+            max=branch_params.rate_a,
         ),
         "inequality/backward_rate": InequalityConstraint(
             isBus=False,
             isAngle=False,
             augmented=True,
             variable=d.St.abs(),
-            min=torch.zeros_like(p.rate_a),
-            max=p.rate_a,
+            min=torch.zeros_like(branch_params.rate_a),
+            max=branch_params.rate_a,
         ),
-        # "inequality/voltage_angle_difference": InequalityConstraint(
-        #     isBus=False,
-        #     isAngle=True,
-        #     augmented=True,
-        #     variable=(d.V[..., p.fr_bus] * d.V[..., p.to_bus].conj()).angle(),
-        #     min=p.vad_min,
-        #     max=p.vad_max,
-        # ),
+        "inequality/voltage_angle_difference": InequalityConstraint(
+            isBus=False,
+            isAngle=True,
+            augmented=True,
+            variable=(d.V[..., fr_bus] * d.V[..., to_bus].conj()).angle(),
+            min=branch_params.vad_min,
+            max=branch_params.vad_max,
+        ),
     }
 
 
@@ -479,6 +521,37 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
         raise ValueError("Precision must be 32 or 64.")
 
 
+def powerflow_from_graph(
+    V: torch.Tensor, Sd: torch.Tensor, Sg: torch.Tensor, graph: HeteroData
+):
+    """
+
+    Args:
+        V: Bus voltage
+        Sd: Load at each bus (n_bus, 2), from data
+        Sg: Generated power at each generator (n_gen, 2)
+        graph: HeteroData with parameters for the powerflow problem.
+    """
+    bus_parameters = BusParameters.from_tensor(graph["bus"]["params"])
+    branch_parameters = BranchParameters.from_tensor(graph["branch"]["params"])
+    fr_bus = graph["bus", "from", "branch"].edge_index[0]
+    to_bus = graph["bus", "to", "branch"].edge_index[0]
+    gen_bus_ids = graph["bus", "tie", "gen"].edge_index[0]
+    return _powerflow(
+        V,
+        Sd,
+        Sg,
+        bus_parameters.Ybus_sh,
+        branch_parameters.Y,
+        branch_parameters.Yc_fr,
+        branch_parameters.Yc_to,
+        branch_parameters.ratio,
+        fr_bus,
+        to_bus,
+        gen_bus_ids,
+    )
+
+
 def powerflow(
     V: torch.Tensor,
     Sd: torch.Tensor,
@@ -489,24 +562,56 @@ def powerflow(
     Given the bus voltage and load, find all the other problem variables.
     The inputs and outputs should both be in the per unit system.
 
+    Args:
+        V: Bus voltage
+        Sd: Load at each bus (n_bus, 2), from data
+        Sg: Generated power at each generator (n_gen, 2)
+        params: PowerflowParameters object.
+
     Reference:
         https://lanl-ansi.github.io/PowerModels.jl/stable/math-model/
         https://matpower.org/docs/MATPOWER-manual.pdf
     """
-    Vf = V[..., params.fr_bus]
-    Vt = V[..., params.to_bus]
+    return _powerflow(
+        V,
+        Sd,
+        Sg,
+        params.Ybus_sh,
+        params.Y,
+        params.Yc_fr,
+        params.Yc_to,
+        params.ratio,
+        params.fr_bus,
+        params.to_bus,
+        params.gen_bus_ids,
+    )
+
+
+def _powerflow(
+    V: torch.Tensor,
+    Sd: torch.Tensor,
+    Sg: torch.Tensor,
+    Ybus_sh: torch.Tensor,
+    Y: torch.Tensor,
+    Yc_fr: torch.Tensor,
+    Yc_to: torch.Tensor,
+    ratio: torch.Tensor,
+    fr_bus: torch.Tensor,
+    to_bus: torch.Tensor,
+    gen_bus_ids: torch.Tensor,
+):
+    Vf = V[..., fr_bus]
+    Vt = V[..., to_bus]
     # voltage after transformer
-    Vf_trafo = Vf / params.ratio
-    Sf = Vf_trafo * (params.Y + params.Yc_fr).conj() * Vf_trafo.conj() - (
-        params.Y.conj() * Vf_trafo * Vt.conj()
+    Vf_trafo = Vf / ratio
+    Sf = Vf_trafo * (Y + Yc_fr).conj() * Vf_trafo.conj() - (
+        Y.conj() * Vf_trafo * Vt.conj()
     )
-    St = Vt * (params.Y + params.Yc_to).conj() * Vt.conj() - (
-        params.Y.conj() * Vf_trafo.conj() * Vt
-    )
-    S_sh = V * params.Ybus_sh.conj() * V.conj()
+    St = Vt * (Y + Yc_to).conj() * Vt.conj() - (Y.conj() * Vf_trafo.conj() * Vt)
+    S_sh = V * Ybus_sh.conj() * V.conj()
     S_branch = torch.zeros_like(Sd)
-    S_branch = S_branch.index_add(1, params.fr_bus, Sf)
-    S_branch = S_branch.index_add(1, params.to_bus, St)
+    S_branch = S_branch.index_add(-1, fr_bus, Sf)
+    S_branch = S_branch.index_add(-1, to_bus, St)
     S = S_branch + S_sh
-    Sg_bus = torch.zeros_like(Sd).index_add_(1, params.gen_bus_ids, Sg)
+    Sg_bus = torch.zeros_like(Sd).index_add_(-1, gen_bus_ids, Sg)
     return PowerflowVariables(V, S, Sd, Sg, Sg_bus, Sf, St)

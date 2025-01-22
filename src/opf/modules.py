@@ -1,3 +1,4 @@
+import abc
 import argparse
 import subprocess
 from collections import OrderedDict
@@ -8,14 +9,74 @@ from typing import Dict
 import lightning.pytorch as pl
 import numpy as np
 import torch
-import torch.nn.functional as F
-from torch.nn import Parameter
+import torch.nn as nn
 from torch_geometric.data import Data, HeteroData
 
 import opf.powerflow as pf
 from opf.constraints import equality, inequality
 from opf.dataset import PowerflowBatch, PowerflowData
 from opf.hetero import HeteroGCN
+
+
+class DualModel(nn.Module, abc.ABC):
+    @abc.abstractmethod
+    def init_multipliers(self, n_bus, n_gen, n_branch, multiplier_table_length: int):
+        pass
+
+    @abc.abstractmethod
+    def get_multipliers(self, data: PowerflowBatch) -> dict[str, torch.Tensor]:
+        pass
+
+
+class DualTable(DualModel):
+    def __init__(
+        self, n_bus: int, n_gen: int, n_branch: int, multiplier_table_length: int
+    ):
+        with torch.no_grad():
+            self.multiplier_metadata = OrderedDict(
+                [
+                    ("equality/bus_active_power", torch.Size([n_bus])),
+                    ("equality/bus_reactive_power", torch.Size([n_bus])),
+                    ("equality/bus_reference", torch.Size([n_bus])),
+                    ("inequality/voltage_magnitude", torch.Size([n_bus, 2])),
+                    ("inequality/active_power", torch.Size([n_gen, 2])),
+                    ("inequality/reactive_power", torch.Size([n_gen, 2])),
+                    ("inequality/forward_rate", torch.Size([n_branch, 2])),
+                    ("inequality/backward_rate", torch.Size([n_branch, 2])),
+                    ("inequality/voltage_angle_difference", torch.Size([n_branch, 2])),
+                ]
+            )
+            self.multiplier_numel = torch.tensor(
+                [x.numel() for _, x in self.multiplier_metadata.items()]
+            )
+            self.multiplier_offsets = torch.cumsum(self.multiplier_numel, 0)
+            self.n_multipliers = int(self.multiplier_offsets[-1].item())
+
+            multiplier_inequality_mask_list = []
+            for name, numel in zip(
+                self.multiplier_metadata.keys(), self.multiplier_numel
+            ):
+                if "inequality" in name:
+                    multiplier_inequality_mask_list.append(
+                        torch.ones(int(numel.item()), dtype=torch.bool)
+                    )
+                else:
+                    multiplier_inequality_mask_list.append(
+                        torch.zeros(int(numel.item()), dtype=torch.bool)
+                    )
+            self.register_buffer(
+                "multiplier_inequality_mask",
+                torch.cat(multiplier_inequality_mask_list),
+                persistent=False,
+            )
+        self.multipliers_table = torch.nn.Embedding(
+            num_embeddings=multiplier_table_length,
+            embedding_dim=self.n_multipliers,
+        )
+        self.multipliers_table.weight.data.zero_()
+        self.multipliers_common = nn.Parameter(
+            torch.zeros(self.n_multipliers, device=self.device)
+        )
 
 
 class OPFDual(pl.LightningModule):
@@ -120,13 +181,12 @@ class OPFDual(pl.LightningModule):
                 torch.cat(multiplier_inequality_mask_list),
                 persistent=False,
             )
-
         self.multipliers_table = torch.nn.Embedding(
             num_embeddings=multiplier_table_length,
             embedding_dim=self.n_multipliers,
         )
         self.multipliers_table.weight.data.zero_()
-        self.multipliers_common = Parameter(
+        self.multipliers_common = nn.Parameter(
             torch.zeros(self.n_multipliers, device=self.device)
         )
 
@@ -147,7 +207,7 @@ class OPFDual(pl.LightningModule):
             torch.tensor_split(multipliers, self.multiplier_offsets, dim=1),
             self.multiplier_metadata.items(),
         ):
-            multiplier_dict[name] = data.view((idx.shape[0],) + shape)
+            multiplier_dict[name] = data.reshape((idx.shape[0] * shape[0],) + shape[1:])
         return multiplier_dict
 
     def project_multipliers_table(self):
@@ -202,9 +262,8 @@ class OPFDual(pl.LightningModule):
               - the predicted forward power,
               - and the predicted backward power.
         """
-        data, powerflow_parameters, index = input
+        data, index = input
         if isinstance(data, HeteroData):
-            n_batch = data["bus"].x.shape[0] // powerflow_parameters.n_bus
             if isinstance(self.model, HeteroGCN):
                 # hetero GCN expect hetero graph in homogeneous form
                 homo = data.to_homogeneous()
@@ -215,10 +274,13 @@ class OPFDual(pl.LightningModule):
             else:
                 y_dict = self.model(data.x_dict, data.edge_index_dict)
             # reshape data to size (batch_size, n_nodes_of_type, n_features)
-            load = data["bus"].x[:, :2].view(n_batch, powerflow_parameters.n_bus, 2)
-            bus = y_dict["bus"].view(n_batch, powerflow_parameters.n_bus, 4)[..., :2]
-            gen = y_dict["gen"].view(n_batch, powerflow_parameters.n_gen, 4)[..., :2]
-            branch = y_dict["branch"].view(n_batch, powerflow_parameters.n_branch, 4)
+            load = data["bus"].load
+            bus = y_dict["bus"][..., :2]
+            gen = y_dict["gen"][..., :2]
+            branch = y_dict["branch"]
+
+            bus_params = pf.BusParameters.from_tensor(data["bus"].params)
+            gen_params = pf.GenParameters.from_tensor(data["gen"].params)
         elif isinstance(data, Data):
             raise NotImplementedError("Removed support for homogenous data for now.")
         else:
@@ -230,11 +292,16 @@ class OPFDual(pl.LightningModule):
         Sd = self.parse_load(load)
         Sf_pred, St_pred = self.parse_branch(branch)
         if self._enforce_constraints:
-            V, Sg = self.enforce_constraints(V, Sg, powerflow_parameters)
-        return pf.powerflow(V, Sd, Sg, powerflow_parameters), Sf_pred, St_pred
+            V, Sg = self.enforce_constraints(V, Sg, bus_params, gen_params)
+        return pf.powerflow_from_graph(V, Sd, Sg, data), Sf_pred, St_pred
 
     def enforce_constraints(
-        self, V, Sg, params: pf.PowerflowParameters, strategy="sigmoid"
+        self,
+        V,
+        Sg,
+        bus_params: pf.BusParameters,
+        gen_params: pf.GenParameters,
+        strategy="sigmoid",
     ):
         """
         Ensure that voltage and power generation are within the specified bounds.
@@ -242,7 +309,8 @@ class OPFDual(pl.LightningModule):
         Args:
             V: The bus voltage. Magnitude must be between params.vm_min and params.vm_max.
             Sg: The generator power. Real and reactive power must be between params.Sg_min and params.Sg_max.
-            params: The powerflow parameters.
+            bus_params: The bus parameters.
+            gen_params: The generator parameters.
             strategy: The strategy to use for enforcing the constraints. Defaults to "sigmoid".
                 "sigmoid" uses a sigmoid function to enforce the constraints.
                 "clamp" uses torch.clamp to enforce the constraints.
@@ -253,11 +321,11 @@ class OPFDual(pl.LightningModule):
             fn = lambda x, lb, ub: torch.clamp(x, lb, ub)
         else:
             raise ValueError(f"Unknown strategy: {strategy}")
-        vm = fn(V.abs(), params.vm_min, params.vm_max)
+        vm = fn(V.abs(), bus_params.vm_min, bus_params.vm_max)
         V = torch.polar(vm, V.angle())
         Sg = torch.complex(
-            fn(Sg.real, params.Sg_min.real, params.Sg_max.real),
-            fn(Sg.imag, params.Sg_min.imag, params.Sg_max.imag),
+            fn(Sg.real, gen_params.Sg_min.real, gen_params.Sg_max.real),
+            fn(Sg.imag, gen_params.Sg_min.imag, gen_params.Sg_max.imag),
         )
         return V, Sg
 
@@ -271,17 +339,12 @@ class OPFDual(pl.LightningModule):
         """
         Calculate the MSE between the predicted and target bus voltage and generator power.
         """
-        data, powerflow_parameters, _ = batch
+        data, _ = batch
         # parse auxiliary data from the batch
-        V_target = data["bus"]["V"].view(-1, powerflow_parameters.n_bus, 2)
-        Sg_target = data["gen"]["Sg"].view(-1, powerflow_parameters.n_gen, 2)
-        Sf_target = data["branch"]["Sf"].view(-1, powerflow_parameters.n_branch, 2)
-        St_target = data["branch"]["St"].view(-1, powerflow_parameters.n_branch, 2)
-        # convert to complex numbers
-        V_target = torch.complex(V_target[..., 0], V_target[..., 1])
-        Sg_target = torch.complex(Sg_target[..., 0], Sg_target[..., 1])
-        Sf_target = torch.complex(Sf_target[..., 0], Sf_target[..., 1])
-        St_target = torch.complex(St_target[..., 0], St_target[..., 1])
+        V_target = torch.view_as_complex(data["bus"]["V"])
+        Sg_target = torch.view_as_complex(data["gen"]["Sg"])
+        Sf_target = torch.view_as_complex(data["branch"]["Sf"])
+        St_target = torch.view_as_complex(data["branch"]["St"])
 
         loss_voltage = (variables.V - V_target).abs().pow(2).mean()
         loss_gen = (variables.Sg - Sg_target).abs().pow(2).mean()
@@ -317,21 +380,24 @@ class OPFDual(pl.LightningModule):
         self.log(
             "train/powerflow_loss",
             powerflow_loss,
-            batch_size=batch.data.num_graphs,
+            batch_size=batch.data.batch_size,
         )
         return powerflow_loss
 
     def _step_helper(
         self,
         variables: pf.PowerflowVariables,
-        parameters: pf.PowerflowParameters,
+        graph: HeteroData,
         multipliers: Dict[str, torch.Tensor] | None = None,
         project_powermodels=False,
     ):
         if project_powermodels:
-            variables = self.project_powermodels(variables, parameters)
-        constraints = self.constraints(variables, parameters, multipliers)
-        cost = self.cost(variables, parameters)
+            raise NotImplementedError(
+                "project_powermodels is not implemented right now."
+            )
+            variables = self.project_powermodels(variables, graph)
+        constraints = self.constraints(variables, graph, multipliers)
+        cost = self.cost(variables, graph)
         return variables, constraints, cost
 
     def on_train_epoch_start(self):
@@ -345,10 +411,13 @@ class OPFDual(pl.LightningModule):
             self.project_multipliers_table()
 
     def training_step(self, batch: PowerflowBatch):
+        graph = batch.data
+        assert isinstance(graph, HeteroData)
+
         primal_optimizer, _, common_optimizer = self.optimizers()  # type: ignore
         variables, Sf_pred, St_pred = self(batch)
         _, constraints, cost = self._step_helper(
-            variables, batch.powerflow_parameters, self.get_multipliers(batch.index)
+            variables, graph, self.get_multipliers(batch.index)
         )
         constraint_loss = self.constraint_loss(constraints)
 
@@ -362,7 +431,7 @@ class OPFDual(pl.LightningModule):
         powerflow_loss = self.powerflow_loss(batch, variables, Sf_pred, St_pred)
 
         loss = (
-            self.cost_weight * cost / batch.powerflow_parameters.n_gen
+            self.cost_weight * cost
             + constraint_loss
             + self.powerflow_weight * powerflow_loss
             + supervised_weight * supervised_loss
@@ -390,10 +459,11 @@ class OPFDual(pl.LightningModule):
         )
 
     def validation_step(self, batch: PowerflowBatch, *args):
+        graph = batch.data
+        assert isinstance(graph, HeteroData)
+
         batch_size = batch.data.num_graphs
-        _, constraints, cost = self._step_helper(
-            self(batch)[0], batch.powerflow_parameters
-        )
+        _, constraints, cost = self._step_helper(self(batch)[0], graph)
         metrics = self.metrics(cost, constraints, "val", self.detailed_metrics)
         self.log_dict(metrics, batch_size=batch_size, sync_dist=True)
 
@@ -409,13 +479,15 @@ class OPFDual(pl.LightningModule):
         )
 
     def test_step(self, batch: PowerflowBatch, *args):
+        graph = batch.data
+        assert isinstance(graph, HeteroData)
         # TODO
         # change to make faster
         # project_powermodels taking too long
         # go over batch w/ project pm, then individual steps without
         _, constraints, cost = self._step_helper(
             self(batch),
-            batch.powerflow_parameters,
+            graph,
             project_powermodels=True,
         )
         test_metrics = self.metrics(cost, constraints, "test", self.detailed_metrics)
@@ -442,10 +514,11 @@ class OPFDual(pl.LightningModule):
     def project_powermodels(
         self,
         variables: pf.PowerflowVariables,
-        parameters: pf.PowerflowParameters,
+        graph: HeteroData,
         clamp=True,
     ) -> pf.PowerflowVariables:
         V, Sg, Sd = variables.V, variables.Sg, variables.Sd
+
         if clamp:
             V, Sg = self.enforce_constraints(V, Sg, parameters, strategy="clamp")
         bus_shape = V.shape
@@ -525,30 +598,30 @@ class OPFDual(pl.LightningModule):
     def cost(
         self,
         variables: pf.PowerflowVariables,
-        powerflow_parameters: pf.PowerflowParameters,
+        graph: HeteroData,
     ) -> torch.Tensor:
         """Compute the cost to produce the active and reactive power."""
+        gen_parameters = pf.GenParameters.from_tensor(graph["gen"].params)
+
         p = variables.Sg.real
-        p_coeff = powerflow_parameters.cost_coeff
+        p_coeff = gen_parameters.cost_coeff
         cost = torch.zeros_like(p)
-        for i in range(p_coeff.shape[1]):
-            cost += p_coeff[:, i] * p.squeeze() ** i
-        # cost cannot be negative
-        # cost = torch.clamp(cost, min=0)
-        # # normalize the cost by the number of generators
-        return cost.mean(0).sum() / powerflow_parameters.reference_cost
+        for i in range(p_coeff.shape[-2]):
+            cost += p_coeff.select(-2, i) * p.squeeze() ** i
+        # compute the mean cost per generator
+        return cost.mean()
 
     def constraints(
         self,
         variables: pf.PowerflowVariables,
-        powerflow_parameters: pf.PowerflowParameters,
+        graph: HeteroData,
         multipliers: Dict[str, torch.Tensor] | None,
     ) -> Dict[str, Dict[str, torch.Tensor]]:
         """
         Calculates the powerflow constraints.
         :returns: Nested map from constraint name => (value name => tensor value)
         """
-        constraints = pf.build_constraints(variables, powerflow_parameters)
+        constraints = pf.build_constraints(variables, graph)
         values = {}
         for name, constraint in constraints.items():
             if isinstance(constraint, pf.EqualityConstraint):

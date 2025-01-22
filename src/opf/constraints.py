@@ -43,18 +43,14 @@ def _compute_mask(mask, constraint):
 
 
 def loss_equality(u: torch.Tensor, multiplier: torch.Tensor, augmented_weight=0.0):
-    loss = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(
-        1, 2
-    ).mean() / multiplier.size(1)
+    loss = (u @ multiplier) / multiplier.size(0)
     if augmented_weight > 0:
         loss = loss + augmented_weight * u.pow(2).mean()
     return loss
 
 
 def loss_inequality(u: torch.Tensor, multiplier: torch.Tensor, augmented_weight=0.0):
-    loss = (u.unsqueeze(1) @ multiplier.unsqueeze(2)).squeeze(
-        1, 2
-    ).mean() / multiplier.size(1)
+    loss = (u @ multiplier) / multiplier.size(0)
     # u <= 0, therefore we have violation when u > 0, loss = max(0, u)^2
     if augmented_weight > 0:
         loss = loss + augmented_weight * u.relu().pow(2).mean()
@@ -147,31 +143,31 @@ def inequality(
     mask_lower = _compute_mask(None, lower_bound)
     mask_upper = _compute_mask(None, upper_bound)
 
-    u_lower = lower_bound[mask_lower] - value[:, mask_lower]
-    u_upper = value[:, mask_upper] - upper_bound[mask_upper]
+    u_lower = lower_bound[..., mask_lower] - value[..., mask_lower]
+    u_upper = value[..., mask_upper] - upper_bound[..., mask_upper]
 
     if angle:
         u_lower = wrap_angle(u_lower)
         u_upper = wrap_angle(u_upper)
 
-    u_all = torch.cat((u_lower, u_upper), dim=1)
+    u_all = torch.cat((u_lower, u_upper), dim=-1)
 
     if lower_multiplier is None or upper_multiplier is None:
         return metrics(None, u_all, eps, None)
 
     loss_lower = loss_inequality(
-        u_lower, lower_multiplier[:, mask_lower], augmented_weight=augmented_weight
+        u_lower, lower_multiplier[..., mask_lower], augmented_weight=augmented_weight
     )
     loss_upper = loss_inequality(
-        u_upper, upper_multiplier[:, mask_upper], augmented_weight=augmented_weight
+        u_upper, upper_multiplier[..., mask_upper], augmented_weight=augmented_weight
     )
     loss = loss_lower + loss_upper
     # this is used for metrics only
     multiplier_all = torch.cat(
         (
-            lower_multiplier[:, mask_lower],
-            upper_multiplier[:, mask_upper],
+            lower_multiplier[..., mask_lower],
+            upper_multiplier[..., mask_upper],
         ),
-        dim=1,
+        dim=-1,
     )
     return metrics(loss, u_all, eps, multiplier_all)
