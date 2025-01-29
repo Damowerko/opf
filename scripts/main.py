@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import typing
 from functools import partial
@@ -7,13 +8,16 @@ from pathlib import Path
 import optuna
 import torch
 from lightning.pytorch import Trainer
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers.wandb import WandbLogger
 from wandb.wandb_run import Run
 
 from opf.dataset import CaseDataModule
-from opf.hetero import HeteroGCN, HeteroSage
+from opf.hetero import HeteroSage
 from opf.modules import OPFDual
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -115,22 +119,31 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
 
 
 def _train(trainer: Trainer, params):
+    logger.info(f"Initializing data module.")
     dm = CaseDataModule(pin_memory=params["gpu"], **params)
     if params["homo"]:
         # gcn = GCN(in_channels=dm.feature_dims, out_channels=4, **params)
         raise NotImplementedError("Homogenous model not currently implemented.")
     else:
+        logger.info("Calling datamodule setup.")
         dm.setup()
-        gcn = HeteroSage(
+        logger.info(f"Initializing model.")
+        model = HeteroSage(
             dm.metadata(),
             in_channels=max(dm.feature_dims.values()),
             out_channels=4,
             **params,
         )
-        gcn = typing.cast(
+        logger.info(
+            f"Compiling model." if params["compile"] else "Skipping model compilation."
+        )
+        model = typing.cast(
             HeteroSage,
             torch.compile(
-                gcn.cuda(), dynamic=False, fullgraph=True, disable=not params["compile"]
+                model.cuda(),
+                dynamic=False,
+                fullgraph=True,
+                disable=not params["compile"],
             ),
         )
 
@@ -140,10 +153,12 @@ def _train(trainer: Trainer, params):
         dm.powerflow_parameters.n_branch,
         dm.powerflow_parameters.n_gen,
     )
-    model = OPFDual(
-        gcn, n_nodes, multiplier_table_length=len(dm.train_dataset) if params["personalize"] else 0, **params  # type: ignore
+    logger.info("Initializing the lightning module.")
+    lightning_module = OPFDual(
+        model, n_nodes, multiplier_table_length=len(dm.train_dataset) if params["personalize"] else 0, **params  # type: ignore
     )
-    trainer.fit(model, dm)
+    logger.info("Starting training.")
+    trainer.fit(lightning_module, dm)
 
 
 def train(trainer: Trainer, params):
