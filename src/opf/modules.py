@@ -13,9 +13,9 @@ import torch.nn as nn
 from torch_geometric.data import Data, HeteroData
 
 import opf.powerflow as pf
-from opf.architecture.hetero import HeteroGCN
 from opf.constraints import equality, inequality
 from opf.dataset import PowerflowBatch, PowerflowData
+from opf.hetero import HeteroGCN
 
 
 class DualModel(nn.Module, abc.ABC):
@@ -497,15 +497,20 @@ class OPFDual(pl.LightningModule):
     ) -> pf.PowerflowVariables:
         V, Sg, Sd = variables.V, variables.Sg, variables.Sd
 
+        bus_params = pf.BusParameters.from_tensor(graph["bus"].params)
+        gen_params = pf.GenParameters.from_tensor(graph["gen"].params)
+
         if clamp:
-            V, Sg = self.enforce_constraints(V, Sg, parameters, strategy="clamp")
+            V, Sg = self.enforce_constraints(
+                V, Sg, bus_params, gen_params, strategy="clamp"
+            )
         bus_shape = V.shape
         gen_shape = Sg.shape
         dtype = V.dtype
         device = V.device
-        V = torch.view_as_real(V.cpu()).view(-1, parameters.n_bus, 2).numpy()
-        Sg = torch.view_as_real(Sg.cpu()).view(-1, parameters.n_gen, 2).numpy()
-        Sd = torch.view_as_real(Sd.cpu()).view(-1, parameters.n_bus, 2).numpy()
+        V = torch.view_as_real(V.cpu()).view(-1, self.n_bus, 2).numpy()
+        Sg = torch.view_as_real(Sg.cpu()).view(-1, self.n_gen, 2).numpy()
+        Sd = torch.view_as_real(Sd.cpu()).view(-1, self.n_bus, 2).numpy()
         # TODO: make this more robust, maybe use PyJulia
         # currently what we do is save the data to a temporary directory
         # then run the julia script and load the data back
@@ -519,7 +524,7 @@ class OPFDual(pl.LightningModule):
                     "--project=@.",
                     script_path.as_posix(),
                     "--casefile",
-                    parameters.casefile,
+                    graph.case_name,
                     "--busfile",
                     busfile.as_posix(),
                 ]
@@ -533,7 +538,7 @@ class OPFDual(pl.LightningModule):
         V = torch.complex(V[..., 0], V[..., 1]).to(device, dtype).view(bus_shape)
         Sg = torch.complex(Sg[..., 0], Sg[..., 1]).to(device, dtype).view(gen_shape)
         Sd = torch.complex(Sd[..., 0], Sd[..., 1]).to(device, dtype).view(bus_shape)
-        return pf.powerflow(V, Sd, Sg, parameters)
+        return pf.powerflow_from_graph(V, Sd, Sg, graph)
 
     def parse_bus(self, bus: torch.Tensor):
         assert bus.shape[-1] == 2
