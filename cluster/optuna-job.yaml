@@ -13,7 +13,7 @@ spec:
       volumes:
       - name: opf-data
         nfs:
-          server: 158.130.113.30
+          server: lc1-alelab.seas.upenn.edu
           path: /nfs/general/opf_data
       containers:
       - name: opf-trial
