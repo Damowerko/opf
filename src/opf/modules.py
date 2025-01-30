@@ -13,15 +13,14 @@ import torch.nn as nn
 from torch_geometric.data import Data, HeteroData
 
 import opf.powerflow as pf
+from opf.architecture.hetero import HeteroGCN
 from opf.constraints import equality, inequality
 from opf.dataset import PowerflowBatch, PowerflowData
-from opf.hetero import HeteroGCN
 
 
 class DualModel(nn.Module, abc.ABC):
-    @abc.abstractmethod
-    def init_multipliers(self, n_bus, n_gen, n_branch, multiplier_table_length: int):
-        pass
+    def forward(self, data: PowerflowBatch):
+        return self.get_multipliers(data)
 
     @abc.abstractmethod
     def get_multipliers(self, data: PowerflowBatch) -> dict[str, torch.Tensor]:
@@ -30,9 +29,32 @@ class DualModel(nn.Module, abc.ABC):
 
 class DualTable(DualModel):
     def __init__(
-        self, n_bus: int, n_gen: int, n_branch: int, multiplier_table_length: int
+        self,
+        n_bus: int,
+        n_gen: int,
+        n_branch: int,
+        multiplier_table_length: int,
+        enable_shared: bool = True,
+        enable_pointwise: bool = False,
     ):
+        super().__init__()
+        self.enable_shared = enable_shared
+        self.enable_pointwise = enable_pointwise
+        self._init_metadata(n_bus, n_gen, n_branch)
+        if self.enable_shared:
+            self.multipliers_expected = nn.Parameter(
+                torch.zeros(self.n_multipliers, device=self.device)
+            )
+        if self.enable_pointwise:
+            self.multipliers_pointwise = torch.nn.Embedding(
+                num_embeddings=multiplier_table_length,
+                embedding_dim=self.n_multipliers,
+            )
+            self.multipliers_pointwise.weight.data.zero_()
+
+    def _init_metadata(self, n_bus, n_gen, n_branch):
         with torch.no_grad():
+            # the size of each multiplier category
             self.multiplier_metadata = OrderedDict(
                 [
                     ("equality/bus_active_power", torch.Size([n_bus])),
@@ -52,6 +74,7 @@ class DualTable(DualModel):
             self.multiplier_offsets = torch.cumsum(self.multiplier_numel, 0)
             self.n_multipliers = int(self.multiplier_offsets[-1].item())
 
+            # mask to separate the inequality multipliers from the equality multipliers
             multiplier_inequality_mask_list = []
             for name, numel in zip(
                 self.multiplier_metadata.keys(), self.multiplier_numel
@@ -69,14 +92,27 @@ class DualTable(DualModel):
                 torch.cat(multiplier_inequality_mask_list),
                 persistent=False,
             )
-        self.multipliers_table = torch.nn.Embedding(
-            num_embeddings=multiplier_table_length,
-            embedding_dim=self.n_multipliers,
-        )
-        self.multipliers_table.weight.data.zero_()
-        self.multipliers_common = nn.Parameter(
-            torch.zeros(self.n_multipliers, device=self.device)
-        )
+
+    def get_multipliers(self, data: PowerflowBatch) -> dict[str, torch.Tensor]:
+        """
+        Get the multiplier for the tensor corresponding to the given index.
+        """
+        idx = data.index
+        multipliers = torch.zeros(idx.shape[0], self.n_multipliers, device=self.device)
+        if self.enable_shared:
+            multipliers = multipliers + self.multipliers_common.expand(idx.shape[0], -1)
+        if self.enable_pointwise:
+            multipliers = multipliers + self.multipliers_table(idx)
+
+        multiplier_dict = {}
+        for multipliers_split, (name, shape) in zip(
+            torch.tensor_split(multipliers, self.multiplier_offsets, dim=1),
+            self.multiplier_metadata.items(),
+        ):
+            multiplier_dict[name] = multipliers_split.reshape(
+                (idx.shape[0] * shape[0],) + shape[1:]
+            )
+        return multiplier_dict
 
 
 class OPFDual(pl.LightningModule):
@@ -99,7 +135,7 @@ class OPFDual(pl.LightningModule):
         powerflow_weight: float = 0.0,
         warmup: int = 0,
         supervised_warmup: int = 0,
-        common: bool = True,
+        multiplier_type: str = "shared",
         **kwargs,
     ):
         """
@@ -117,7 +153,7 @@ class OPFDual(pl.LightningModule):
             powerflow_weight (float, optional): The weight of the powerflow loss. Defaults to 0.0.
             warmup (int, optional): Number of epochs before starting to update the multipliers. Defaults to 0.
             supervised_warmup (int, optional): Number of epochs during which supervised loss is used. Defaults to 0.
-            common (bool, optional): Whether to use a common multiplier for all constraints. Defaults to True.
+            multiplier_type (str, optional): Default "shared". Can be "shared", "pointwise", or "hybrid".
         """
         super().__init__()
         self.save_hyperparameters(ignore=["model", "kwargs"])
@@ -138,77 +174,19 @@ class OPFDual(pl.LightningModule):
         self.powerflow_weight = powerflow_weight
         self.warmup = warmup
         self.supervised_warmup = supervised_warmup
-        self.common = common
         # setup the multipliers
         n_bus, n_branch, n_gen = n_nodes
         self.init_multipliers(n_bus, n_gen, n_branch, multiplier_table_length)
 
-    def init_multipliers(self, n_bus, n_gen, n_branch, multiplier_table_length: int):
-        with torch.no_grad():
-            self.multiplier_metadata = OrderedDict(
-                [
-                    ("equality/bus_active_power", torch.Size([n_bus])),
-                    ("equality/bus_reactive_power", torch.Size([n_bus])),
-                    ("equality/bus_reference", torch.Size([n_bus])),
-                    ("inequality/voltage_magnitude", torch.Size([n_bus, 2])),
-                    ("inequality/active_power", torch.Size([n_gen, 2])),
-                    ("inequality/reactive_power", torch.Size([n_gen, 2])),
-                    ("inequality/forward_rate", torch.Size([n_branch, 2])),
-                    ("inequality/backward_rate", torch.Size([n_branch, 2])),
-                    ("inequality/voltage_angle_difference", torch.Size([n_branch, 2])),
-                ]
+        if multiplier_type in ["shared", "pointwise", "hybrid"]:
+            self.model_dual = DualTable(
+                n_bus,
+                n_gen,
+                n_branch,
+                multiplier_table_length,
+                enable_shared=multiplier_type in ["shared", "hybrid"],
+                enable_pointwise=multiplier_type in ["pointwise", "hybrid"],
             )
-            self.multiplier_numel = torch.tensor(
-                [x.numel() for _, x in self.multiplier_metadata.items()]
-            )
-            self.multiplier_offsets = torch.cumsum(self.multiplier_numel, 0)
-            self.n_multipliers = int(self.multiplier_offsets[-1].item())
-
-            multiplier_inequality_mask_list = []
-            for name, numel in zip(
-                self.multiplier_metadata.keys(), self.multiplier_numel
-            ):
-                if "inequality" in name:
-                    multiplier_inequality_mask_list.append(
-                        torch.ones(int(numel.item()), dtype=torch.bool)
-                    )
-                else:
-                    multiplier_inequality_mask_list.append(
-                        torch.zeros(int(numel.item()), dtype=torch.bool)
-                    )
-            self.register_buffer(
-                "multiplier_inequality_mask",
-                torch.cat(multiplier_inequality_mask_list),
-                persistent=False,
-            )
-        self.multipliers_table = torch.nn.Embedding(
-            num_embeddings=multiplier_table_length,
-            embedding_dim=self.n_multipliers,
-        )
-        self.multipliers_table.weight.data.zero_()
-        self.multipliers_common = nn.Parameter(
-            torch.zeros(self.n_multipliers, device=self.device)
-        )
-
-    def get_multipliers(self, idx: torch.Tensor) -> dict[str, torch.Tensor]:
-        """
-        Get the multiplier for the tensor corresponding to the given index.
-        """
-        # The fist entry is a shared multiplier common to all entries
-        multipliers = torch.zeros(idx.shape[0], self.n_multipliers, device=self.device)
-        if self.common:
-            multipliers = multipliers + self.multipliers_common.expand(idx.shape[0], -1)
-        if self.multiplier_table_length > 0:
-            # The remaining entries are personalized multipliers one for each sample in the training dataset
-            multipliers = multipliers + self.multipliers_table(idx)
-
-        multiplier_dict = {}
-        for data, (name, shape) in zip(
-            torch.tensor_split(multipliers, self.multiplier_offsets, dim=1),
-            self.multiplier_metadata.items(),
-        ):
-            multiplier_dict[name] = data.reshape((idx.shape[0] * shape[0],) + shape[1:])
-        return multiplier_dict
 
     def project_multipliers_table(self):
         """
