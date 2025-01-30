@@ -12,11 +12,15 @@ from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers.wandb import WandbLogger
 from wandb.wandb_run import Run
 
-from opf.dataset import CaseDataModule
+from opf.dataset import CaseDataModule, PowerflowData
 from opf.hetero import HeteroSage
 from opf.modules import OPFDual
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s:%(name)s:%(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -141,7 +145,6 @@ def _train(trainer: Trainer, params):
             HeteroSage,
             torch.compile(
                 model.cuda(),
-                dynamic=False,
                 fullgraph=True,
                 disable=not params["compile"],
             ),
@@ -157,6 +160,17 @@ def _train(trainer: Trainer, params):
     lightning_module = OPFDual(
         model, n_nodes, multiplier_table_length=len(dm.train_dataset) if params["personalize"] else 0, **params  # type: ignore
     )
+    if params["compile"]:
+        logger.info(
+            "Running a single batch to compile the model and/or initialize lazy weights."
+        )
+        data: PowerflowData = next(iter(dm.train_dataloader()))
+        # move lightning_module to same device as data
+        device = "cuda" if params["gpu"] else "cpu"
+        lightning_module = lightning_module.to(device=device)
+        data.data.to(device=device)
+        lightning_module(data)
+
     logger.info("Starting training.")
     trainer.fit(lightning_module, dm)
 
