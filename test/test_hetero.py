@@ -5,7 +5,7 @@ from torch_geometric.datasets import FakeHeteroDataset
 from torch_geometric.transforms import ToSparseTensor
 
 from opf.dataset import CaseDataModule, PowerflowData
-from opf.hetero import HeteroGCN
+from opf.models.hetero import HeteroGCN
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ def test_hetero_opf(case_name):
     datamodule.setup()
     dataloder = datamodule.train_dataloader()
     batch: PowerflowData = next(iter(dataloder))
-    data, params = batch.data, batch.powerflow_parameters
+    data, params = batch.graph, batch.powerflow_parameters
 
     model = HeteroGCN(
         data.metadata(),

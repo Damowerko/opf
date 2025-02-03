@@ -1,5 +1,5 @@
 import abc
-import argparse
+import logging
 import subprocess
 from collections import OrderedDict
 from pathlib import Path
@@ -10,21 +10,45 @@ import lightning.pytorch as pl
 import numpy as np
 import torch
 import torch.nn as nn
-from torch_geometric.data import Data, HeteroData
+import torch.optim
+from torch.optim.optimizer import Optimizer
+from torch_geometric.data import HeteroData
+from torchcps.utils import add_model_specific_args
 
 import opf.powerflow as pf
 from opf.constraints import equality, inequality
-from opf.dataset import PowerflowBatch, PowerflowData
-from opf.hetero import HeteroGCN
+from opf.dataset import PowerflowData
+from opf.models.base import OPFModel
+
+logger = logging.getLogger(__name__)
+
+
+class NullOptimizer(Optimizer):
+    def __init__(self, **kwargs):
+        super().__init__([nn.Parameter(torch.zeros(0))], {})
+
+    def step(self, closure=None):
+        pass
+
+    def zero_grad(self, set_to_none=False):
+        pass
 
 
 class DualModel(nn.Module, abc.ABC):
-    def forward(self, data: PowerflowBatch):
+    def forward(self, data: PowerflowData):
         return self.get_multipliers(data)
 
     @abc.abstractmethod
-    def get_multipliers(self, data: PowerflowBatch) -> dict[str, torch.Tensor]:
+    def get_multipliers(self, data: PowerflowData) -> dict[str, torch.Tensor]:
         pass
+
+    @abc.abstractmethod
+    def parameters_shared(self) -> list[nn.Parameter]:
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def parameters_pointwise(self) -> list[nn.Parameter]:
+        raise NotImplementedError()
 
 
 class DualTable(DualModel):
@@ -33,24 +57,28 @@ class DualTable(DualModel):
         n_bus: int,
         n_gen: int,
         n_branch: int,
-        multiplier_table_length: int,
-        enable_shared: bool = True,
-        enable_pointwise: bool = False,
+        n_train: int,
+        enable_shared: bool,
+        enable_pointwise: bool,
     ):
         super().__init__()
+        self._init_metadata(n_bus, n_gen, n_branch)
         self.enable_shared = enable_shared
         self.enable_pointwise = enable_pointwise
-        self._init_metadata(n_bus, n_gen, n_branch)
+        if not self.enable_shared and not self.enable_pointwise:
+            raise ValueError(
+                "At least one of enable_shared or enable_pointwise must be True."
+            )
         if self.enable_shared:
-            self.multipliers_expected = nn.Parameter(
-                torch.zeros(self.n_multipliers, device=self.device)
-            )
+            logger.info("Enabling shared multipliers.")
+        self.multipliers_shared = nn.Parameter(torch.zeros(self.n_multipliers))
         if self.enable_pointwise:
-            self.multipliers_pointwise = torch.nn.Embedding(
-                num_embeddings=multiplier_table_length,
-                embedding_dim=self.n_multipliers,
-            )
-            self.multipliers_pointwise.weight.data.zero_()
+            logger.info("Enabling pointwise multipliers.")
+        self.multipliers_pointwise = torch.nn.Embedding(
+            num_embeddings=n_train if self.enable_pointwise else 0,
+            embedding_dim=self.n_multipliers,
+        )
+        self.multipliers_pointwise.weight.data.zero_()
 
     def _init_metadata(self, n_bus, n_gen, n_branch):
         with torch.no_grad():
@@ -93,16 +121,18 @@ class DualTable(DualModel):
                 persistent=False,
             )
 
-    def get_multipliers(self, data: PowerflowBatch) -> dict[str, torch.Tensor]:
+    def get_multipliers(self, data: PowerflowData) -> dict[str, torch.Tensor]:
         """
         Get the multiplier for the tensor corresponding to the given index.
         """
         idx = data.index
-        multipliers = torch.zeros(idx.shape[0], self.n_multipliers, device=self.device)
+        multipliers = torch.zeros(
+            idx.shape[0], self.n_multipliers, device=self.multipliers_shared.device
+        )
         if self.enable_shared:
-            multipliers = multipliers + self.multipliers_common.expand(idx.shape[0], -1)
+            multipliers = multipliers + self.multipliers_shared.expand(idx.shape[0], -1)
         if self.enable_pointwise:
-            multipliers = multipliers + self.multipliers_table(idx)
+            multipliers = multipliers + self.multipliers_pointwise(idx)
 
         multiplier_dict = {}
         for multipliers_split, (name, shape) in zip(
@@ -114,34 +144,70 @@ class DualTable(DualModel):
             )
         return multiplier_dict
 
+    def parameters_shared(self) -> list[nn.Parameter]:
+        return [self.multipliers_shared]
+
+    def parameters_pointwise(self) -> list[nn.Parameter]:
+        return list(self.multipliers_pointwise.parameters())
+
+    def project_shared(self):
+        """
+        Project the inequality multipliers to be non-negative. Only the common multipliers are projected.
+        """
+        # use .data to avoid autograd tracking since we are modifying the data in place
+        # no need for autograd since we are not backpropagating through this operation
+        self.multipliers_shared.data[self.multiplier_inequality_mask] = (
+            self.multipliers_shared.data[self.multiplier_inequality_mask].relu_()
+        )
+
+    def project_pointwise(self):
+        """
+        Project the inequality multipliers to be non-negative. Only the (sample-wise) table multipliers are projected.
+        """
+        # use .data to avoid autograd tracking since we are modifying the data in place
+        # no need for autograd since we are not backpropagating through this operation
+        self.multipliers_pointwise.weight.data[:, self.multiplier_inequality_mask] = (
+            self.multipliers_pointwise.weight.data[
+                :, self.multiplier_inequality_mask
+            ].relu_()
+        )
+
 
 class OPFDual(pl.LightningModule):
+    @classmethod
+    def add_model_specific_args(cls, group):
+        return add_model_specific_args(cls, group)
+
     def __init__(
         self,
-        model: torch.nn.Module,
+        model: OPFModel,
         n_nodes: tuple[int, int, int],
-        lr=1e-4,
-        weight_decay=0.0,
-        lr_dual=1e-3,
-        lr_common=1e-4,
-        weight_decay_dual=0.0,
-        eps=1e-3,
-        enforce_constraints=False,
-        detailed_metrics=False,
-        multiplier_table_length=0,
-        cost_weight=1.0,
+        n_train: int,
+        dual_graph: bool,
+        lr: float = 1e-4,
+        lr_dual_pointwise: float = 1e-3,
+        lr_dual_shared: float = 1e-4,
+        wd: float = 0.0,
+        wd_dual_pointwise: float = 0.0,
+        wd_dual_shared: float = 0.0,
+        eps: float = 1e-3,
+        enforce_constraints: bool = False,
+        detailed_metrics: bool = False,
+        cost_weight: float = 1.0,
         augmented_weight: float = 0.0,
         supervised_weight: float = 0.0,
         powerflow_weight: float = 0.0,
         warmup: int = 0,
         supervised_warmup: int = 0,
-        multiplier_type: str = "shared",
+        multiplier_type: str = "hybrid",
         **kwargs,
     ):
         """
         Args:
             model (torch.nn.Module): The model to be trained.
             n_nodes (tuple[int, int, int]): A tuple containing the number of buses, branches, and generators.
+            n_train (int): The number of training samples.
+            dual_graph (bool): Whether the input graph will be a regular or dual graph.
             lr (float, optional): The learning rate. Defaults to 1e-4.
             weight_decay (float, optional): The weight decay. Defaults to 0.0.
             eps (float, optional): Numerical threshold, below which values will be assumed to be approximately zero. Defaults to 1e-3.
@@ -156,82 +222,39 @@ class OPFDual(pl.LightningModule):
             multiplier_type (str, optional): Default "shared". Can be "shared", "pointwise", or "hybrid".
         """
         super().__init__()
-        self.save_hyperparameters(ignore=["model", "kwargs"])
+        self.save_hyperparameters(ignore=["model", "n_nodes", "n_train", "kwargs"])
         self.model = model
+        self.dual_graph = dual_graph
         self.lr = lr
-        self.weight_decay = weight_decay
-        self.lr_dual = lr_dual
-        self.lr_common = lr_common
-        self.weight_decay_dual = weight_decay_dual
+        self.weight_decay = wd
+        self.lr_dual_pointwise = lr_dual_pointwise
+        self.lr_dual_shared = lr_dual_shared
+        self.wd_dual_pointwise = wd_dual_pointwise
+        self.wd_dual_shared = wd_dual_shared
         self.eps = eps
         self._enforce_constraints = enforce_constraints
         self.detailed_metrics = detailed_metrics
         self.automatic_optimization = False
-        self.multiplier_table_length = multiplier_table_length
         self.cost_weight = cost_weight
         self.augmented_weight = augmented_weight
         self.supervised_weight = supervised_weight
         self.powerflow_weight = powerflow_weight
         self.warmup = warmup
         self.supervised_warmup = supervised_warmup
-        # setup the multipliers
-        n_bus, n_branch, n_gen = n_nodes
-        self.init_multipliers(n_bus, n_gen, n_branch, multiplier_table_length)
-
         if multiplier_type in ["shared", "pointwise", "hybrid"]:
+            n_bus, n_branch, n_gen = n_nodes
             self.model_dual = DualTable(
                 n_bus,
                 n_gen,
                 n_branch,
-                multiplier_table_length,
+                n_train,
                 enable_shared=multiplier_type in ["shared", "hybrid"],
                 enable_pointwise=multiplier_type in ["pointwise", "hybrid"],
             )
 
-    def project_multipliers_table(self):
-        """
-        Project the inequality multipliers to be non-negative. Only the (sample-wise) table multipliers are projected.
-        """
-        # use .data to avoid autograd tracking since we are modifying the data in place
-        # no need for autograd since we are not backpropagating through this operation
-        self.multipliers_table.weight.data[:, self.multiplier_inequality_mask] = (
-            self.multipliers_table.weight.data[
-                :, self.multiplier_inequality_mask
-            ].relu_()
-        )
-
-    def project_multipliers_common(self):
-        """
-        Project the inequality multipliers to be non-negative. Only the common multipliers are projected.
-        """
-        # use .data to avoid autograd tracking since we are modifying the data in place
-        # no need for autograd since we are not backpropagating through this operation
-        self.multipliers_common.data[self.multiplier_inequality_mask] = (
-            self.multipliers_common.data[self.multiplier_inequality_mask].relu_()
-        )
-
-    @staticmethod
-    def add_args(parser: argparse.ArgumentParser):
-        group = parser.add_argument_group("OPFDual")
-        group.add_argument("--lr", type=float, default=3e-4)
-        group.add_argument("--weight_decay", type=float, default=0.0)
-        group.add_argument("--lr_dual", type=float, default=0.1)
-        group.add_argument("--lr_common", type=float, default=0.01)
-        group.add_argument("--weight_decay_dual", type=float, default=0.0)
-        group.add_argument("--eps", type=float, default=1e-3)
-        group.add_argument("--enforce_constraints", action="store_true", default=False)
-        group.add_argument("--detailed_metrics", action="store_true", default=False)
-        group.add_argument("--cost_weight", type=float, default=1.0)
-        group.add_argument("--augmented_weight", type=float, default=0.0)
-        group.add_argument("--supervised_weight", type=float, default=0.0)
-        group.add_argument("--powerflow_weight", type=float, default=0.0)
-        group.add_argument("--warmup", type=int, default=0)
-        group.add_argument("--supervised_warmup", type=int, default=0)
-        group.add_argument("--no_common", dest="common", action="store_false")
-
     def forward(
         self,
-        input: PowerflowBatch | PowerflowData,
+        input: PowerflowData | PowerflowData,
     ) -> tuple[pf.PowerflowVariables, torch.Tensor, torch.Tensor]:
         """
         Returns:
@@ -240,38 +263,31 @@ class OPFDual(pl.LightningModule):
               - the predicted forward power,
               - and the predicted backward power.
         """
-        data, index = input
-        if isinstance(data, HeteroData):
-            if isinstance(self.model, HeteroGCN):
-                # hetero GCN expect hetero graph in homogeneous form
-                homo = data.to_homogeneous()
-                homo.y = self.model(
-                    homo.x, homo.edge_index, homo.node_type, homo.edge_type
-                )
-                y_dict = homo.to_heterogeneous().y_dict
-            else:
-                y_dict = self.model(data.x_dict, data.edge_index_dict)
-            # reshape data to size (batch_size, n_nodes_of_type, n_features)
-            load = data["bus"].load
-            bus = y_dict["bus"][..., :2]
-            gen = y_dict["gen"][..., :2]
-            branch = y_dict["branch"]
-
-            bus_params = pf.BusParameters.from_tensor(data["bus"].params)
-            gen_params = pf.GenParameters.from_tensor(data["gen"].params)
-        elif isinstance(data, Data):
-            raise NotImplementedError("Removed support for homogenous data for now.")
-        else:
+        graph, _ = input
+        if not isinstance(graph, HeteroData):
             raise ValueError(
-                f"Unsupported data type {type(data)}, expected Data or HeteroData."
+                f"Unsupported data type {type(graph)}, expected HeteroData."
             )
+        y_dict = self.model(graph)
+        load = graph["bus"].load
+        bus = y_dict["bus"][..., :2]
+        gen = y_dict["gen"][..., :2]
+        branch = y_dict["branch"]
+
+        bus_params = pf.BusParameters.from_tensor(graph["bus"].params)
+        gen_params = pf.GenParameters.from_tensor(graph["gen"].params)
+
         V = self.parse_bus(bus)
         Sg = self.parse_gen(gen)
         Sd = self.parse_load(load)
         Sf_pred, St_pred = self.parse_branch(branch)
         if self._enforce_constraints:
             V, Sg = self.enforce_constraints(V, Sg, bus_params, gen_params)
-        return pf.powerflow_from_graph(V, Sd, Sg, data), Sf_pred, St_pred
+        return (
+            pf.powerflow_from_graph(V, Sd, Sg, graph, self.dual_graph),
+            Sf_pred,
+            St_pred,
+        )
 
     def enforce_constraints(
         self,
@@ -309,7 +325,7 @@ class OPFDual(pl.LightningModule):
 
     def supervised_loss(
         self,
-        batch: PowerflowBatch,
+        batch: PowerflowData,
         variables: pf.PowerflowVariables,
         Sf_pred: torch.Tensor,
         St_pred: torch.Tensor,
@@ -336,17 +352,17 @@ class OPFDual(pl.LightningModule):
                 "train/supervised_gen": loss_gen,
                 "train/supervised_power": loss_power,
             },
-            batch_size=batch.data.num_graphs,
+            batch_size=batch.graph.num_graphs,
         )
         self.log(
             "train/supervised_loss",
             loss_supervised,
-            batch_size=batch.data.num_graphs,
+            batch_size=batch.graph.num_graphs,
         )
         return loss_supervised
 
     def powerflow_loss(
-        self, batch: PowerflowBatch, variables: pf.PowerflowVariables, Sf_pred, St_pred
+        self, batch: PowerflowData, variables: pf.PowerflowVariables, Sf_pred, St_pred
     ):
         """
         Loss between the predicted Sf and St by the model and the Sf and St implied by the powerflow equations.
@@ -358,7 +374,7 @@ class OPFDual(pl.LightningModule):
         self.log(
             "train/powerflow_loss",
             powerflow_loss,
-            batch_size=batch.data.batch_size,
+            batch_size=batch.graph.batch_size,
         )
         return powerflow_loss
 
@@ -379,34 +395,31 @@ class OPFDual(pl.LightningModule):
         return variables, constraints, cost
 
     def on_train_epoch_start(self):
-        _, dual_optimizer, _ = self.optimizers()  # type: ignore
-        dual_optimizer.zero_grad()
+        _, dual_pointwise_optimizer, _ = self.optimizers()  # type: ignore
+        dual_pointwise_optimizer.zero_grad()
 
     def on_train_epoch_end(self):
-        _, dual_optimizer, _ = self.optimizers()  # type: ignore
+        _, dual_pointwise_optimizer, _ = self.optimizers()  # type: ignore
         if self.current_epoch >= self.warmup:
-            dual_optimizer.step()
-            self.project_multipliers_table()
+            dual_pointwise_optimizer.step()
+            self.model_dual.project_pointwise()
 
-    def training_step(self, batch: PowerflowBatch):
-        graph = batch.data
-        assert isinstance(graph, HeteroData)
-
-        primal_optimizer, _, common_optimizer = self.optimizers()  # type: ignore
-        variables, Sf_pred, St_pred = self(batch)
+    def training_step(self, data: PowerflowData):
+        primal_optimizer, _, dual_shared_optimizer = self.optimizers()  # type: ignore
+        variables, Sf_pred, St_pred = self(data)
         _, constraints, cost = self._step_helper(
-            variables, graph, self.get_multipliers(batch.index)
+            variables, data.graph, self.model_dual.get_multipliers(data)
         )
         constraint_loss = self.constraint_loss(constraints)
 
-        supervised_loss = self.supervised_loss(batch, variables, Sf_pred, St_pred)
+        supervised_loss = self.supervised_loss(data, variables, Sf_pred, St_pred)
         # linearly decay the supervised loss until 0 at self.current_epoch > self.supervised_warmup
         supervised_weight = (
             max(1.0 - self.current_epoch / self.supervised_warmup, 0.0)
             if self.supervised_warmup > 0
             else 1.0
         )
-        powerflow_loss = self.powerflow_loss(batch, variables, Sf_pred, St_pred)
+        powerflow_loss = self.powerflow_loss(data, variables, Sf_pred, St_pred)
 
         loss = (
             self.cost_weight * cost
@@ -416,31 +429,31 @@ class OPFDual(pl.LightningModule):
         )
 
         primal_optimizer.zero_grad()
-        common_optimizer.zero_grad()
+        dual_shared_optimizer.zero_grad()
         loss.backward()
         primal_optimizer.step()
         if self.current_epoch >= self.warmup:
-            common_optimizer.step()
-            self.project_multipliers_common()
+            dual_shared_optimizer.step()
+            self.model_dual.project_shared()
 
         self.log(
             "train/loss",
             loss,
             prog_bar=True,
-            batch_size=batch.data.num_graphs,
+            batch_size=data.graph.num_graphs,
             sync_dist=True,
         )
         self.log_dict(
             self.metrics(cost, constraints, "train", self.detailed_metrics, train=True),
-            batch_size=batch.data.num_graphs,
+            batch_size=data.graph.num_graphs,
             sync_dist=True,
         )
 
-    def validation_step(self, batch: PowerflowBatch, *args):
-        graph = batch.data
+    def validation_step(self, batch: PowerflowData, *args):
+        graph = batch.graph
         assert isinstance(graph, HeteroData)
 
-        batch_size = batch.data.num_graphs
+        batch_size = batch.graph.num_graphs
         _, constraints, cost = self._step_helper(self(batch)[0], graph)
         metrics = self.metrics(cost, constraints, "val", self.detailed_metrics)
         self.log_dict(metrics, batch_size=batch_size, sync_dist=True)
@@ -456,8 +469,8 @@ class OPFDual(pl.LightningModule):
             sync_dist=True,
         )
 
-    def test_step(self, batch: PowerflowBatch, *args):
-        graph = batch.data
+    def test_step(self, batch: PowerflowData, *args):
+        graph = batch.graph
         assert isinstance(graph, HeteroData)
         # TODO
         # change to make faster
@@ -471,7 +484,7 @@ class OPFDual(pl.LightningModule):
         test_metrics = self.metrics(cost, constraints, "test", self.detailed_metrics)
         self.log_dict(
             test_metrics,
-            batch_size=batch.data.num_graphs,
+            batch_size=batch.graph.num_graphs,
             sync_dist=True,
         )
         # TODO: rethink how to do comparison against ACOPF
@@ -538,7 +551,7 @@ class OPFDual(pl.LightningModule):
         V = torch.complex(V[..., 0], V[..., 1]).to(device, dtype).view(bus_shape)
         Sg = torch.complex(Sg[..., 0], Sg[..., 1]).to(device, dtype).view(gen_shape)
         Sd = torch.complex(Sd[..., 0], Sd[..., 1]).to(device, dtype).view(bus_shape)
-        return pf.powerflow_from_graph(V, Sd, Sg, graph)
+        return pf.powerflow_from_graph(V, Sd, Sg, graph, self.dual_graph)
 
     def parse_bus(self, bus: torch.Tensor):
         assert bus.shape[-1] == 2
@@ -591,8 +604,15 @@ class OPFDual(pl.LightningModule):
         cost = torch.zeros_like(p)
         for i in range(p_coeff.shape[-2]):
             cost += p_coeff.select(-2, i) * p.squeeze() ** i
-        # compute the mean cost per generator
-        return cost.mean()
+        # generator cost cannot be negative
+        cost = cost.relu()
+        # compute the total cost for each sample in the batch
+        cost_per_batch = torch.zeros_like(graph.reference_cost).index_add(
+            0, graph["gen"].batch, cost
+        )
+        # normalize the cost by the reference cost (IPOPT cost)
+        cost_per_batch = cost_per_batch / graph.reference_cost
+        return cost_per_batch.mean()
 
     def constraints(
         self,
@@ -604,7 +624,7 @@ class OPFDual(pl.LightningModule):
         Calculates the powerflow constraints.
         :returns: Nested map from constraint name => (value name => tensor value)
         """
-        constraints = pf.build_constraints(variables, graph)
+        constraints = pf.build_constraints(variables, graph, self.dual_graph)
         values = {}
         for name, constraint in constraints.items():
             if isinstance(constraint, pf.EqualityConstraint):
@@ -693,29 +713,42 @@ class OPFDual(pl.LightningModule):
         return {**aggregate_metrics, **detailed_metrics}
 
     def configure_optimizers(self):
-        primal_optimizer = torch.optim.AdamW(  # type: ignore
+        primal_optimizer = torch.optim.AdamW(
             self.model.parameters(),
             lr=self.lr,
             weight_decay=self.weight_decay,
             fused=True,
         )
-        dual_optimizer = torch.optim.AdamW(  # type: ignore
-            self.multipliers_table.parameters(),
-            lr=self.lr_dual,
-            weight_decay=self.weight_decay_dual,
-            maximize=True,
-            fused=True,
-        )
-        common_optimizer = torch.optim.AdamW(  # type: ignore
-            [self.multipliers_common],
-            lr=self.lr_common,
-            weight_decay=self.weight_decay_dual,
-            fused=True,
-            maximize=True,
-        )
 
-        optimizers = [primal_optimizer, dual_optimizer, common_optimizer]
-        return optimizers
+        pointwise_parameters = self.model_dual.parameters_pointwise()
+        if len(pointwise_parameters) > 0:
+            logger.info("Creating optimizer for dual pointwise parameters.")
+            dual_pointwise_optimizer = torch.optim.SGD(
+                pointwise_parameters,
+                lr=self.lr_dual_pointwise,
+                weight_decay=self.wd_dual_pointwise,
+                maximize=True,
+                fused=True,
+            )
+        else:
+            logger.info("Using NullOptimizer for dual pointwise parameters.")
+            dual_pointwise_optimizer = NullOptimizer()
+
+        shared_params = self.model_dual.parameters_shared()
+        if len(shared_params) > 0:
+            logger.info("Creating optimizer for dual shared parameters.")
+            dual_shared_optimizer = torch.optim.AdamW(
+                shared_params,
+                lr=self.lr_dual_shared,
+                weight_decay=self.wd_dual_shared,
+                maximize=True,
+                fused=True,
+            )
+        else:
+            logger.info("Using NullOptimizer for dual shared parameters.")
+            dual_shared_optimizer = NullOptimizer()
+
+        return [primal_optimizer, dual_pointwise_optimizer, dual_shared_optimizer]
 
     @staticmethod
     def bus_from_polar(bus):

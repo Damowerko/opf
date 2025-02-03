@@ -6,7 +6,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.nn as gnn
+from torch_geometric.data import HeteroData
 from torch_geometric.typing import Adj, EdgeType, NodeType, Tensor
+
+from opf.models.base import ModelRegistry, OPFModel
 
 
 class HeteroMLP(nn.Module):
@@ -280,12 +283,21 @@ class HeteroGCN(nn.Module):
                 )
             )
 
-    def forward(self, x, edge_index, node_type, edge_type):
+    def _forward(self, graph: HeteroData) -> dict[str, torch.Tensor]:
+        homogeneous_graph = graph.to_homogeneous()
+        x, edge_index, node_type, edge_type = (
+            homogeneous_graph.x,
+            homogeneous_graph.edge_index,
+            homogeneous_graph.node_type,
+            homogeneous_graph.edge_type,
+        )
         x = self.readin(x, node_type)
         for block in self.residual_blocks:
             x = block(x, edge_index, node_type, edge_type)
         x = self.readout(x, node_type)
-        return x
+        homogeneous_graph.y = x
+        y_dict = homogeneous_graph.to_heterogeneous().y_dict
+        return y_dict
 
 
 class HeteroDictMLP(nn.Module):
@@ -427,49 +439,11 @@ class HeteroDictResidualBlock(nn.Module):
         return x_dict
 
 
-class HeteroSage(nn.Module):
-    @staticmethod
-    def add_args(parser: argparse.ArgumentParser):
-        group = parser.add_argument_group(HeteroGCN.__name__)
-        group.add_argument(
-            "--n_channels",
-            type=int,
-            default=32,
-            help="Number of hidden features on each layer.",
-        )
-        group.add_argument(
-            "--n_layers", type=int, default=2, help="Number of GNN layers."
-        )
-        group.add_argument(
-            "--mlp_read_layers",
-            type=int,
-            default=2,
-            help="Number of MLP layers to use for readin/readout.",
-        )
-        group.add_argument(
-            "--mlp_per_gnn_layers",
-            type=int,
-            default=2,
-            help="Number of MLP layers to use per GNN layer.",
-        )
-        group.add_argument(
-            "--mlp_hidden_channels",
-            type=int,
-            default=256,
-            help="Number of hidden features to use in the MLP layers.",
-        )
-        group.add_argument(
-            "--dropout", type=float, default=0.0, help="Dropout probability."
-        )
-        group.add_argument(
-            "--aggr", type=str, default="sum", help="Aggregation scheme to use."
-        )
-
+@ModelRegistry.register("heterosage", True)
+class HeteroSage(OPFModel):
     def __init__(
         self,
         metadata: tuple[list[NodeType], list[EdgeType]],
-        in_channels: int,
-        out_channels: int | nn.Module,
         n_layers: int = 2,
         n_channels: int = 32,
         mlp_read_layers: int = 1,
@@ -481,9 +455,8 @@ class HeteroSage(nn.Module):
     ):
         super().__init__()
         node_types, edge_types = metadata
-        self.in_channels = in_channels
         self.readin = HeteroDictMLP(
-            in_channels=in_channels,
+            in_channels=-1,
             hidden_channels=mlp_hidden_channels,
             out_channels=n_channels,
             num_layers=mlp_read_layers,
@@ -491,11 +464,10 @@ class HeteroSage(nn.Module):
             plain_last=True,
             node_types=node_types,
         )
-        assert isinstance(out_channels, int)
         self.readout = HeteroDictMLP(
             in_channels=n_channels,
             hidden_channels=mlp_hidden_channels,
-            out_channels=out_channels,
+            out_channels=4,
             num_layers=mlp_read_layers,
             dropout=dropout,
             plain_last=True,
@@ -506,12 +478,9 @@ class HeteroSage(nn.Module):
             conv = gnn.HeteroConv(
                 {
                     edge_type: gnn.SAGEConv(
-                        in_channels=(
-                            n_channels if i > 0 or mlp_read_layers > 0 else in_channels
-                        ),
+                        in_channels=n_channels,
                         out_channels=n_channels,
                         aggr=aggr,
-                        normalize=True,
                     )
                     for edge_type in edge_types
                 }
@@ -542,23 +511,12 @@ class HeteroSage(nn.Module):
                 )
             )
 
-    def forward(self, x_dict, edge_index_dict):
-        # zero pad x_dict to in_channels size
-        x_dict = {
-            node_type: torch.cat(
-                [
-                    x,
-                    torch.zeros(
-                        x.size(0),
-                        self.in_channels - x.size(1),
-                        device=x.device,
-                        dtype=x.dtype,
-                    ),
-                ],
-                dim=1,
-            )
-            for node_type, x in x_dict.items()
-        }
+    def forward(self, graph: HeteroData) -> dict[str, torch.Tensor]:
+        graph["bus"].x = torch.cat([graph["bus"].load, graph["bus"].params], dim=-1)
+        graph["gen"].x = graph["gen"].params
+        graph["branch"].x = graph["branch"].params
+        x_dict = graph.x_dict
+        edge_index_dict = graph.edge_index_dict
         x_dict = self.readin(x_dict)
         for block in self.residual_blocks:
             x_dict = block(x_dict, edge_index_dict)

@@ -13,7 +13,8 @@ from lightning.pytorch.loggers.wandb import WandbLogger
 from wandb.wandb_run import Run
 
 from opf.dataset import CaseDataModule, PowerflowData
-from opf.hetero import HeteroSage
+from opf.models import ModelRegistry
+from opf.models.base import OPFModel
 from opf.modules import OPFDual
 
 logging.basicConfig(
@@ -24,42 +25,54 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def add_common_args(parser):
+    parser.add_argument("--compile", action="store_true", dest="compile")
 
-    # program arguments
-    parser.add_argument("operation", choices=["train", "study"])
-    parser.add_argument("--log_dir", type=str, default="./logs")
-    parser.add_argument("--data_dir", type=str, default="./data")
-    parser.add_argument("--no_log", action="store_false", dest="log")
-    parser.add_argument(
-        "--hotstart", type=str, default=None, help="ID of run to hotstart with."
-    )
-    parser.add_argument("--notes", type=str, default="")
-    parser.add_argument(
-        "--no_compile", action="store_false", dest="compile", default=True
-    )
-    parser.add_argument(
-        "--no_personalize", action="store_false", dest="personalize", default=True
-    )
+    # logging arguments
+    group = parser.add_argument_group("Logging")
+    group.add_argument("--log_dir", type=str, default="./logs")
+    group.add_argument("--notes", type=str, default="")
+    group.add_argument("--no_log", action="store_false", dest="log")
 
     # data arguments
-    parser.add_argument("--case_name", type=str, default="case179_goc__api")
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--fast_dev_run", type=int, default=0)
-    parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument("--homo", action="store_true", default=False)
+    group = parser.add_argument_group("Data")
+    group.add_argument("--data_dir", type=str, default="./data")
+    group.add_argument("--case_name", type=str, default="case118_ieee")
+    group.add_argument("--batch_size", type=int, default=32)
+    group.add_argument("--num_workers", type=int, default=0)
 
     # trainer arguments
     group = parser.add_argument_group("Trainer")
+    group.add_argument(
+        "--hotstart", type=str, default=None, help="ID of run to hotstart with."
+    )
+    group.add_argument("--fast_dev_run", action="store_true")
     group.add_argument("--no_gpu", action="store_false", dest="gpu")
     group.add_argument("--max_epochs", type=int, default=1000)
     group.add_argument("--patience", type=int, default=50)
     group.add_argument("--gradient_clip_val", type=float, default=0)
 
-    # the gnn being used
-    HeteroSage.add_args(parser)
-    OPFDual.add_args(parser)
+    # lightning module arguments
+    group = parser.add_argument_group("Lightning Module")
+    OPFDual.add_model_specific_args(group)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    # program arguments
+    parser.add_argument("operation", choices=["train", "study"])
+    subparsers = parser.add_subparsers(title="model", dest="model_name", required=True)
+
+    for model_name, model_cls in ModelRegistry.items():
+        subparser = subparsers.add_parser(
+            model_name, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+        group = subparser.add_argument_group("Model")
+        model_cls.add_model_specific_args(group)
+        add_common_args(subparser)
 
     params = parser.parse_args()
     params_dict = vars(params)
@@ -77,6 +90,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
     logger = None
     if params["log"]:
         logger = WandbLogger(
+            entity="damowerko-academic",
             project="opf",
             save_dir=params["log_dir"],
             config=params,
@@ -122,54 +136,65 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
     return trainer
 
 
+def warmup_batch(module, dm, params):
+    data: PowerflowData = next(iter(dm.train_dataloader()))
+    graph, _ = data
+    # move lightning_module to same device as data
+    device = "cuda" if params["gpu"] else "cpu"
+    module = module.to(device=device)
+    graph.to(device=device)
+    module(graph)
+
+
 def _train(trainer: Trainer, params):
     logger.info(f"Initializing data module.")
-    dm = CaseDataModule(pin_memory=params["gpu"], **params)
-    if params["homo"]:
-        # gcn = GCN(in_channels=dm.feature_dims, out_channels=4, **params)
-        raise NotImplementedError("Homogenous model not currently implemented.")
-    else:
-        logger.info("Calling datamodule setup.")
-        dm.setup()
-        logger.info(f"Initializing model.")
-        model = HeteroSage(
-            dm.metadata(),
-            in_channels=max(dm.feature_dims.values()),
-            out_channels=4,
-            **params,
-        )
-        logger.info(
-            f"Compiling model." if params["compile"] else "Skipping model compilation."
-        )
-        model = typing.cast(
-            HeteroSage,
-            torch.compile(
-                model.cuda(),
-                fullgraph=True,
-                disable=not params["compile"],
-            ),
-        )
+    dm = CaseDataModule(
+        dual_graph=ModelRegistry.is_dual(params["model_name"]),
+        pin_memory=params["gpu"],
+        **params,
+    )
 
+    logger.info("Calling datamodule setup.")
+    dm.setup()
     assert dm.powerflow_parameters is not None
     n_nodes = (
         dm.powerflow_parameters.n_bus,
         dm.powerflow_parameters.n_branch,
         dm.powerflow_parameters.n_gen,
     )
+
+    logger.info(f"Initializing model.")
+    extra_model_kwargs = {}
+    if params["model_name"] == "mlp":
+        extra_model_kwargs["n_nodes"] = n_nodes
+    model = ModelRegistry.get_class(params["model_name"])(
+        metadata=dm.metadata(),
+        out_channels=4,
+        **extra_model_kwargs,
+        **params,
+    )
+
+    logger.info(f"Running single batch to initialize lazy layers.")
+    warmup_batch(model, dm, params)
+    logger.info(
+        f"Compiling model." if params["compile"] else "Skipping model compilation."
+    )
+
+    if params["compile"]:
+        model = typing.cast(OPFModel, torch.compile(model.cuda()))
+        logger.info("Running single batch to compile model.")
+        warmup_batch(model, dm, params)
+        logger.info("Model compilation complete.")
+
     logger.info("Initializing the lightning module.")
     lightning_module = OPFDual(
-        model, n_nodes, multiplier_table_length=len(dm.train_dataset) if params["personalize"] else 0, **params  # type: ignore
+        model, n_nodes, n_train=len(dm.train_dataset), dual_graph=ModelRegistry.is_dual(params["model_name"]), **params  # type: ignore
     )
+
     if params["compile"]:
         logger.info(
             "Running a single batch to compile the model and/or initialize lazy weights."
         )
-        data: PowerflowData = next(iter(dm.train_dataloader()))
-        # move lightning_module to same device as data
-        device = "cuda" if params["gpu"] else "cpu"
-        lightning_module = lightning_module.to(device=device)
-        data.data.to(device=device)
-        lightning_module(data)
 
     logger.info("Starting training.")
     trainer.fit(lightning_module, dm)

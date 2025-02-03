@@ -1,4 +1,5 @@
 import json
+from itertools import product
 from pathlib import Path
 
 import h5py
@@ -6,10 +7,13 @@ import pytest
 import torch
 
 import opf.powerflow as pf
+from opf.dataset import build_graph
 
 
-@pytest.mark.parametrize("execution_number", range(20))
-def test_powerflow(execution_number):
+@pytest.mark.parametrize(
+    "from_graph, execution_number", product([True, False], range(10))
+)
+def test_powerflow(from_graph, execution_number):
     eps = 1e-4
     precision: int = 32
     if precision == 32:
@@ -19,14 +23,14 @@ def test_powerflow(execution_number):
         dtype = torch.float64
         cdtype = torch.complex128
 
-    if execution_number < 10:
+    if execution_number < 5:
         case_path = Path(__file__).parent / "case30_ieee.json"
         data_path = Path(__file__).parent / "case30_ieee.h5"
         idx = execution_number
     else:
         case_path = Path(__file__).parent / "case118_ieee.json"
         data_path = Path(__file__).parent / "case118_ieee.h5"
-        idx = execution_number - 10
+        idx = execution_number - 5
 
     parameters = pf.parameters_from_powermodels(
         json.loads(case_path.read_text()), case_path.as_posix(), precision=precision
@@ -57,7 +61,25 @@ def test_powerflow(execution_number):
     assert (Sf - variables.Sf).abs().max() < eps
     assert (St - variables.St).abs().max() < eps
 
-    constraints = pf.build_constraints(variables, parameters)
+    if from_graph:
+        graph = build_graph(parameters)
+        constraints = pf.build_constraints(
+            variables,
+            graph,
+            is_dual=False,
+        )
+    else:
+        bus_parameters = pf.BusParameters.from_pf_parameters(parameters)
+        gen_parameters = pf.GenParameters.from_pf_parameters(parameters)
+        branch_parameters = pf.BranchParameters.from_pf_parameters(parameters)
+        constraints = pf._build_constraints(
+            variables,
+            bus_parameters,
+            branch_parameters,
+            gen_parameters,
+            parameters.fr_bus,
+            parameters.to_bus,
+        )
     for constraint_name, constraint in constraints.items():
         if isinstance(constraint, pf.InequalityConstraint):
             assert (

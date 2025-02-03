@@ -319,18 +319,14 @@ def power_from_solution(load: dict, solution: dict, parameters: PowerflowParamet
     return V, Sg, Sd
 
 
-def build_constraints(
+def _build_constraints(
     d: PowerflowVariables,
-    graph: HeteroData,
-) -> Dict[str, Constraint]:
-    bus_params = BusParameters.from_tensor(graph["bus"]["params"])
-    branch_params = BranchParameters.from_tensor(graph["branch"]["params"])
-    gen_params = GenParameters.from_tensor(graph["gen"]["params"])
-
-    # get indices from graph edges
-    fr_bus = graph["bus", "from", "branch"].edge_index[0]
-    to_bus = graph["bus", "to", "branch"].edge_index[0]
-
+    bus_params: BusParameters,
+    branch_params: BranchParameters,
+    gen_params: GenParameters,
+    fr_bus: torch.Tensor,
+    to_bus: torch.Tensor,
+):
     return {
         "equality/bus_active_power": EqualityConstraint(
             isBus=True,
@@ -404,6 +400,25 @@ def build_constraints(
             max=branch_params.vad_max,
         ),
     }
+
+
+def build_constraints(
+    d: PowerflowVariables,
+    graph: HeteroData,
+    is_dual: bool,
+) -> Dict[str, Constraint]:
+    bus_params = BusParameters.from_tensor(graph["bus"]["params"])
+    branch_params = BranchParameters.from_tensor(graph["branch"]["params"])
+    gen_params = GenParameters.from_tensor(graph["gen"]["params"])
+
+    # get indices from graph edges
+    if is_dual:
+        fr_bus = graph["bus", "from", "branch"].edge_index[0]
+        to_bus = graph["bus", "to", "branch"].edge_index[0]
+    else:
+        fr_bus, to_bus = graph["bus", "branch", "bus"].edge_index
+
+    return _build_constraints(d, bus_params, branch_params, gen_params, fr_bus, to_bus)
 
 
 def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowParameters:
@@ -522,7 +537,11 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
 
 
 def powerflow_from_graph(
-    V: torch.Tensor, Sd: torch.Tensor, Sg: torch.Tensor, graph: HeteroData
+    V: torch.Tensor,
+    Sd: torch.Tensor,
+    Sg: torch.Tensor,
+    graph: HeteroData,
+    dual_graph: bool,
 ):
     """
 
@@ -534,9 +553,13 @@ def powerflow_from_graph(
     """
     bus_parameters = BusParameters.from_tensor(graph["bus"]["params"])
     branch_parameters = BranchParameters.from_tensor(graph["branch"]["params"])
-    fr_bus = graph["bus", "from", "branch"].edge_index[0]
-    to_bus = graph["bus", "to", "branch"].edge_index[0]
-    gen_bus_ids = graph["bus", "tie", "gen"].edge_index[0]
+    if dual_graph:
+        fr_bus = graph["bus", "from", "branch"].edge_index[0]
+        to_bus = graph["bus", "to", "branch"].edge_index[0]
+    else:
+        fr_bus, to_bus = graph["bus", "branch", "bus"].edge_index
+
+    gen_bus_ids = graph["gen", "tie", "bus"].edge_index[0]
     return _powerflow(
         V,
         Sd,
