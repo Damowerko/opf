@@ -16,3 +16,6 @@ figures/
 **/.ipynb_checkpoints/
 .python-version
 .pytest_cache
+
+
+scripts/run.sh
