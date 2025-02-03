@@ -194,7 +194,7 @@ class CaseDataModule(pl.LightningDataModule):
     def __init__(
         self,
         dual_graph: bool,
-        case_name="case1354_pegase__api",
+        case_name="case300_ieee",
         data_dir="./data",
         batch_size=32,
         num_workers=min(cpu_count(), 8),
