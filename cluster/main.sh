@@ -26,7 +26,7 @@ spec:
       - name: opf-train
         image: docker.io/damowerko/opf
         imagePullPolicy: Always
-        command: ["bash", "-c", "python -u scripts/main.py train $args && sleep 1"]
+        command: ["bash", "-c", "python -u scripts/main.py $args && sleep 1"]
         env:
         - name: WANDB_ENTITY
           value: damowerko-academic
@@ -42,7 +42,7 @@ spec:
         resources:
           requests:
             cpu: 8
-            memory: 16Gi
+            memory: 32Gi
           limits:
             cpu: 64
             memory: 128Gi
