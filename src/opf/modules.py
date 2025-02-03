@@ -414,7 +414,7 @@ class OPFDual(pl.LightningModule):
 
         supervised_loss = self.supervised_loss(data, variables, Sf_pred, St_pred)
         # linearly decay the supervised loss until 0 at self.current_epoch > self.supervised_warmup
-        supervised_weight = (
+        supervised_weight = self.supervised_weight * (
             max(1.0 - self.current_epoch / self.supervised_warmup, 0.0)
             if self.supervised_warmup > 0
             else 1.0
