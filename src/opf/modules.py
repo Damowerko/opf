@@ -452,7 +452,7 @@ class OPFDual(pl.LightningModule):
 
         batch_size = batch.graph.num_graphs
         _, constraints, cost = self._step_helper(
-            self(batch)[0], graph, project_powermodels=True
+            self(batch)[0], graph, project_powermodels=False
         )
         metrics = self.metrics(cost, constraints, "val", self.detailed_metrics)
         self.log_dict(metrics, batch_size=batch_size, sync_dist=True)
