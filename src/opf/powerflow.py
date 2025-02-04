@@ -559,7 +559,7 @@ def powerflow_from_graph(
     else:
         fr_bus, to_bus = graph["bus", "branch", "bus"].edge_index
 
-    gen_bus_ids = graph["gen", "tie", "bus"].edge_index[0]
+    gen_bus_ids = graph["gen", "tie", "bus"].edge_index[1]
     return _powerflow(
         V,
         Sd,

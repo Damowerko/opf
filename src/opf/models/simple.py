@@ -83,7 +83,7 @@ class MLPIO(OPFModel):
 
     def _forward(self, graph: HeteroData) -> dict[str, torch.Tensor]:
         # check that there is at most one generator per bus
-        gen_bus_ids = graph["gen", "tie", "bus"].edge_index[0]
+        gen_bus_ids = graph["gen", "tie", "bus"].edge_index[1]
         if (
             not torch.compiler.is_compiling()
             and gen_bus_ids.unique().shape[0] != gen_bus_ids.shape[0]
@@ -152,13 +152,14 @@ class SimpleGAT(MLPIO):
         n_layers: int = 4,
         mlp_hidden_channels: int = 512,
         mlp_per_gnn_layers: int = 2,
+        mlp_read_layers: int = 2,
         dropout: float = 0.0,
         **_,
     ):
         super().__init__(
             n_channels=n_channels,
             mlp_hidden_channels=mlp_hidden_channels,
-            mlp_read_layers=mlp_per_gnn_layers,
+            mlp_read_layers=mlp_read_layers,
             dropout=dropout,
         )
         self.n_layers = n_layers
@@ -289,7 +290,7 @@ class SimpleGated(MLPIO):
         return x
 
 
-@ModelRegistry.register("mlp", False)
+@ModelRegistry.register("mlp", True)
 class OPFMLP(OPFModel):
     def __init__(
         self,
@@ -300,10 +301,41 @@ class OPFMLP(OPFModel):
         **_,
     ):
         super().__init__()
+        n_bus, n_branch, n_gen = n_nodes
+        self.n_nodes = {
+            "bus": n_bus,
+            "branch": n_branch,
+            "gen": n_gen,
+        }
+        self.n_output = {
+            "bus": 2,
+            "branch": 4,
+            "gen": 2,
+        }
+
         self.mlp = MLP(
             in_channels=-1,
             hidden_channels=n_channels,
-            out_channels=2,
+            out_channels=sum(self.n_nodes[k] * self.n_output[k] for k in self.n_nodes),
             n_layers=n_layers,
             dropout=dropout,
         )
+
+    def _forward(self, graph: HeteroData) -> dict[str, torch.Tensor]:
+        graph["bus"].x = torch.cat([graph["bus"].load, graph["bus"].params], dim=-1)
+        graph["branch"].x = graph["branch"].params
+        graph["gen"].x = graph["gen"].params
+
+        node_types = ["bus", "branch", "gen"]
+
+        x_dict = graph.x_dict
+        x_dict = {k: v.reshape(graph.batch_size, -1) for k, v in x_dict.items()}
+        x = torch.cat([x_dict[nt] for nt in node_types], dim=1)
+        y = self.mlp(x)
+        chunk_sizes = [self.n_nodes[nt] * self.n_output[nt] for nt in node_types]
+        y_dict = dict(zip(node_types, torch.split(y, chunk_sizes, dim=1)))
+        y_dict = {
+            k: v.reshape(graph.batch_size * self.n_nodes[k], self.n_output[k])
+            for k, v in y_dict.items()
+        }
+        return y_dict
