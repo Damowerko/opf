@@ -198,6 +198,8 @@ def _train(trainer: Trainer, params):
 
     logger.info("Starting training.")
     trainer.fit(lightning_module, dm)
+    logger.info("Starting testing.")
+    trainer.test(lightning_module, dm)
 
 
 def train(trainer: Trainer, params):
