@@ -139,7 +139,7 @@ class OPFDataset(Dataset[PowerflowData]):
         Sf: torch.Tensor,
         St: torch.Tensor,
         graph: HeteroData,
-        case_name: str,
+        casefile: str,
         dual_graph: bool = False,
     ):
         """
@@ -148,11 +148,13 @@ class OPFDataset(Dataset[PowerflowData]):
 
         Args:
             load: Load samples with shape (n_samples, n_bus, n_features_bus).
-            graph: HeteroData object with the graph structure.
-            Sg: Generator power samples with shape (n_samples, n_gen, 2).
             V: Bus voltage samples with shape (n_samples, n_bus, 2).
+            Sg: Generator power samples with shape (n_samples, n_gen, 2).
             Sf: Branch power flow samples with shape (n_samples, n_branch, 2).
             St: Branch power flow samples with shape (n_samples, n_branch, 2).
+            graph: HeteroData object with the graph structure.
+            casefile: Path to the casefile used to generate the data.
+            dual_graph: If true, the provided graph is a dual graph (branches are nodes rather than edges).
         """
         super().__init__()
         self.load = load
@@ -161,7 +163,7 @@ class OPFDataset(Dataset[PowerflowData]):
         self.Sf = Sf
         self.St = St
         self.graph = graph
-        self.graph.case_name = case_name
+        self.graph.casefile = casefile
         self.dual_graph = dual_graph
 
     def __len__(self) -> int:
@@ -302,20 +304,20 @@ class CaseDataModule(pl.LightningDataModule):
             self.train_dataset = OPFDataset(
                 *(x[:n_train] for x in variables),
                 graph=self.graph,
-                case_name=self.powerflow_parameters.casefile,
+                casefile=self.powerflow_parameters.casefile,
                 dual_graph=self.dual_graph,
             )
             self.val_dataset = OPFDataset(
                 *(x[n_train : n_train + n_val] for x in variables),
                 graph=self.graph,
-                case_name=self.powerflow_parameters.casefile,
+                casefile=self.powerflow_parameters.casefile,
                 dual_graph=self.dual_graph,
             )
         if stage == "test" or stage is None:
             self.test_dataset = OPFDataset(
                 *(x[n_train + n_val : n_train + n_val + n_test] for x in variables),
                 graph=self.graph,
-                case_name=self.powerflow_parameters.casefile,
+                casefile=self.powerflow_parameters.casefile,
                 dual_graph=self.dual_graph,
             )
 

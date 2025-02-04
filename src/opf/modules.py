@@ -386,9 +386,6 @@ class OPFDual(pl.LightningModule):
         project_powermodels=False,
     ):
         if project_powermodels:
-            raise NotImplementedError(
-                "project_powermodels is not implemented right now."
-            )
             variables = self.project_powermodels(variables, graph)
         constraints = self.constraints(variables, graph, multipliers)
         cost = self.cost(variables, graph)
@@ -454,7 +451,9 @@ class OPFDual(pl.LightningModule):
         assert isinstance(graph, HeteroData)
 
         batch_size = batch.graph.num_graphs
-        _, constraints, cost = self._step_helper(self(batch)[0], graph)
+        _, constraints, cost = self._step_helper(
+            self(batch)[0], graph, project_powermodels=True
+        )
         metrics = self.metrics(cost, constraints, "val", self.detailed_metrics)
         self.log_dict(metrics, batch_size=batch_size, sync_dist=True)
 
@@ -509,21 +508,31 @@ class OPFDual(pl.LightningModule):
         clamp=True,
     ) -> pf.PowerflowVariables:
         V, Sg, Sd = variables.V, variables.Sg, variables.Sd
-
         bus_params = pf.BusParameters.from_tensor(graph["bus"].params)
         gen_params = pf.GenParameters.from_tensor(graph["gen"].params)
+
+        # TODO: Add support for multiple casefiles, will need to batch them together or loop over them
+        casefiles = set(graph.casefile)
+        if len(casefiles) != 1:
+            raise NotImplementedError(
+                f"Currently all graphs in the batch must have the same casefile. Found {casefiles}."
+            )
 
         if clamp:
             V, Sg = self.enforce_constraints(
                 V, Sg, bus_params, gen_params, strategy="clamp"
             )
+
         bus_shape = V.shape
         gen_shape = Sg.shape
         dtype = V.dtype
         device = V.device
-        V = torch.view_as_real(V.cpu()).view(-1, self.n_bus, 2).numpy()
-        Sg = torch.view_as_real(Sg.cpu()).view(-1, self.n_gen, 2).numpy()
-        Sd = torch.view_as_real(Sd.cpu()).view(-1, self.n_bus, 2).numpy()
+        n_bus = graph["bus"].num_nodes // graph.batch_size
+        n_gen = graph["gen"].num_nodes // graph.batch_size
+
+        V = torch.view_as_real(V.cpu()).view(-1, n_bus, 2).numpy()
+        Sg = torch.view_as_real(Sg.cpu()).view(-1, n_gen, 2).numpy()
+        Sd = torch.view_as_real(Sd.cpu()).view(-1, n_bus, 2).numpy()
         # TODO: make this more robust, maybe use PyJulia
         # currently what we do is save the data to a temporary directory
         # then run the julia script and load the data back
@@ -537,7 +546,7 @@ class OPFDual(pl.LightningModule):
                     "--project=@.",
                     script_path.as_posix(),
                     "--casefile",
-                    graph.case_name,
+                    graph.casefile[0],
                     "--busfile",
                     busfile.as_posix(),
                 ]
@@ -548,9 +557,9 @@ class OPFDual(pl.LightningModule):
         V = torch.from_numpy(V)
         Sg = torch.from_numpy(Sg)
         Sd = torch.from_numpy(Sd)
-        V = torch.complex(V[..., 0], V[..., 1]).to(device, dtype).view(bus_shape)
-        Sg = torch.complex(Sg[..., 0], Sg[..., 1]).to(device, dtype).view(gen_shape)
-        Sd = torch.complex(Sd[..., 0], Sd[..., 1]).to(device, dtype).view(bus_shape)
+        V = torch.complex(V[..., 0], V[..., 1]).to(device, dtype).reshape(bus_shape)
+        Sg = torch.complex(Sg[..., 0], Sg[..., 1]).to(device, dtype).reshape(gen_shape)
+        Sd = torch.complex(Sd[..., 0], Sd[..., 1]).to(device, dtype).reshape(bus_shape)
         return pf.powerflow_from_graph(V, Sd, Sg, graph, self.dual_graph)
 
     def parse_bus(self, bus: torch.Tensor):
@@ -687,10 +696,10 @@ class OPFDual(pl.LightningModule):
         reduce_fn = {
             "default": torch.sum,
             "error_mean": torch.mean,
-            "error_max": torch.max,
+            "error_max": torch.mean,
             "rate": torch.mean,
             "multiplier/mean": torch.mean,
-            "multiplier/max": torch.max,
+            "multiplier/max": torch.mean,
         }
 
         for constraint_name, constraint_values in constraints.items():
@@ -723,7 +732,7 @@ class OPFDual(pl.LightningModule):
         pointwise_parameters = self.model_dual.parameters_pointwise()
         if len(pointwise_parameters) > 0:
             logger.info("Creating optimizer for dual pointwise parameters.")
-            dual_pointwise_optimizer = torch.optim.SGD(
+            dual_pointwise_optimizer = torch.optim.AdamW(
                 pointwise_parameters,
                 lr=self.lr_dual_pointwise,
                 weight_decay=self.wd_dual_pointwise,
