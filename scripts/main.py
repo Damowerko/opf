@@ -40,6 +40,21 @@ def add_common_args(parser):
     group.add_argument("--case_name", type=str, default="case118_ieee")
     group.add_argument("--batch_size", type=int, default=32)
     group.add_argument("--num_workers", type=int, default=0)
+    group.add_argument(
+        "--train_split",
+        type=float,
+        default=0.8,
+        help="Relative size of training dataset.",
+    )
+    group.add_argument(
+        "--val_split",
+        type=float,
+        default=0.1,
+        help="Relative size of validation dataset.",
+    )
+    group.add_argument(
+        "--test_split", type=float, default=0.1, help="Relative size of test dataset."
+    )
 
     # trainer arguments
     group = parser.add_argument_group("Trainer")
@@ -151,6 +166,7 @@ def _train(trainer: Trainer, params):
     dm = CaseDataModule(
         dual_graph=ModelRegistry.is_dual(params["model_name"]),
         pin_memory=params["gpu"],
+        data_splits=(params["train_split"], params["val_split"], params["test_split"]),
         **params,
     )
 

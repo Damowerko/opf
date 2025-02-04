@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 import os
 import typing
 from multiprocessing import cpu_count
@@ -17,6 +18,7 @@ from torch_geometric.typing import EdgeType, NodeType
 import opf.powerflow as pf
 
 PGLIB_VERSION = "21.07"
+logger = logging.getLogger(__name__)
 
 
 class PowerflowData(typing.NamedTuple):
@@ -201,7 +203,7 @@ class CaseDataModule(pl.LightningDataModule):
         batch_size=32,
         num_workers=min(cpu_count(), 8),
         pin_memory=False,
-        test_samples=1000,
+        data_splits=(0.8, 0.1, 0.1),
         **kwargs,
     ):
         super().__init__()
@@ -212,7 +214,7 @@ class CaseDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.dual_graph = dual_graph
-        self.test_samples = test_samples
+        self.data_splits = data_splits
 
         self.powerflow_parameters = None
         self.graph = None
@@ -294,9 +296,13 @@ class CaseDataModule(pl.LightningDataModule):
         Sd[:, self.powerflow_parameters.load_bus_ids, :] = load
 
         # figure out the number of samples for each set
-        n_train = n_samples - 2 * self.test_samples
-        n_val = self.test_samples
-        n_test = self.test_samples
+        if data_splits_total := sum(self.data_splits) > 1:
+            logger.warning(
+                f"Data splits {self.data_splits} sum to more than 1, normalizing."
+            )
+            self.data_splits = [x / data_splits_total for x in self.data_splits]
+
+        n_train, n_val, n_test = [int(split * n_samples) for split in self.data_splits]
         # Create a tuple of variables, each row defining a sample in the dataset
         # Will programatically split them into train, val and test
         variables = (Sd, V, Sg, Sf, St)
@@ -307,15 +313,17 @@ class CaseDataModule(pl.LightningDataModule):
                 casefile=self.powerflow_parameters.casefile,
                 dual_graph=self.dual_graph,
             )
+            # I am indexing from the end, so that I can change the size of the training dataset
+            # without changing wich samples are used for testing and validation
             self.val_dataset = OPFDataset(
-                *(x[n_train : n_train + n_val] for x in variables),
+                *(x[-n_val - n_test : -n_test] for x in variables),
                 graph=self.graph,
                 casefile=self.powerflow_parameters.casefile,
                 dual_graph=self.dual_graph,
             )
         if stage == "test" or stage is None:
             self.test_dataset = OPFDataset(
-                *(x[n_train + n_val : n_train + n_val + n_test] for x in variables),
+                *(x[-n_test:] for x in variables),
                 graph=self.graph,
                 casefile=self.powerflow_parameters.casefile,
                 dual_graph=self.dual_graph,
