@@ -1,5 +1,11 @@
 #!/bin/bash
+set -e
 args="$@"
+
+# Build the Docker image
+script_dir=$(dirname "$0")
+bash "$script_dir/build.sh"
+
 template=$(cat << EOF
 apiVersion: batch/v1
 kind: Job
