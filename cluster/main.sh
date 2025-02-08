@@ -1,5 +1,6 @@
 #!/bin/bash
 args="$@"
+./cluster/build.sh
 template=$(cat << EOF
 apiVersion: batch/v1
 kind: Job
