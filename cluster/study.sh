@@ -11,7 +11,7 @@ metadata:
 spec:
   completions: 400
   parallelism: 8
-  ttlSecondsAfterFinished: 3600
+  ttlSecondsAfterFinished: 84000 
   template:
     spec:
       restartPolicy: Never
