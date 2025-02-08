@@ -226,10 +226,10 @@ def train(trainer: Trainer, params):
 
 
 def study(params: dict):
-    study_name = "opf-5"
+    study_name = "opf-supervised-118"
     storage = os.environ["OPTUNA_STORAGE"]
     pruner = optuna.pruners.HyperbandPruner(
-        min_resource=50, max_resource=1000, reduction_factor=3
+        min_resource=10, max_resource=200, reduction_factor=3
     )
     study = optuna.create_study(
         study_name=study_name,
@@ -245,28 +245,30 @@ def study(params: dict):
 
 
 def objective(trial: optuna.trial.Trial, default_params: dict):
+    n_channels = trial.suggest_categorical("n_channels", [32, 64, 128, 256])
     params = dict(
         lr=trial.suggest_float("lr", 1e-5, 1e-2, log=True),
-        weight_decay=trial.suggest_float("weight_decay", 1e-16, 1, log=True),
-        lr_dual=trial.suggest_float("lr_dual", 1e-5, 1.0, log=True),
-        lr_common=trial.suggest_float("lr_common", 1e-5, 1.0, log=True),
-        weight_decay_dual=trial.suggest_float("weight_decay_dual", 1e-16, 1, log=True),
+        lr_dual_shared=0.0,
+        lr_dual_pointwise=0.0,
+        wd_dual_shared=0.0,
+        wd_dual_pointwise=0.0,
+        wd=trial.suggest_float("wd", 1e-16, 1e-2, log=True),
         dropout=trial.suggest_float("dropout", 0, 1),
-        supervised_weight=100.0,
-        augmented_weight=10.0,
-        powerflow_weight=1.0,
+        multiplier_type="shared",
+        cost_weight=0.0,
+        supervised_weight=1.0,
+        augmented_weight=0.0,
+        powerflow_weight=0.0,
         case_name="case118_ieee",
+        # Architecture parameters
         n_layers=20,
-        batch_size=100,
-        n_channels=128,
-        cost_weight=1.0,
-        equality_weight=1e3,
-        max_epochs=1000,
-        patience=1000,
-        warmup=10,
-        supervised_warmup=20,
-        # # MLP parameteers
-        mlp_hidden_channels=512,
+        batch_size=25,
+        n_heads=trial.suggest_categorical("n_heads", [1, 2, 4, 8]),
+        n_channels=n_channels,
+        max_epochs=200,
+        patience=100,
+        # MLP parameters
+        mlp_hidden_channels=2 * n_channels,
         mlp_read_layers=2,
         mlp_per_gnn_layers=2,
     )
