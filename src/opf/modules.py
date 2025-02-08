@@ -476,9 +476,7 @@ class OPFDual(pl.LightningModule):
         # project_powermodels taking too long
         # go over batch w/ project pm, then individual steps without
         _, constraints, cost = self._step_helper(
-            self(batch),
-            graph,
-            project_powermodels=True,
+            self(batch)[0], graph, project_powermodels=True
         )
         test_metrics = self.metrics(cost, constraints, "test", self.detailed_metrics)
         self.log_dict(
