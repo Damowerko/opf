@@ -6,7 +6,7 @@ template=$(cat << EOF
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: optuna-job
+  name: opf-study
   namespace: owerko
 spec:
   completions: 400
@@ -21,10 +21,10 @@ spec:
           server: lc1-alelab.seas.upenn.edu
           path: /nfs/general/opf_data
       containers:
-      - name: opf-trial
+      - name: opf-study
         image: docker.io/damowerko/opf
         imagePullPolicy: Always
-        command: ["bash", "-c", "python -u scripts/main.py study && sleep 1"]
+        command: ["bash", "-c", "python -u scripts/main.py study $args && sleep 1"]
         env:
         - name: OPTUNA_STORAGE
           value: postgresql://optuna:optuna@optuna-db.owerko.svc.cluster.local:5432/optuna
