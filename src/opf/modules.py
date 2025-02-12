@@ -730,7 +730,7 @@ class OPFDual(pl.LightningModule):
         pointwise_parameters = self.model_dual.parameters_pointwise()
         if len(pointwise_parameters) > 0:
             logger.info("Creating optimizer for dual pointwise parameters.")
-            dual_pointwise_optimizer = torch.optim.AdamW(
+            dual_pointwise_optimizer = torch.optim.SGD(
                 pointwise_parameters,
                 lr=self.lr_dual_pointwise,
                 weight_decay=self.wd_dual_pointwise,
