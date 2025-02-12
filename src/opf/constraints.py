@@ -1,9 +1,7 @@
-from math import log, pi
-
 import torch
 
 
-def metrics(loss, u: torch.Tensor, eps: float):
+def metrics(loss, u: torch.Tensor, eps: float, multiplier: torch.Tensor | None):
     # Consider two values equal if within numerical error.
     violated_mask = u >= eps
     violated = u[violated_mask]
@@ -15,18 +13,25 @@ def metrics(loss, u: torch.Tensor, eps: float):
     # if u.numel() == 0:
     #     loss = torch.zeros(1, device=u.device, dtype=u.dtype).squeeze()
 
-    return dict(
-        loss=loss,
+    metrics = dict(
         rate=(violated_mask.sum() / violated_mask.numel()).nan_to_num(),
         error_mean=violated.abs().mean(),
         error_max=violated.abs().max(),
     )
+    if loss is not None:
+        metrics["loss"] = loss
+    if multiplier is not None:
+        metrics["multiplier/mean"] = multiplier.mean()
+        metrics["multiplier/max"] = multiplier.max()
+        metrics["multiplier/min"] = multiplier.min()
+    return metrics
 
 
-def fix_angle(u: torch.Tensor):
-    u = torch.fmod(u, 2 * pi)
-    u[u > 2 * pi] = 2 * pi - u[u > 2 * pi]
-    return u
+def wrap_angle(u: torch.Tensor):
+    """
+    Wrap angle to the range [-pi, pi].
+    """
+    return torch.remainder(u + torch.pi, 2 * torch.pi) - torch.pi
 
 
 def _compute_mask(mask, constraint):
@@ -37,22 +42,29 @@ def _compute_mask(mask, constraint):
     return mask
 
 
-def truncated_log(u, s, t):
-    assert not u.isnan().any()
-    threshold = -1 / (s * t)
-    below = u <= threshold
-    v = torch.zeros_like(u)
-    v[below] = -torch.log(-u[below]) / t
-    v[~below] = (-log(-threshold) / t) + (u[~below] - threshold) * s
-    return v
+def loss_equality(u: torch.Tensor, multiplier: torch.Tensor, augmented_weight=0.0):
+    loss = (u @ multiplier) / multiplier.size(0)
+    if augmented_weight > 0:
+        loss = loss + augmented_weight * u.pow(2).mean()
+    return loss
+
+
+def loss_inequality(u: torch.Tensor, multiplier: torch.Tensor, augmented_weight=0.0):
+    loss = (u @ multiplier) / multiplier.size(0)
+    # u <= 0, therefore we have violation when u > 0, loss = max(0, u)^2
+    if augmented_weight > 0:
+        loss = loss + augmented_weight * u.relu().pow(2).mean()
+    return loss
 
 
 def equality(
     x: torch.Tensor,
     y: torch.Tensor,
+    multiplier: torch.Tensor | None = None,
     mask: torch.Tensor | None = None,
     eps=1e-4,
     angle=False,
+    augmented_weight=0.0,
 ):
     """
     Computes the equality constraint between two tensors `x` and `y`.
@@ -60,9 +72,11 @@ def equality(
     Args:
         x (torch.Tensor): The first tensor.
         y (torch.Tensor): The second tensor.
+        multiplier (torch.Tensor): A multiplier value that can be any real number.
         mask (torch.Tensor | None, optional): A boolean mask tensor. If provided, only the elements where `mask` is `True` will be considered. Defaults to `None`.
         eps (float, optional): A small constant used to avoid division by zero. Defaults to `1e-4`.
         angle (bool, optional): If `True`, the input tensors are treated as angles in radians and the difference is wrapped to the range `[-pi, pi]`. Defaults to `False`.
+        augmented_weight (float, optional): The weight of the augmented loss. Defaults to `0.0`.
 
     Returns:
         A tuple containing the loss value, the constraint violation vector, and the number of violated constraints.
@@ -70,77 +84,90 @@ def equality(
     if mask is not None:
         x = x[..., mask]
         y = y[..., mask]
-    u = (x - y).abs()
-    if angle:
-        u = fix_angle(u)
-    loss = u.square().mean()
+        if multiplier is not None:
+            multiplier = multiplier[..., mask]
+    u = x - y if not angle else wrap_angle(x - y)
+    # The loss is the dot product of the constraint and the multiplier, averaged over the batch.
+    loss = (
+        loss_equality(u, multiplier, augmented_weight=augmented_weight)
+        if multiplier is not None
+        else None
+    )
 
     assert not torch.isnan(u).any()
     assert not torch.isinf(u).any()
-    return metrics(loss, u, eps)
+    return metrics(loss, u.abs(), eps, multiplier)
 
 
 def inequality(
     value: torch.Tensor,
     lower_bound: torch.Tensor,
     upper_bound: torch.Tensor,
-    s,
-    t,
+    lower_multiplier: torch.Tensor | None = None,
+    upper_multiplier: torch.Tensor | None = None,
     eps=1e-4,
     angle=False,
+    augmented_weight=0.0,
 ):
     """
     Computes the inequality constraint loss for a given tensor.
 
     Args:
+        multiplier (torch.Tensor): The loss multiplier.
         value (torch.Tensor): The tensor to be constrained.
         lower_bound (torch.Tensor): The lower bound tensor.
         upper_bound (torch.Tensor): The upper bound tensor.
-        s (float): The maximum slope of the log-barrier.
-        t (float): The barrier function scaling parameter.
         eps (float, optional): The epsilon value. Defaults to 1e-4.
         angle (bool, optional): Whether to fix the angle. Defaults to False.
-
+        augmented_weight (float, optional): The augmented weight. Defaults to 0.0.
     Returns:
         tuple: A tuple containing the loss and the metrics.
     """
+    assert (lower_multiplier is None) == (
+        upper_multiplier is None
+    ), "Both or none of the multipliers should be provided."
+    # Inequality multipliers should be positive.
+    if lower_multiplier is not None:
+        assert torch.all(
+            lower_multiplier >= 0
+        ), "There are negative values in the inequality multiplier"
+    if upper_multiplier is not None:
+        assert torch.all(
+            upper_multiplier >= 0
+        ), "There are negative values in the inequality multiplier"
 
     # To properly normalize the results we do not want any of these to be inf.
     assert not torch.isinf(upper_bound).any()
     assert not torch.isinf(lower_bound).any()
 
-    band = (upper_bound - lower_bound).abs()
+    mask_lower = _compute_mask(None, lower_bound)
+    mask_upper = _compute_mask(None, upper_bound)
 
-    mask_equality = band < eps
-    mask_lower = _compute_mask(~mask_equality, lower_bound)
-    mask_upper = _compute_mask(~mask_equality, upper_bound)
-
-    u_equal = lower_bound[mask_equality] - value[:, mask_equality]
-    u_lower = lower_bound[mask_lower] - value[:, mask_lower]
-    u_upper = value[:, mask_upper] - upper_bound[mask_upper]
+    u_lower = lower_bound[..., mask_lower] - value[..., mask_lower]
+    u_upper = value[..., mask_upper] - upper_bound[..., mask_upper]
 
     if angle:
-        u_equal = fix_angle(u_equal)
-        u_lower = fix_angle(u_lower)
-        u_upper = fix_angle(u_upper)
+        u_lower = wrap_angle(u_lower)
+        u_upper = wrap_angle(u_upper)
 
-    u_lower /= band[mask_lower]
-    u_upper /= band[mask_upper]
+    u_all = torch.cat((u_lower, u_upper), dim=-1)
 
-    # we normalize u_equal by the mean difference between the upper and lower constraints
-    # this allows us to compare values of different scales
-    u_inequality = torch.cat((u_lower.flatten(), u_upper.flatten()))
-    loss = (
-        u_equal.square().sum() + truncated_log(u_inequality, s, t).sum()
-    ) / value.numel()
+    if lower_multiplier is None or upper_multiplier is None:
+        return metrics(None, u_all, eps, None)
 
-    # The tensor elements should be bounded.
-    assert not torch.isinf(u_equal).any()
-    assert not torch.isnan(u_equal).any()
-    assert not torch.isinf(u_inequality).any()
-    assert not torch.isnan(u_inequality).any()
-    return metrics(
-        loss,
-        torch.cat((u_equal.flatten() / band[~mask_equality].mean(), u_inequality)),
-        eps,
+    loss_lower = loss_inequality(
+        u_lower, lower_multiplier[..., mask_lower], augmented_weight=augmented_weight
     )
+    loss_upper = loss_inequality(
+        u_upper, upper_multiplier[..., mask_upper], augmented_weight=augmented_weight
+    )
+    loss = loss_lower + loss_upper
+    # this is used for metrics only
+    multiplier_all = torch.cat(
+        (
+            lower_multiplier[..., mask_lower],
+            upper_multiplier[..., mask_upper],
+        ),
+        dim=-1,
+    )
+    return metrics(loss, u_all, eps, multiplier_all)

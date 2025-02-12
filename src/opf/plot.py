@@ -23,7 +23,7 @@ def plot_equality(title, target, value):
     return fig
 
 
-def plot_inequality(title, value, lower, upper):
+def plot_inequality(title, value, lower, upper, eps=1e-4):
     if isinstance(value, torch.Tensor):
         value = value.numpy()
     if isinstance(lower, torch.Tensor):
@@ -34,7 +34,7 @@ def plot_inequality(title, value, lower, upper):
     lower = np.squeeze(lower)
     upper = np.squeeze(upper)
 
-    violation = (value > upper) | (lower > value)
+    violation = (value > upper + eps) | (lower - eps > value)
 
     fig = plt.figure()
     n = np.arange(len(value))

@@ -5,6 +5,7 @@ logs/
 scripts/latest.ckpt
 **/wandb
 figures/
+/hsl
 
 ## IDE
 .idea/
@@ -15,3 +16,6 @@ figures/
 **/.ipynb_checkpoints/
 .python-version
 .pytest_cache
+
+
+scripts/run.sh

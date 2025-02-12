@@ -4,19 +4,16 @@ metadata:
   name: optuna-job
   namespace: owerko
 spec:
-  completions: 1000
+  completions: 59
   parallelism: 8
   ttlSecondsAfterFinished: 3600
   template:
     spec:
-      hostIPC: true
-      securityContext:
-        runAsUser: 1000
       restartPolicy: Never
       volumes:
       - name: opf-data
         nfs:
-          server: 158.130.113.30
+          server: lc1-alelab.seas.upenn.edu
           path: /nfs/general/opf_data
       containers:
       - name: opf-trial
@@ -26,6 +23,8 @@ spec:
         env:
         - name: OPTUNA_STORAGE
           value: postgresql://optuna:optuna@optuna-db.owerko.svc.cluster.local:5432/optuna
+        - name: WANDB_ENTITY
+          value: damowerko-academic
         - name: WANDB_USERNAME
           value: damowerko
         - name: WANDB_PROJECT
@@ -36,10 +35,13 @@ spec:
               name: wandb
               key: api_key
         resources:
+          requests:
+            cpu: 8
+            memory: 16Gi
           limits:
-            nvidia.com/gpu-24gb: 1
-            cpu: 32
-            memory: 32Gi
+            cpu: 64
+            memory: 128Gi
+            nvidia.com/gpu: 1
         volumeMounts:
         - mountPath: /home/default/opf/data
           name: opf-data

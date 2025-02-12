@@ -30,7 +30,7 @@ dm = CaseDataModule(case_name="case118_ieee", num_workers=0, pin_memory=True, ho
 dm.setup("test")
 dataset = dm.test_dataset
 assert isinstance(dataset, StaticGraphDataset)
-data = dataset[0].data.cuda()
+data = dataset[0].graph.cuda()
 data.edge_weight = data.edge_attr[:, 0]
 data = ToSparseTensor()(data)
 

@@ -38,24 +38,20 @@ function project(network_data::Dict{String,Any}, V::Array{Float64,2}, Sg::Array{
         v["pd"] = Sd[bus, 1]
         v["qd"] = Sd[bus, 2]
     end
+
     for (_, v) in network_data["gen"]
-        bus = v["gen_bus"]
-        pg = Sg[bus, 1]
-        qg = Sg[bus, 2]
-        # enforce constraints
-        pg = max(pg, v["pmin"])
-        pg = min(pg, v["pmax"])
-        qg = max(qg, v["qmin"])
-        qg = min(qg, v["qmax"])
+        i = v["index"]
+        pg = Sg[i, 1]
+        qg = Sg[i, 2]
         v["pg"] = pg
         v["qg"] = qg
     end
 
     # if possible use hsl to speed up computation
     if use_hsl
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0, "linear_solver" => "ma27", "hsllib" => HSL_jll.libhsl_path, "sb" => "yes")
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "max_iter" => 1000, "print_level" => 0, "linear_solver" => "ma27", "hsllib" => HSL_jll.libhsl_path, "sb" => "yes")
     else
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0, "sb" => "yes")
+        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "max_iter" => 1000, "print_level" => 0, "sb" => "yes")
     end
     result = PowerModels.solve_ac_pf(network_data, solver)
     if (result["termination_status"] != LOCALLY_SOLVED)
@@ -70,7 +66,14 @@ function project(network_data::Dict{String,Any}, V::Array{Float64,2}, Sg::Array{
         V[i, 1] = v["vm"] * cos(v["va"])
         V[i, 2] = v["vm"] * sin(v["va"])
     end
-    return V
+    n_gen = length(network_data["gen"])
+    Sg = zeros(Float64, n_gen, 2)
+    for (k, v) in result["solution"]["gen"]
+        i = network_data["gen"][k]["index"]
+        Sg[i, 1] = v["pg"]
+        Sg[i, 2] = v["qg"]
+    end
+    return V, Sg
 end
 
 @compile_workload begin

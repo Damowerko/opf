@@ -1,15 +1,20 @@
 ## Project
-data/
-# If data is symlinked it will be a file
-data
-logs/
-scripts/latest.ckpt
-**/wandb
-figures/
-
-## IDE
+.pytest_cache/
 .idea/
 .vscode/
+cluster/
+figures/
+logs/
+checkpoints/
+hsl/
+**/wandb
+# data, it's symlink, but allow folders called data in src */
+data/
+data
+!src/**/data
+
+## IDE
+
 
 #Python
 **/__pycache__/
