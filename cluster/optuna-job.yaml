@@ -4,7 +4,7 @@ metadata:
   name: optuna-job
   namespace: owerko
 spec:
-  completions: 59
+  completions: 400
   parallelism: 8
   ttlSecondsAfterFinished: 3600
   template:
