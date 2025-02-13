@@ -314,6 +314,8 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
     logger.info(
         f"Trial {trial.number} finished with the following metrics {trainer.callback_metrics}."
     )
+    if "val/invariant" not in trainer.callback_metrics:
+        return float("inf")
     return trainer.callback_metrics["val/invariant"].item()
 
 
