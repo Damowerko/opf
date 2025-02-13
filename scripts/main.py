@@ -5,12 +5,14 @@ import typing
 from functools import partial
 from pathlib import Path
 
+import lightning.pytorch as pl
 import optuna
 import torch
 import wandb
 from lightning.pytorch import Trainer
-from lightning.pytorch.callbacks import EarlyStopping
+from lightning.pytorch.callbacks import EarlyStopping, ProgressBar
 from lightning.pytorch.loggers.wandb import WandbLogger
+from typing_extensions import override
 from wandb.wandb_run import Run
 
 from opf.constraints import ConstraintValueError
@@ -25,6 +27,32 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+class ConsoleProgressBar(ProgressBar):
+    """
+    A 'progress bar' that simply prints to the console.
+    """
+
+    def __init__(self, logger):
+        super().__init__()
+        self.logger = logger
+        self._enabled = True
+
+    def enable(self):
+        self._enabled = True
+
+    def disable(self):
+        self._enabled = False
+
+    @override
+    def on_validation_end(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
+        if trainer.state.fn != "fit":
+            return
+        metrics = self.get_metrics(trainer, pl_module)
+        self.logger.info(f"Epoch {trainer.current_epoch}: {metrics}")
 
 
 def add_common_args(parser):
@@ -68,6 +96,7 @@ def add_common_args(parser):
     group.add_argument("--max_epochs", type=int, default=1000)
     group.add_argument("--patience", type=int, default=50)
     group.add_argument("--gradient_clip_val", type=float, default=0)
+    group.add_argument("--no_bar", action="store_false", dest="progress_bar")
 
     # lightning module arguments
     group = parser.add_argument_group("Lightning Module")
@@ -138,6 +167,10 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         #     ),
         # ]
     callbacks += [EarlyStopping(monitor="val/invariant", patience=params["patience"])]
+    if not params["progress_bar"]:
+        # if progress bar is disabled, we want to log the progress to the console
+        callbacks += [ConsoleProgressBar(logger)]
+
     trainer = Trainer(
         logger=trainer_logger,
         callbacks=callbacks,
@@ -149,6 +182,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         fast_dev_run=params["fast_dev_run"],
         gradient_clip_val=params["gradient_clip_val"],
         log_every_n_steps=1,
+        enable_progress_bar=params["progress_bar"],
     )
     return trainer
 
