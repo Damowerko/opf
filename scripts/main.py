@@ -97,7 +97,7 @@ def add_common_args(parser):
     group.add_argument("--max_epochs", type=int, default=1000)
     group.add_argument("--patience", type=int, default=50)
     group.add_argument("--gradient_clip_val", type=float, default=0)
-    group.add_argument("--no_bar", action="store_false", dest="progress_bar")
+    group.add_argument("--simple_progress", action="store_true", dest="simple_progress")
 
     # lightning module arguments
     group = parser.add_argument_group("Lightning Module")
@@ -168,8 +168,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         #     ),
         # ]
     callbacks += [EarlyStopping(monitor="val/invariant", patience=params["patience"])]
-    if not params["progress_bar"]:
-        # if progress bar is disabled, we want to log the progress to the console
+    if params["simple_progress"]:
         callbacks += [ConsoleProgressBar(logger)]
 
     trainer = Trainer(

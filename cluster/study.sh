@@ -24,7 +24,7 @@ spec:
       - name: opf-study
         image: docker.io/damowerko/opf
         imagePullPolicy: Always
-        command: ["bash", "-c", "python -u scripts/main.py study $args --no_bar && sleep 1"]
+        command: ["bash", "-c", "python -u scripts/main.py study $args --simple_progress && sleep 1"]
         env:
         - name: OPTUNA_STORAGE
           value: postgresql://optuna:optuna@optuna-db.owerko.svc.cluster.local:5432/optuna
