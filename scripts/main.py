@@ -276,10 +276,8 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
             "lr_dual_pointwise", 1e-5, 10.0, log=True
         ),
         wd=trial.suggest_float("wd", 1e-16, 1.0, log=True),
-        wd_dual_shared=trial.suggest_float("wd_dual_shared", 1e-16, 1.0, log=True),
-        wd_dual_pointwise=trial.suggest_float(
-            "wd_dual_pointwise", 1e-16, 1.0, log=True
-        ),
+        wd_dual_shared=trial.suggest_float("wd_dual_shared", 1e-8, 1.0, log=True),
+        wd_dual_pointwise=trial.suggest_float("wd_dual_pointwise", 1e-8, 1.0, log=True),
         dropout=0.0,
         multiplier_type="hybrid",
         cost_weight=trial.suggest_float("cost_weight", 1e-2, 1e2, log=True),
