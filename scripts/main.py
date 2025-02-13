@@ -329,6 +329,8 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         mlp_hidden_channels=2 * n_channels,
         mlp_read_layers=2,
         mlp_per_gnn_layers=2,
+        # Trainer parameters
+        num_workers=32,
     )
     params = {**default_params, **params}
     trainer = make_trainer(
