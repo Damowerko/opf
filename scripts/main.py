@@ -7,11 +7,13 @@ from pathlib import Path
 
 import optuna
 import torch
+import wandb
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers.wandb import WandbLogger
 from wandb.wandb_run import Run
 
+from opf.constraints import ConstraintValueError
 from opf.dataset import CaseDataModule, PowerflowData
 from opf.models import ModelRegistry
 from opf.models.base import OPFModel
@@ -102,9 +104,9 @@ def main():
 
 
 def make_trainer(params, callbacks=[], wandb_kwargs={}):
-    logger = None
+    trainer_logger = None
     if params["log"]:
-        logger = WandbLogger(
+        trainer_logger = WandbLogger(
             entity="damowerko-academic",
             project="opf",
             save_dir=params["log_dir"],
@@ -114,8 +116,8 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
             **wandb_kwargs,
         )
 
-        logger.log_hyperparams(params)
-        typing.cast(Run, logger.experiment).log_code(
+        trainer_logger.log_hyperparams(params)
+        typing.cast(Run, trainer_logger.experiment).log_code(
             Path(__file__).parent.parent,
             include_fn=lambda path: (
                 (path.endswith(".py") or path.endswith(".jl"))
@@ -137,7 +139,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         # ]
     callbacks += [EarlyStopping(monitor="val/invariant", patience=params["patience"])]
     trainer = Trainer(
-        logger=logger,
+        logger=trainer_logger,
         callbacks=callbacks,
         precision=32,
         accelerator="cuda" if params["gpu"] else "cpu",
@@ -219,11 +221,31 @@ def _train(trainer: Trainer, params):
     # trainer.test(lightning_module, dm)
 
 
-def train(trainer: Trainer, params):
-    _train(trainer, params)
-    # trainer.test(model, dm)
-    for logger in trainer.loggers:
-        logger.finalize("finished")
+def train(
+    trainer: Trainer,
+    params,
+    pruner: optuna.integration.PyTorchLightningPruningCallback | None = None,
+):
+    status = "failed"
+    try:
+        _train(trainer, params)
+        # trainer.test(model, dm)
+        if pruner is not None:
+            pruner.check_pruned()
+        status = "success"
+    except ConstraintValueError as e:
+        # this error indicates that there is a nan in the constraint values
+        logger.error(f"ConstraintValueError: {e}")
+    except optuna.TrialPruned:
+        logger.warning(f"Trial was pruned at epoch {trainer.current_epoch}.")
+        status = "aborted"
+    finally:
+        # always want to finalize logger
+        for trainer_logger in trainer.loggers:
+            trainer_logger.finalize(status)
+            if isinstance(trainer_logger, WandbLogger):
+                # make sure wandb can upload data (and therefore log failures)
+                wandb.finish(0 if status == "success" else 1)
 
 
 def study(params: dict):
@@ -287,16 +309,13 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         ],
         wandb_kwargs=dict(group=trial.study.study_name),
     )
-
-    train(trainer, params)
-
-    # finish up
     if isinstance(trainer.logger, WandbLogger):
         trial.set_user_attr("wandb_id", trainer.logger.experiment.id)
-    for logger in trainer.loggers:
-        logger.finalize("finished")
 
-    print(trainer.callback_metrics)
+    train(trainer, params)
+    logger.info(
+        f"Trial {trial.number} finished with the following metrics {trainer.callback_metrics}."
+    )
     return trainer.callback_metrics["val/invariant"].item()
 
 

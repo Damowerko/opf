@@ -1,6 +1,11 @@
 import torch
 
 
+class ConstraintValueError(ValueError):
+    def __init__(self, message):
+        super().__init__(message)
+
+
 def metrics(loss, u: torch.Tensor, eps: float, multiplier: torch.Tensor | None):
     # Consider two values equal if within numerical error.
     violated_mask = u >= eps
@@ -94,8 +99,11 @@ def equality(
         else None
     )
 
-    assert not torch.isnan(u).any()
-    assert not torch.isinf(u).any()
+    if torch.isnan(u).any():
+        raise ConstraintValueError("NaN values found in the constraint violation.")
+    if torch.isinf(u).any():
+        raise ConstraintValueError("Inf values found in the constraint violation.")
+
     return metrics(loss, u.abs(), eps, multiplier)
 
 
@@ -151,6 +159,11 @@ def inequality(
         u_upper = wrap_angle(u_upper)
 
     u_all = torch.cat((u_lower, u_upper), dim=-1)
+
+    if torch.isnan(u_all).any():
+        raise ConstraintValueError("NaN values found in the constraint violation.")
+    if torch.isinf(u_all).any():
+        raise ConstraintValueError("Inf values found in the constraint violation.")
 
     if lower_multiplier is None or upper_multiplier is None:
         return metrics(None, u_all, eps, None)
