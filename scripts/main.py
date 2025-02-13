@@ -282,7 +282,7 @@ def train(
 
 
 def study(params: dict):
-    study_name = "opf-hybrid-118-v2"
+    study_name = "opf-hybrid-118"
     storage = os.environ["OPTUNA_STORAGE"]
     pruner = optuna.pruners.HyperbandPruner(
         min_resource=20, max_resource=200, reduction_factor=3
