@@ -301,7 +301,7 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
     trainer = make_trainer(
         params,
         callbacks=[
-            optuna.integration.PyTorchLightningPruningCallback(
+            pruner := optuna.integration.PyTorchLightningPruningCallback(
                 trial, monitor="val/invariant"
             )
         ],
@@ -310,7 +310,7 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
     if isinstance(trainer.logger, WandbLogger):
         trial.set_user_attr("wandb_id", trainer.logger.experiment.id)
 
-    train(trainer, params)
+    train(trainer, params, pruner)
     logger.info(
         f"Trial {trial.number} finished with the following metrics {trainer.callback_metrics}."
     )
