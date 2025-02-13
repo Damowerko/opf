@@ -52,6 +52,7 @@ class ConsoleProgressBar(ProgressBar):
         if trainer.state.fn != "fit":
             return
         metrics = self.get_metrics(trainer, pl_module)
+        metrics.pop("v_num", None)
         self.logger.info(f"Epoch {trainer.current_epoch}: {metrics}")
 
 
@@ -182,7 +183,6 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         fast_dev_run=params["fast_dev_run"],
         gradient_clip_val=params["gradient_clip_val"],
         log_every_n_steps=1,
-        enable_progress_bar=params["progress_bar"],
     )
     return trainer
 
@@ -283,7 +283,7 @@ def train(
 
 
 def study(params: dict):
-    study_name = "opf-hybrid-118"
+    study_name = "opf-hybrid-118-v2"
     storage = os.environ["OPTUNA_STORAGE"]
     pruner = optuna.pruners.HyperbandPruner(
         min_resource=20, max_resource=200, reduction_factor=3
