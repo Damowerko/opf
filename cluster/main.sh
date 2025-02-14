@@ -36,7 +36,7 @@ spec:
       - name: opf-train
         image: docker.io/$DOCKER_USERNAME/$IMAGE_NAME
         imagePullPolicy: Always
-        command: ["bash", "-c", "python -u scripts/main.py $args && sleep 1"]
+        command: ["python", "-u", "scripts/main.py", $args, "--simple_progress"]
         env:
         - name: WANDB_ENTITY
           value: damowerko-academic
