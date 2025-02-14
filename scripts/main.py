@@ -269,9 +269,10 @@ def train(
     except ConstraintValueError as e:
         # this error indicates that there is a nan in the constraint values
         logger.error(f"ConstraintValueError: {e}")
-    except optuna.TrialPruned:
+    except optuna.TrialPruned as e:
         logger.warning(f"Trial was pruned at epoch {trainer.current_epoch}.")
         status = "aborted"
+        raise e
     finally:
         # always want to finalize logger
         for trainer_logger in trainer.loggers:
@@ -333,12 +334,13 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         num_workers=32,
     )
     params = {**default_params, **params}
+    pruner = optuna.integration.PyTorchLightningPruningCallback(
+        trial, monitor="val/invariant"
+    )
     trainer = make_trainer(
         params,
         callbacks=[
-            pruner := optuna.integration.PyTorchLightningPruningCallback(
-                trial, monitor="val/invariant"
-            )
+            pruner,
         ],
         wandb_kwargs=dict(group=trial.study.study_name),
     )
