@@ -1,6 +1,15 @@
 #!/bin/bash
-args="$@"
-./cluster/build.sh
+set -e
+IMAGE_NAME="opf"
+DOCKER_USERNAME="damowerko"
+
+# comma separated list of arguments, printf adds an extra comma at the end, so we remove it
+printf -v args "\"%s\"," "$@"
+args=${args%,}
+
+# build first
+$(dirname "$0")/build.sh
+
 template=$(cat << EOF
 apiVersion: batch/v1
 kind: Job
@@ -25,7 +34,7 @@ spec:
           path: /nfs/general/opf_data
       containers:
       - name: opf-train
-        image: docker.io/damowerko/opf
+        image: docker.io/$DOCKER_USERNAME/$IMAGE_NAME
         imagePullPolicy: Always
         command: ["bash", "-c", "python -u scripts/main.py $args && sleep 1"]
         env:
