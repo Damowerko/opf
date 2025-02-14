@@ -32,7 +32,7 @@ spec:
       - name: opf-study
         image: docker.io/$DOCKER_USERNAME/$IMAGE_NAME
         imagePullPolicy: Always
-        command: ["bash", "-c", "python -u scripts/main.py study $args --simple_progress && sleep 1"]
+        command: ["python", "-u", "scripts/main.py", "study", "--simple_progress", $args]
         env:
         - name: OPTUNA_STORAGE
           value: postgresql://optuna:optuna@optuna-db.owerko.svc.cluster.local:5432/optuna
