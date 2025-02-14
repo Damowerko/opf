@@ -254,25 +254,12 @@ def _train(trainer: Trainer, params):
     # trainer.test(lightning_module, dm)
 
 
-def train(
-    trainer: Trainer,
-    params,
-    pruner: optuna.integration.PyTorchLightningPruningCallback | None = None,
-):
+def train(trainer: Trainer, params):
     status = "failed"
     try:
         _train(trainer, params)
         # trainer.test(model, dm)
-        if pruner is not None:
-            pruner.check_pruned()
         status = "success"
-    except ConstraintValueError as e:
-        # this error indicates that there is a nan in the constraint values
-        logger.error(f"ConstraintValueError: {e}")
-    except optuna.TrialPruned as e:
-        logger.warning(f"Trial was pruned at epoch {trainer.current_epoch}.")
-        status = "aborted"
-        raise e
     finally:
         # always want to finalize logger
         for trainer_logger in trainer.loggers:
@@ -295,10 +282,19 @@ def study(params: dict):
         load_if_exists=True,
         directions=["minimize"],
     )
-    study.optimize(
-        partial(objective, default_params=params),
-        n_trials=1,
-    )
+    try:
+        # we need to let optuna know about the exceptions
+        # therefore, exceptions are cought here, rather than inside the objective function
+        study.optimize(
+            partial(objective, default_params=params),
+            n_trials=1,
+        )
+    except ConstraintValueError as e:
+        # This is somewhat expected, if the training diverges
+        # Do not want the process in k8s to terminate with an error.
+        logger.error(f"ConstraintValueError: {e}")
+    except optuna.TrialPruned as e:
+        logger.info(f"Trial was pruned.")
 
 
 def objective(trial: optuna.trial.Trial, default_params: dict):
@@ -347,12 +343,10 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
     if isinstance(trainer.logger, WandbLogger):
         trial.set_user_attr("wandb_id", trainer.logger.experiment.id)
 
-    train(trainer, params, pruner)
+    train(trainer, params)
     logger.info(
         f"Trial {trial.number} finished with the following metrics {trainer.callback_metrics}."
     )
-    if "val/invariant" not in trainer.callback_metrics:
-        return float("inf")
     return trainer.callback_metrics["val/invariant"].item()
 
 
