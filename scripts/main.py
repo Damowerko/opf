@@ -300,17 +300,17 @@ def study(params: dict):
 def objective(trial: optuna.trial.Trial, default_params: dict):
     n_channels = 64
     params = dict(
-        lr=trial.suggest_float("lr", 1e-5, 1e-2, log=True),
-        lr_dual_shared=trial.suggest_float("lr_dual_shared", 1e-5, 10.0, log=True),
+        lr=1.5e-4,
+        lr_dual_shared=6.3,
         lr_dual_pointwise=trial.suggest_float(
             "lr_dual_pointwise", 1e-5, 10.0, log=True
         ),
-        wd=trial.suggest_float("wd", 1e-16, 1.0, log=True),
-        wd_dual_shared=trial.suggest_float("wd_dual_shared", 1e-8, 1.0, log=True),
+        wd=2.1e-5,
+        wd_dual_shared=0.26,
         wd_dual_pointwise=trial.suggest_float("wd_dual_pointwise", 1e-8, 1.0, log=True),
         dropout=0.0,
-        multiplier_type="hybrid",
-        cost_weight=trial.suggest_float("cost_weight", 1e-2, 1e2, log=True),
+        multiplier_type="pointwise",
+        cost_weight=0.15,
         supervised_weight=0.0,
         augmented_weight=0.0,
         powerflow_weight=0.0,
