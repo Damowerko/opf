@@ -391,18 +391,8 @@ class OPFDual(pl.LightningModule):
         cost = self.cost(variables, graph)
         return variables, constraints, cost
 
-    def on_train_epoch_start(self):
-        _, dual_pointwise_optimizer, _ = self.optimizers()  # type: ignore
-        dual_pointwise_optimizer.zero_grad()
-
-    def on_train_epoch_end(self):
-        _, dual_pointwise_optimizer, _ = self.optimizers()  # type: ignore
-        if self.current_epoch >= self.warmup:
-            dual_pointwise_optimizer.step()
-            self.model_dual.project_pointwise()
-
     def training_step(self, data: PowerflowData):
-        primal_optimizer, _, dual_shared_optimizer = self.optimizers()  # type: ignore
+        primal_optimizer, dual_pointwise_optimizer, dual_shared_optimizer = self.optimizers()  # type: ignore
         variables, Sf_pred, St_pred = self(data)
         _, constraints, cost = self._step_helper(
             variables, data.graph, self.model_dual.get_multipliers(data)
@@ -427,11 +417,14 @@ class OPFDual(pl.LightningModule):
 
         primal_optimizer.zero_grad()
         dual_shared_optimizer.zero_grad()
-        loss.backward()
+        dual_pointwise_optimizer.zero_grad()
+        self.manual_backward(loss)
         primal_optimizer.step()
         if self.current_epoch >= self.warmup:
             dual_shared_optimizer.step()
+            dual_pointwise_optimizer.step()
             self.model_dual.project_shared()
+            self.model_dual.project_pointwise()
 
         self.log(
             "train/loss",
