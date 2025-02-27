@@ -270,7 +270,7 @@ def train(trainer: Trainer, params):
 
 
 def study(params: dict):
-    study_name = "opf-pointwise-118"
+    study_name = "opf-hybrid-118"
     storage = os.environ["OPTUNA_STORAGE"]
     pruner = optuna.pruners.HyperbandPruner(
         min_resource=20, max_resource=200, reduction_factor=3
@@ -300,17 +300,19 @@ def study(params: dict):
 def objective(trial: optuna.trial.Trial, default_params: dict):
     n_channels = 64
     params = dict(
-        lr=1.5e-4,
-        lr_dual_shared=6.3,
+        lr=trial.suggest_float("lr", 1e-6, 1e-2, log=True),
+        lr_dual_shared=trial.suggest_float("lr_dual_shared", 1e-2, 100.0, log=True),
         lr_dual_pointwise=trial.suggest_float(
-            "lr_dual_pointwise", 1e-5, 10.0, log=True
+            "lr_dual_pointwise", 1e-2, 100.0, log=True
         ),
-        wd=2.1e-5,
-        wd_dual_shared=0.26,
-        wd_dual_pointwise=trial.suggest_float("wd_dual_pointwise", 1e-8, 1.0, log=True),
-        dropout=0.0,
-        multiplier_type="pointwise",
-        cost_weight=0.15,
+        wd=trial.suggest_float("wd", 1e-8, 1.0, log=True),
+        wd_dual_shared=trial.suggest_float("wd_dual_shared", 1e-3, 10.0, log=True),
+        wd_dual_pointwise=trial.suggest_float(
+            "wd_dual_pointwise", 1e-3, 10.0, log=True
+        ),
+        dropout=trial.suggest_float("dropout", 0.0, 0.5),
+        multiplier_type="hybrid",
+        cost_weight=trial.suggest_float("cost_weight", 1e-2, 1e2, log=True),
         supervised_weight=0.0,
         augmented_weight=0.0,
         powerflow_weight=0.0,
