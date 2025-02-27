@@ -74,11 +74,12 @@ class DualTable(DualModel):
         self.multipliers_shared = nn.Parameter(torch.zeros(self.n_multipliers))
         if self.enable_pointwise:
             logger.info("Enabling pointwise multipliers.")
-        self.multipliers_pointwise = torch.nn.Embedding(
-            num_embeddings=n_train if self.enable_pointwise else 0,
-            embedding_dim=self.n_multipliers,
+        self.multipliers_pointwise = nn.Parameter(
+            torch.zeros(
+                n_train if self.enable_pointwise else 0,
+                self.n_multipliers,
+            )
         )
-        self.multipliers_pointwise.weight.data.zero_()
 
     def _init_metadata(self, n_bus, n_gen, n_branch):
         with torch.no_grad():
@@ -132,7 +133,7 @@ class DualTable(DualModel):
         if self.enable_shared:
             multipliers = multipliers + self.multipliers_shared.expand(idx.shape[0], -1)
         if self.enable_pointwise:
-            multipliers = multipliers + self.multipliers_pointwise(idx)
+            multipliers = multipliers + self.multipliers_pointwise[idx]
 
         multiplier_dict = {}
         for multipliers_split, (name, shape) in zip(
@@ -148,7 +149,7 @@ class DualTable(DualModel):
         return [self.multipliers_shared]
 
     def parameters_pointwise(self) -> list[nn.Parameter]:
-        return list(self.multipliers_pointwise.parameters())
+        return [self.multipliers_pointwise]
 
     def project_shared(self):
         """
@@ -160,17 +161,70 @@ class DualTable(DualModel):
             self.multipliers_shared.data[self.multiplier_inequality_mask].relu_()
         )
 
-    def project_pointwise(self):
+    def project_pointwise(self, index: torch.Tensor | None = None):
         """
-        Project the inequality multipliers to be non-negative. Only the (sample-wise) table multipliers are projected.
+        Project the inequality multipliers to be non-negative. Only the pointwise multipliers are projected.
+
+        Args:
+            index: The indices of the multipliers to project. If None, all multipliers are projected.
         """
         # use .data to avoid autograd tracking since we are modifying the data in place
         # no need for autograd since we are not backpropagating through this operation
-        self.multipliers_pointwise.weight.data[:, self.multiplier_inequality_mask] = (
-            self.multipliers_pointwise.weight.data[
-                :, self.multiplier_inequality_mask
+        if index is None:
+            self.multipliers_pointwise.data[:, self.multiplier_inequality_mask] = (
+                self.multipliers_pointwise.data[
+                    :, self.multiplier_inequality_mask
+                ].relu_()
+            )
+        else:
+            self.multipliers_pointwise.data[
+                index[:, None], self.multiplier_inequality_mask
+            ] = self.multipliers_pointwise.data[
+                index[:, None], self.multiplier_inequality_mask
             ].relu_()
-        )
+
+    def zero_grad_pointwise(self):
+        self.multipliers_pointwise.grad = None
+
+    def sgd_pointwise(
+        self,
+        idx: torch.Tensor,
+        lr: float,
+        weight_decay: float,
+        maximize: bool = False,
+        grad_clip_value: float | None = None,
+    ):
+        """
+        Manual SGD step for the pointwise multipliers corresponding to the given indices.
+        1. Apply gradient clipping.
+        2. Apply weight decay.
+        3. Update the multipliers.
+        4. Project the multipliers.
+
+        Args:
+            idx: The indices of the multipliers to update.
+            lr: The learning rate.
+            weight_decay: The weight decay.
+            maximize: Whether to maximize the multipliers.
+            grad_clip_value: The value to clip the gradient to. Gradients (before weight decay) are clipped to [-grad_clip_value, grad_clip_value].
+        """
+        with torch.no_grad():
+            if self.multipliers_pointwise.grad is None:
+                logger.warning(
+                    "No gradient found for pointwise multipliers. Skipping SGD step"
+                )
+                return
+            grad = self.multipliers_pointwise.grad[idx]
+            if maximize:
+                grad = -grad
+            # apply gradient clipping
+            if grad_clip_value is not None:
+                grad = torch.clamp_(grad, -grad_clip_value, grad_clip_value)
+            # apply weight decay
+            if weight_decay > 0:
+                grad += weight_decay * self.multipliers_pointwise.data[idx]
+            # get a view of the tensor data since we are modifying tensors in-place that require grad
+            self.multipliers_pointwise.data[idx] -= lr * grad
 
 
 class OPFDual(pl.LightningModule):
@@ -190,6 +244,8 @@ class OPFDual(pl.LightningModule):
         wd: float = 0.0,
         wd_dual_pointwise: float = 0.0,
         wd_dual_shared: float = 0.0,
+        grad_clip_value_pointwise: float = 1.0,
+        grad_clip_value_shared: float = 1.0,
         eps: float = 1e-3,
         enforce_constraints: bool = False,
         detailed_metrics: bool = False,
@@ -209,11 +265,17 @@ class OPFDual(pl.LightningModule):
             n_train (int): The number of training samples.
             dual_graph (bool): Whether the input graph will be a regular or dual graph.
             lr (float, optional): The learning rate. Defaults to 1e-4.
-            weight_decay (float, optional): The weight decay. Defaults to 0.0.
-            eps (float, optional): Numerical threshold, below which values will be assumed to be approximately zero. Defaults to 1e-3.
+            lr_dual_pointwise (float, optional): The learning rate for the pointwise multipliers. Defaults to 1e-3.
+            lr_dual_shared (float, optional): The learning rate for the shared multipliers. Defaults to 1e-4.
+            wd (float, optional): The weight decay. Defaults to 0.0.
+            wd_dual_pointwise (float, optional): The weight decay for the pointwise multipliers. Defaults to 0.0.
+            wd_dual_shared (float, optional): The weight decay for the shared multipliers. Defaults to 0.0.
+            grad_clip_value_pointwise (float, optional): The gradient clipping value for the pointwise multipliers. Defaults to 1.0.
+            grad_clip_value_shared (float, optional): The gradient clipping value for the shared multipliers. Defaults to 1.0.
+            eps (float, optional): Numerical threshold, below which values will be assumed to be approximately zeros. Defaults to 1e-3.
             enforce_constraints (bool, optional): Whether to enforce the constraints. Defaults to False.
             detailed_metrics (bool, optional): Whether to log detailed metrics. Defaults to False.
-            multiplier_table_length (int, optional): The number of entries in the multiplier table. Defaults to 0.
+            cost_weight (float, optional): The weight of the cost. Defaults to 1.0.
             augmented_weight (float, optional): The weight of the augmented loss. Defaults to 0.0.
             supervised_weight (float, optional): The weight of the supervised loss. Defaults to 0.0.
             powerflow_weight (float, optional): The weight of the powerflow loss. Defaults to 0.0.
@@ -231,6 +293,8 @@ class OPFDual(pl.LightningModule):
         self.lr_dual_shared = lr_dual_shared
         self.wd_dual_pointwise = wd_dual_pointwise
         self.wd_dual_shared = wd_dual_shared
+        self.grad_clip_value_pointwise = grad_clip_value_pointwise
+        self.grad_clip_value_shared = grad_clip_value_shared
         self.eps = eps
         self._enforce_constraints = enforce_constraints
         self.detailed_metrics = detailed_metrics
@@ -391,8 +455,8 @@ class OPFDual(pl.LightningModule):
         cost = self.cost(variables, graph)
         return variables, constraints, cost
 
-    def training_step(self, data: PowerflowData):
-        primal_optimizer, dual_pointwise_optimizer, dual_shared_optimizer = self.optimizers()  # type: ignore
+    def training_step(self, data: PowerflowData, batch_idx: int):
+        primal_optimizer, dual_shared_optimizer = self.optimizers()  # type: ignore
         variables, Sf_pred, St_pred = self(data)
         _, constraints, cost = self._step_helper(
             variables, data.graph, self.model_dual.get_multipliers(data)
@@ -416,15 +480,29 @@ class OPFDual(pl.LightningModule):
         )
 
         primal_optimizer.zero_grad()
+        self.model_dual.zero_grad_pointwise()
         dual_shared_optimizer.zero_grad()
-        dual_pointwise_optimizer.zero_grad()
         self.manual_backward(loss)
         primal_optimizer.step()
-        if self.current_epoch >= self.warmup:
+
+        is_warmed_up = self.current_epoch >= self.warmup
+        if is_warmed_up and self.model_dual.enable_pointwise:
+            # updating the pointwise multipliers is done manually
+            self.model_dual.sgd_pointwise(
+                idx=data.index,
+                lr=self.lr_dual_pointwise,
+                weight_decay=self.wd_dual_pointwise,
+                maximize=True,
+                grad_clip_value=self.grad_clip_value_pointwise,
+            )
+            self.model_dual.project_pointwise(data.index)
+        if is_warmed_up and self.model_dual.enable_shared:
+            # update the shared multipliers
+            torch.nn.utils.clip_grad_value_(
+                self.model_dual.parameters_shared(), self.grad_clip_value_shared
+            )
             dual_shared_optimizer.step()
-            dual_pointwise_optimizer.step()
             self.model_dual.project_shared()
-            self.model_dual.project_pointwise()
 
         self.log(
             "train/loss",
@@ -720,20 +798,6 @@ class OPFDual(pl.LightningModule):
             fused=True,
         )
 
-        pointwise_parameters = self.model_dual.parameters_pointwise()
-        if len(pointwise_parameters) > 0:
-            logger.info("Creating optimizer for dual pointwise parameters.")
-            dual_pointwise_optimizer = torch.optim.SGD(
-                pointwise_parameters,
-                lr=self.lr_dual_pointwise,
-                weight_decay=self.wd_dual_pointwise,
-                maximize=True,
-                fused=True,
-            )
-        else:
-            logger.info("Using NullOptimizer for dual pointwise parameters.")
-            dual_pointwise_optimizer = NullOptimizer()
-
         shared_params = self.model_dual.parameters_shared()
         if len(shared_params) > 0:
             logger.info("Creating optimizer for dual shared parameters.")
@@ -748,7 +812,7 @@ class OPFDual(pl.LightningModule):
             logger.info("Using NullOptimizer for dual shared parameters.")
             dual_shared_optimizer = NullOptimizer()
 
-        return [primal_optimizer, dual_pointwise_optimizer, dual_shared_optimizer]
+        return [primal_optimizer, dual_shared_optimizer]
 
     @staticmethod
     def bus_from_polar(bus):
