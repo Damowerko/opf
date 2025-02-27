@@ -391,14 +391,14 @@ def _build_constraints(
             min=torch.zeros_like(branch_params.rate_a),
             max=branch_params.rate_a,
         ),
-        "inequality/voltage_angle_difference": InequalityConstraint(
-            isBus=False,
-            isAngle=True,
-            augmented=True,
-            variable=(d.V[..., fr_bus] * d.V[..., to_bus].conj()).angle(),
-            min=branch_params.vad_min,
-            max=branch_params.vad_max,
-        ),
+        # "inequality/voltage_angle_difference": InequalityConstraint(
+        #     isBus=False,
+        #     isAngle=True,
+        #     augmented=True,
+        #     variable=(d.V[..., fr_bus] * d.V[..., to_bus].conj()).angle(),
+        #     min=branch_params.vad_min,
+        #     max=branch_params.vad_max,
+        # ),
     }
 
 
