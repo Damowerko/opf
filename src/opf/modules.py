@@ -186,27 +186,66 @@ class DualTable(DualModel):
     def zero_grad_pointwise(self):
         self.multipliers_pointwise.grad = None
 
-    def sgd_pointwise(
+    def grad_clip_norm_shared(self, value: float, p: float):
+        with torch.no_grad():
+            if self.multipliers_shared.grad is None:
+                logger.warning(
+                    "No gradient found for shared multipliers. Skipping clip."
+                )
+                return
+            norm = torch.norm(self.multipliers_shared.grad, p=p)
+            scale = norm.clamp_(max=value) / (norm + 1e-12)
+            self.multipliers_shared.grad *= scale
+
+    def grad_clip_norm_pointwise(
+        self, value: float, p: float, index: torch.Tensor | None = None
+    ):
+        """
+        Clip the gradients of the pointwise multipliers. Will clip each row of the gradient table independently.
+
+        Args:
+            value: The maximum norm of the gradients.
+            p: The p-norm to use.
+            index: The indices of the multipliers to clip. If None, all multipliers are clipped.
+        """
+
+        with torch.no_grad():
+            if self.multipliers_pointwise.grad is None:
+                logger.warning(
+                    "No gradient found for pointwise multipliers. Skipping clip."
+                )
+                return
+            if index is None:
+                norm = torch.norm(
+                    self.multipliers_pointwise.grad, p=p, dim=-1, keepdim=True
+                )
+                scale = norm.clamp_(max=value) / (norm + 1e-12)
+                self.multipliers_pointwise.grad *= scale
+            else:
+                norm = torch.norm(
+                    self.multipliers_pointwise.grad[index], p=p, dim=-1, keepdim=True
+                )
+                scale = norm.clamp_(max=value) / (norm + 1e-12)
+                self.multipliers_pointwise.grad[index] *= scale
+
+    def step_pointwise(
         self,
         idx: torch.Tensor,
         lr: float,
         weight_decay: float,
         maximize: bool = False,
-        grad_clip_value: float | None = None,
     ):
         """
         Manual SGD step for the pointwise multipliers corresponding to the given indices.
-        1. Apply gradient clipping.
-        2. Apply weight decay.
-        3. Update the multipliers.
-        4. Project the multipliers.
+        1. Apply weight decay.
+        2. Update the multipliers.
+        3. Project the multipliers.
 
         Args:
             idx: The indices of the multipliers to update.
             lr: The learning rate.
             weight_decay: The weight decay.
             maximize: Whether to maximize the multipliers.
-            grad_clip_value: The value to clip the gradient to. Gradients (before weight decay) are clipped to [-grad_clip_value, grad_clip_value].
         """
         with torch.no_grad():
             if self.multipliers_pointwise.grad is None:
@@ -217,9 +256,6 @@ class DualTable(DualModel):
             grad = self.multipliers_pointwise.grad[idx]
             if maximize:
                 grad = -grad
-            # apply gradient clipping
-            if grad_clip_value is not None:
-                grad = torch.clamp_(grad, -grad_clip_value, grad_clip_value)
             # apply weight decay
             if weight_decay > 0:
                 grad += weight_decay * self.multipliers_pointwise.data[idx]
@@ -244,8 +280,8 @@ class OPFDual(pl.LightningModule):
         wd: float = 0.0,
         wd_dual_pointwise: float = 0.0,
         wd_dual_shared: float = 0.0,
-        grad_clip_value_pointwise: float = 1.0,
-        grad_clip_value_shared: float = 1.0,
+        grad_clip_norm_dual: float = 10.0,
+        grad_clip_p_dual: float = 1.0,
         eps: float = 1e-3,
         enforce_constraints: bool = False,
         detailed_metrics: bool = False,
@@ -270,8 +306,8 @@ class OPFDual(pl.LightningModule):
             wd (float, optional): The weight decay. Defaults to 0.0.
             wd_dual_pointwise (float, optional): The weight decay for the pointwise multipliers. Defaults to 0.0.
             wd_dual_shared (float, optional): The weight decay for the shared multipliers. Defaults to 0.0.
-            grad_clip_value_pointwise (float, optional): The gradient clipping value for the pointwise multipliers. Defaults to 1.0.
-            grad_clip_value_shared (float, optional): The gradient clipping value for the shared multipliers. Defaults to 1.0.
+            grad_clip_norm_dual (float, optional): The gradient clipping value for the dual variables. Defaults to 1.0. Set to 0 to disable gradient clipping.
+            grad_clip_p_dual (float, optional): The gradient clipping p-norm for the dual variables. Defaults to 1.0.
             eps (float, optional): Numerical threshold, below which values will be assumed to be approximately zeros. Defaults to 1e-3.
             enforce_constraints (bool, optional): Whether to enforce the constraints. Defaults to False.
             detailed_metrics (bool, optional): Whether to log detailed metrics. Defaults to False.
@@ -293,8 +329,8 @@ class OPFDual(pl.LightningModule):
         self.lr_dual_shared = lr_dual_shared
         self.wd_dual_pointwise = wd_dual_pointwise
         self.wd_dual_shared = wd_dual_shared
-        self.grad_clip_value_pointwise = grad_clip_value_pointwise
-        self.grad_clip_value_shared = grad_clip_value_shared
+        self.grad_clip_norm_dual = grad_clip_norm_dual
+        self.grad_clip_p_dual = grad_clip_p_dual
         self.eps = eps
         self._enforce_constraints = enforce_constraints
         self.detailed_metrics = detailed_metrics
@@ -487,20 +523,27 @@ class OPFDual(pl.LightningModule):
 
         is_warmed_up = self.current_epoch >= self.warmup
         if is_warmed_up and self.model_dual.enable_pointwise:
+            if self.grad_clip_norm_dual > 0:
+                self.model_dual.grad_clip_norm_pointwise(
+                    value=self.grad_clip_norm_dual,
+                    p=self.grad_clip_p_dual,
+                    index=data.index,
+                )
             # updating the pointwise multipliers is done manually
-            self.model_dual.sgd_pointwise(
+            self.model_dual.step_pointwise(
                 idx=data.index,
                 lr=self.lr_dual_pointwise,
                 weight_decay=self.wd_dual_pointwise,
                 maximize=True,
-                grad_clip_value=self.grad_clip_value_pointwise,
             )
             self.model_dual.project_pointwise(data.index)
         if is_warmed_up and self.model_dual.enable_shared:
             # update the shared multipliers
-            torch.nn.utils.clip_grad_value_(
-                self.model_dual.parameters_shared(), self.grad_clip_value_shared
-            )
+            if self.grad_clip_norm_dual > 0:
+                self.model_dual.grad_clip_norm_shared(
+                    value=self.grad_clip_norm_dual,
+                    p=self.grad_clip_p_dual,
+                )
             dual_shared_optimizer.step()
             self.model_dual.project_shared()
 
