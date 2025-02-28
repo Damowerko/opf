@@ -14,7 +14,7 @@ template=$(cat << EOF
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: opf-study
+  generateName: opf-study-
   namespace: owerko
 spec:
   completions: 400
