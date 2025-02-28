@@ -270,7 +270,7 @@ def train(trainer: Trainer, params):
 
 
 def study(params: dict):
-    study_name = "opf-hybrid-118"
+    study_name = "opf-hybrid-118-clip-10-l1"
     storage = os.environ["OPTUNA_STORAGE"]
     pruner = optuna.pruners.HyperbandPruner(
         min_resource=20, max_resource=200, reduction_factor=3
@@ -306,17 +306,19 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
         wd=trial.suggest_float("wd", 1e-8, 10.0, log=True),
         wd_dual_shared=trial.suggest_float("wd_dual_shared", 1e-8, 1e3, log=True),
         wd_dual_pointwise=trial.suggest_float("wd_dual_pointwise", 1e-8, 1e3, log=True),
-        grad_clip_value_pointwise=trial.suggest_float(
-            "grad_clip_value_pointwise", 0, 100
-        ),
-        grad_clip_value_shared=100,
+        grad_clip_norm_dual=10.0,
+        grad_clip_p_dual=1.0,
         dropout=0.0,
         multiplier_type="hybrid",
         cost_weight=trial.suggest_float("cost_weight", 1e-2, 1e2, log=True),
-        supervised_weight=0.0,
+        supervised_weight=1000.0,
         augmented_weight=0.0,
         powerflow_weight=0.0,
         case_name="case118_ieee",
+        # linearly decrease supervised weight to zero over supervised_warmup epochs
+        supervised_warmup=0,
+        # start updating dual variables after warmup epochs
+        warmup=0,
         # Architecture parameters
         n_layers=20,
         batch_size=25,
