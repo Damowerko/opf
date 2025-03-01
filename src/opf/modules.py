@@ -844,12 +844,11 @@ class OPFDual(pl.LightningModule):
         shared_params = self.model_dual.parameters_shared()
         if len(shared_params) > 0:
             logger.info("Creating optimizer for dual shared parameters.")
-            dual_shared_optimizer = torch.optim.AdamW(
+            dual_shared_optimizer = torch.optim.Adamax(
                 shared_params,
                 lr=self.lr_dual_shared,
                 weight_decay=self.wd_dual_shared,
                 maximize=True,
-                fused=True,
             )
         else:
             logger.info("Using NullOptimizer for dual shared parameters.")
