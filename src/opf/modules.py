@@ -194,7 +194,7 @@ class DualTable(DualModel):
                 )
                 return
             norm = torch.norm(self.multipliers_shared.grad, p=p)
-            scale = norm.clamp_(max=value) / (norm + 1e-12)
+            scale = norm.clamp(max=value) / (norm + 1e-12)
             self.multipliers_shared.grad *= scale
 
     def grad_clip_norm_pointwise(
@@ -219,13 +219,13 @@ class DualTable(DualModel):
                 norm = torch.norm(
                     self.multipliers_pointwise.grad, p=p, dim=-1, keepdim=True
                 )
-                scale = norm.clamp_(max=value) / (norm + 1e-12)
+                scale = norm.clamp(max=value) / (norm + 1e-12)
                 self.multipliers_pointwise.grad *= scale
             else:
                 norm = torch.norm(
                     self.multipliers_pointwise.grad[index], p=p, dim=-1, keepdim=True
                 )
-                scale = norm.clamp_(max=value) / (norm + 1e-12)
+                scale = norm.clamp(max=value) / (norm + 1e-12)
                 self.multipliers_pointwise.grad[index] *= scale
 
     def step_pointwise(
