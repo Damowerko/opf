@@ -3,18 +3,21 @@ set -e
 IMAGE_NAME="opf"
 DOCKER_USERNAME="damowerko"
 
+# the first argument is the study name
+STUDY_NAME=$1
+
 # comma separated list of arguments, printf adds an extra comma at the end, so we remove it
 printf -v args "\"%s\"," "$@"
 args=${args%,}
 
-# build first
-$(dirname "$0")/build.sh
+# build first with the study name as tag
+$(dirname "$0")/build.sh $STUDY_NAME
 
 template=$(cat << EOF
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: opf-study-
+  name: opf-study-${STUDY_NAME}
   namespace: owerko
 spec:
   completions: 400
@@ -30,7 +33,7 @@ spec:
           path: /nfs/general/opf_data
       containers:
       - name: opf-study
-        image: docker.io/$DOCKER_USERNAME/$IMAGE_NAME
+        image: docker.io/$DOCKER_USERNAME/$IMAGE_NAME:$STUDY_NAME
         imagePullPolicy: Always
         command: ["python", "-u", "scripts/main.py", "study", $args, "--simple_progress"]
         env:

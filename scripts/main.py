@@ -108,18 +108,24 @@ def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-
     # program arguments
-    parser.add_argument("operation", choices=["train", "study"])
-    subparsers = parser.add_subparsers(title="model", dest="model_name", required=True)
-
-    for model_name, model_cls in ModelRegistry.items():
-        subparser = subparsers.add_parser(
-            model_name, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    operation_subparsers = parser.add_subparsers(
+        title="operation", dest="operation", required=True
+    )
+    train_parser = operation_subparsers.add_parser("train")
+    study_parser = operation_subparsers.add_parser("study")
+    study_parser.add_argument("study_name", type=str)
+    for operation_subparser in [train_parser, study_parser]:
+        model_subparsers = operation_subparser.add_subparsers(
+            title="model", dest="model_name", required=True
         )
-        group = subparser.add_argument_group("Model")
-        model_cls.add_model_specific_args(group)
-        add_common_args(subparser)
+        for model_name, model_cls in ModelRegistry.items():
+            model_subparser = model_subparsers.add_parser(
+                model_name, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+            )
+            add_common_args(model_subparser)
+            group = model_subparser.add_argument_group("Model")
+            model_cls.add_model_specific_args(group)
 
     params = parser.parse_args()
     params_dict = vars(params)
@@ -270,7 +276,7 @@ def train(trainer: Trainer, params):
 
 
 def study(params: dict):
-    study_name = "opf-hybrid-118-clip-10-l1"
+    study_name = params["study_name"]
     storage = os.environ["OPTUNA_STORAGE"]
     pruner = optuna.pruners.HyperbandPruner(
         min_resource=20, max_resource=200, reduction_factor=3
