@@ -280,6 +280,8 @@ class OPFDual(pl.LightningModule):
         wd: float = 0.0,
         wd_dual_pointwise: float = 0.0,
         wd_dual_shared: float = 0.0,
+        grad_clip_norm: float = 0.0,
+        grad_clip_p: float = 2.0,
         grad_clip_norm_dual: float = 10.0,
         grad_clip_p_dual: float = 1.0,
         eps: float = 1e-3,
@@ -306,6 +308,8 @@ class OPFDual(pl.LightningModule):
             wd (float, optional): The weight decay. Defaults to 0.0.
             wd_dual_pointwise (float, optional): The weight decay for the pointwise multipliers. Defaults to 0.0.
             wd_dual_shared (float, optional): The weight decay for the shared multipliers. Defaults to 0.0.
+            grad_clip_norm (float, optional): The gradient clipping value for the primal variables. Defaults to 0.1. Set to 0 to disable gradient clipping.
+            grad_clip_p (float, optional): The gradient clipping p-norm for the primal variables. Defaults to 2.0.
             grad_clip_norm_dual (float, optional): The gradient clipping value for the dual variables. Defaults to 1.0. Set to 0 to disable gradient clipping.
             grad_clip_p_dual (float, optional): The gradient clipping p-norm for the dual variables. Defaults to 1.0.
             eps (float, optional): Numerical threshold, below which values will be assumed to be approximately zeros. Defaults to 1e-3.
@@ -329,6 +333,8 @@ class OPFDual(pl.LightningModule):
         self.lr_dual_shared = lr_dual_shared
         self.wd_dual_pointwise = wd_dual_pointwise
         self.wd_dual_shared = wd_dual_shared
+        self.grad_clip_norm = grad_clip_norm
+        self.grad_clip_p = grad_clip_p
         self.grad_clip_norm_dual = grad_clip_norm_dual
         self.grad_clip_p_dual = grad_clip_p_dual
         self.eps = eps
@@ -519,6 +525,13 @@ class OPFDual(pl.LightningModule):
         self.model_dual.zero_grad_pointwise()
         dual_shared_optimizer.zero_grad()
         self.manual_backward(loss)
+
+        if self.grad_clip_norm > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(),
+                max_norm=self.grad_clip_norm,
+                norm_type=self.grad_clip_p,
+            )
         primal_optimizer.step()
 
         is_warmed_up = self.current_epoch >= self.warmup
@@ -840,7 +853,6 @@ class OPFDual(pl.LightningModule):
             weight_decay=self.weight_decay,
             fused=True,
         )
-
         shared_params = self.model_dual.parameters_shared()
         if len(shared_params) > 0:
             logger.info("Creating optimizer for dual shared parameters.")
@@ -850,11 +862,19 @@ class OPFDual(pl.LightningModule):
                 weight_decay=self.wd_dual_shared,
                 maximize=True,
             )
+            # Add linear scheduler for the Adamax optimizer
+            dual_shared_scheduler = torch.optim.lr_scheduler.LinearLR(
+                dual_shared_optimizer,
+                start_factor=1.0,
+                end_factor=0.1,
+                total_iters=100,
+            )
         else:
             logger.info("Using NullOptimizer for dual shared parameters.")
             dual_shared_optimizer = NullOptimizer()
+            dual_shared_scheduler = None
 
-        return [primal_optimizer, dual_shared_optimizer]
+        return [primal_optimizer, dual_shared_optimizer], [dual_shared_scheduler]
 
     @staticmethod
     def bus_from_polar(bus):
