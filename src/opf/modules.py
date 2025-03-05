@@ -291,6 +291,7 @@ class OPFDual(pl.LightningModule):
         augmented_weight: float = 0.0,
         supervised_weight: float = 0.0,
         powerflow_weight: float = 0.0,
+        equality_weight: float = 1.0,
         warmup: int = 0,
         supervised_warmup: int = 0,
         multiplier_type: str = "hybrid",
@@ -319,6 +320,7 @@ class OPFDual(pl.LightningModule):
             augmented_weight (float, optional): The weight of the augmented loss. Defaults to 0.0.
             supervised_weight (float, optional): The weight of the supervised loss. Defaults to 0.0.
             powerflow_weight (float, optional): The weight of the powerflow loss. Defaults to 0.0.
+            equality_weight (float, optional): The weight of the equality loss. Defaults to 1.0.
             warmup (int, optional): Number of epochs before starting to update the multipliers. Defaults to 0.
             supervised_warmup (int, optional): Number of epochs during which supervised loss is used. Defaults to 0.
             multiplier_type (str, optional): Default "shared". Can be "shared", "pointwise", or "hybrid".
@@ -345,6 +347,7 @@ class OPFDual(pl.LightningModule):
         self.augmented_weight = augmented_weight
         self.supervised_weight = supervised_weight
         self.powerflow_weight = powerflow_weight
+        self.equality_weight = equality_weight
         self.warmup = warmup
         self.supervised_warmup = supervised_warmup
         if multiplier_type in ["shared", "pointwise", "hybrid"]:
@@ -770,6 +773,7 @@ class OPFDual(pl.LightningModule):
                     self.eps,
                     constraint.isAngle,
                     self.augmented_weight if constraint.augmented else 0.0,
+                    self.equality_weight,
                 )
             elif isinstance(constraint, pf.InequalityConstraint):
                 values[name] = inequality(

@@ -70,6 +70,7 @@ def equality(
     eps=1e-4,
     angle=False,
     augmented_weight=0.0,
+    weight=1.0,
 ):
     """
     Computes the equality constraint between two tensors `x` and `y`.
@@ -82,7 +83,7 @@ def equality(
         eps (float, optional): A small constant used to avoid division by zero. Defaults to `1e-4`.
         angle (bool, optional): If `True`, the input tensors are treated as angles in radians and the difference is wrapped to the range `[-pi, pi]`. Defaults to `False`.
         augmented_weight (float, optional): The weight of the augmented loss. Defaults to `0.0`.
-
+        weight (float, optional): Scalar multiplier for the loss. Defaults to `1.0`.
     Returns:
         A tuple containing the loss value, the constraint violation vector, and the number of violated constraints.
     """
@@ -94,7 +95,7 @@ def equality(
     u = x - y if not angle else wrap_angle(x - y)
     # The loss is the dot product of the constraint and the multiplier, averaged over the batch.
     loss = (
-        loss_equality(u, multiplier, augmented_weight=augmented_weight)
+        weight * loss_equality(u, multiplier, augmented_weight=augmented_weight)
         if multiplier is not None
         else None
     )
