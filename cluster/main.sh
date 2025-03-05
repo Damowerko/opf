@@ -10,6 +10,11 @@ args=${args%,}
 # build first
 $(dirname "$0")/build.sh
 
+# Get the image digest to ensure we're using the exact image we just built
+IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $DOCKER_USERNAME/$IMAGE_NAME:latest | cut -d'@' -f2)
+echo "Using image digest: $IMAGE_DIGEST"
+
+
 template=$(cat << EOF
 apiVersion: batch/v1
 kind: Job
@@ -34,7 +39,7 @@ spec:
           path: /nfs/general/opf_data
       containers:
       - name: opf-train
-        image: docker.io/$DOCKER_USERNAME/$IMAGE_NAME
+        image: docker.io/$DOCKER_USERNAME/$IMAGE_NAME@$IMAGE_DIGEST
         imagePullPolicy: Always
         command: ["python", "-u", "scripts/main.py", $args, "--simple_progress"]
         env:
