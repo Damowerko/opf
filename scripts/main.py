@@ -98,6 +98,7 @@ def add_common_args(parser):
     group.add_argument("--patience", type=int, default=50)
     group.add_argument("--gradient_clip_val", type=float, default=0)
     group.add_argument("--simple_progress", action="store_true", dest="simple_progress")
+    group.add_argument("--tag", type=str, dest="tags", action="append")
 
     # lightning module arguments
     group = parser.add_argument_group("Lightning Module")
@@ -149,6 +150,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
             config=params,
             log_model=True,
             notes=params["notes"],
+            tags=params["tags"],
             **wandb_kwargs,
         )
 
