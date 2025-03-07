@@ -309,18 +309,21 @@ def objective(trial: optuna.trial.Trial, default_params: dict):
     n_channels = 64
     params = dict(
         lr=trial.suggest_float("lr", 1e-6, 1e-2, log=True),
-        lr_dual_shared=trial.suggest_float("lr_dual_shared", 1e-3, 1e3, log=True),
-        lr_dual_pointwise=trial.suggest_float("lr_dual_pointwise", 1e-3, 1e3, log=True),
+        lr_dual_shared=trial.suggest_float("lr_dual_shared", 1e-3, 1e6, log=True),
+        lr_dual_pointwise=trial.suggest_float("lr_dual_pointwise", 1e-6, 1e6, log=True),
         wd=trial.suggest_float("wd", 1e-8, 10.0, log=True),
         wd_dual_shared=trial.suggest_float("wd_dual_shared", 1e-8, 1e3, log=True),
-        wd_dual_pointwise=trial.suggest_float("wd_dual_pointwise", 1e-8, 1e3, log=True),
+        wd_dual_pointwise=trial.suggest_float(
+            "wd_dual_pointwise", 1e-20, 1e3, log=True
+        ),
         grad_clip_norm=0,
         grad_clip_p=2.0,
-        grad_clip_norm_dual=0,
+        grad_clip_norm_dual=10.0,
         grad_clip_p_dual=1.0,
         dropout=0.0,
         multiplier_type="hybrid",
-        cost_weight=trial.suggest_float("cost_weight", 1e-2, 1e2, log=True),
+        cost_weight=trial.suggest_float("cost_weight", 1e-4, 1e2, log=True),
+        equality_weight=trial.suggest_float("equality_weight", 1e-3, 1e3, log=True),
         supervised_weight=0.0,
         augmented_weight=0.0,
         powerflow_weight=0.0,
