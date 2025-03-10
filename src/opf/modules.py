@@ -275,7 +275,9 @@ class OPFDual(pl.LightningModule):
         n_train: int,
         dual_graph: bool,
         lr: float = 1e-4,
+        lr_decay: float = 1.0,
         lr_dual_pointwise: float = 1e-3,
+        lr_decay_dual_pointwise: float = 1.0,
         lr_dual_shared: float = 1e-4,
         wd: float = 0.0,
         wd_dual_pointwise: float = 0.0,
@@ -866,19 +868,11 @@ class OPFDual(pl.LightningModule):
                 weight_decay=self.wd_dual_shared,
                 maximize=True,
             )
-            # Add linear scheduler for the Adamax optimizer
-            dual_shared_scheduler = torch.optim.lr_scheduler.LinearLR(
-                dual_shared_optimizer,
-                start_factor=1.0,
-                end_factor=0.1,
-                total_iters=100,
-            )
         else:
             logger.info("Using NullOptimizer for dual shared parameters.")
             dual_shared_optimizer = NullOptimizer()
-            dual_shared_scheduler = None
 
-        return [primal_optimizer, dual_shared_optimizer], [dual_shared_scheduler]
+        return [primal_optimizer, dual_shared_optimizer]
 
     @staticmethod
     def bus_from_polar(bus):
