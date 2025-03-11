@@ -12,6 +12,7 @@ hsl/
 data/
 data
 !src/**/data
+scripts/run.sh
 
 ## IDE
 
