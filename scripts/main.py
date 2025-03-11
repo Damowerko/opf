@@ -19,7 +19,7 @@ from opf.constraints import ConstraintValueError
 from opf.dataset import CaseDataModule, PowerflowData
 from opf.models import ModelRegistry
 from opf.models.base import OPFModel
-from opf.modules import OPFDual
+from opf.modules import DualModule, OPFDual
 
 logging.basicConfig(
     level=logging.INFO,
@@ -226,11 +226,22 @@ def _train(trainer: Trainer, params):
     extra_model_kwargs = {}
     if params["model_name"] == "mlp":
         extra_model_kwargs["n_nodes"] = n_nodes
-    model = ModelRegistry.get_class(params["model_name"])(
+
+    model_cls = ModelRegistry.get_class(params["model_name"])
+    model = model_cls(
         metadata=dm.metadata(),
-        out_channels=4,
         **extra_model_kwargs,
         **params,
+    )
+    model_dual = (
+        model_cls(
+            metadata=dm.metadata(),
+            out_channels=DualModule.out_channels(),
+            **extra_model_kwargs,
+            **params,
+        )
+        if params["multiplier_type"] == "module"
+        else None
     )
 
     logger.info(f"Running single batch to initialize lazy layers.")
@@ -247,7 +258,7 @@ def _train(trainer: Trainer, params):
 
     logger.info("Initializing the lightning module.")
     lightning_module = OPFDual(
-        model, n_nodes, n_train=len(dm.train_dataset), dual_graph=ModelRegistry.is_dual(params["model_name"]), **params  # type: ignore
+        model, model_dual, n_nodes, n_train=len(dm.train_dataset), dual_graph=ModelRegistry.is_dual(params["model_name"]), **params  # type: ignore
     )
 
     if params["compile"]:

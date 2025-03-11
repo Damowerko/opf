@@ -54,8 +54,21 @@ class MLPIO(OPFModel):
         mlp_hidden_channels: int,
         mlp_read_layers: int,
         dropout: float,
+        out_channels: dict[str, int] | int,
+        combine_branch: bool,
     ):
+        """
+        Args:
+            n_channels: The number of channels in the backbone.
+            mlp_hidden_channels: The number of hidden channels in the MLPs.
+            mlp_read_layers: The number of layers in the MLPs.
+            dropout: The dropout rate.
+            out_channels: The number of output channels for each node type. Can either be int or a dict with keys "gen", "bus", "branch".
+            combine_branch: Whether to combine the branches into a single edge type.
+        """
+
         super().__init__()
+        self.combine_branch = combine_branch
         self.readin = nn.ModuleDict(
             {
                 k: MLP(
@@ -68,18 +81,45 @@ class MLPIO(OPFModel):
                 for k in ["gen", "bus", "branch_from", "branch_to"]
             }
         )
-        self.readout = nn.ModuleDict(
-            {
-                k: MLP(
-                    in_channels=(n_channels if "branch" not in k else 3 * n_channels),
-                    hidden_channels=mlp_hidden_channels,
-                    out_channels=2,
-                    n_layers=mlp_read_layers,
-                    dropout=dropout,
-                )
-                for k in ["gen", "bus", "branch_from", "branch_to"]
+
+        if isinstance(out_channels, int):
+            out_channels = {
+                "gen": out_channels,
+                "bus": out_channels,
+                "branch": 2 * out_channels,
+                "branch_from": out_channels,
+                "branch_to": out_channels,
             }
-        )
+        if not combine_branch:
+            self.readout = nn.ModuleDict(
+                {
+                    k: MLP(
+                        in_channels=(
+                            n_channels if "branch" not in k else 3 * n_channels
+                        ),
+                        hidden_channels=mlp_hidden_channels,
+                        out_channels=out_channels[k],
+                        n_layers=mlp_read_layers,
+                        dropout=dropout,
+                    )
+                    for k in ["gen", "bus", "branch_from", "branch_to"]
+                }
+            )
+        else:
+            self.readout = nn.ModuleDict(
+                {
+                    k: MLP(
+                        in_channels=(
+                            n_channels if "branch" not in k else 4 * n_channels
+                        ),
+                        hidden_channels=mlp_hidden_channels,
+                        out_channels=out_channels[k],
+                        n_layers=mlp_read_layers,
+                        dropout=dropout,
+                    )
+                    for k in ["gen", "bus", "branch"]
+                }
+            )
 
     def _forward(self, graph: HeteroData) -> dict[str, torch.Tensor]:
         # check that there is at most one generator per bus
@@ -124,13 +164,18 @@ class MLPIO(OPFModel):
         # I compute any branch variable outputs by hand
         x_from = x[edge_index_from]
         x_to = x[edge_index_to]
-        y_from = self.readout["branch_from"](
-            torch.cat([x_from, x_to, branch_embed_from], dim=1)
-        )
-        y_to = self.readout["branch_to"](
-            torch.cat([x_from, x_to, branch_embed_to], dim=1)
-        )
-        y_branch = torch.cat([y_from, y_to], dim=1)
+        if not self.combine_branch:
+            y_from = self.readout["branch_from"](
+                torch.cat([x_from, x_to, branch_embed_from], dim=1)
+            )
+            y_to = self.readout["branch_to"](
+                torch.cat([x_from, x_to, branch_embed_to], dim=1)
+            )
+            y_branch = torch.cat([y_from, y_to], dim=1)
+        else:
+            y_branch = self.readout["branch"](
+                torch.cat([x_from, x_to, branch_embed_from, branch_embed_to], dim=1)
+            )
         return {
             "bus": y_bus,
             "gen": y_gen,
@@ -154,6 +199,8 @@ class SimpleGAT(MLPIO):
         mlp_per_gnn_layers: int = 2,
         mlp_read_layers: int = 2,
         dropout: float = 0.0,
+        out_channels: dict[str, int] | int = 2,
+        combine_branch: bool = True,
         **_,
     ):
         super().__init__(
@@ -161,6 +208,8 @@ class SimpleGAT(MLPIO):
             mlp_hidden_channels=mlp_hidden_channels,
             mlp_read_layers=mlp_read_layers,
             dropout=dropout,
+            out_channels=out_channels,
+            combine_branch=combine_branch,
         )
         self.n_layers = n_layers
         self.enable_mlp = mlp_per_gnn_layers > 0
@@ -234,6 +283,7 @@ class SimpleGated(MLPIO):
         mlp_per_gnn_layers: int = 2,
         mlp_read_layers: int = 2,
         dropout: float = 0.0,
+        combine_branch: bool = True,
         **_,
     ):
         super().__init__(
@@ -241,6 +291,8 @@ class SimpleGated(MLPIO):
             mlp_hidden_channels=mlp_hidden_channels,
             mlp_read_layers=mlp_read_layers,
             dropout=dropout,
+            out_channels=2,
+            combine_branch=combine_branch,
         )
         self.n_layers = n_layers
         self.enable_mlp = mlp_per_gnn_layers > 0

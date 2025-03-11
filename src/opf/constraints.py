@@ -78,7 +78,7 @@ def equality(
     Args:
         x (torch.Tensor): The first tensor.
         y (torch.Tensor): The second tensor.
-        multiplier (torch.Tensor): A multiplier value that can be any real number.
+        multiplier (torch.Tensor): (..., 1) A multiplier value that can be any real number.
         mask (torch.Tensor | None, optional): A boolean mask tensor. If provided, only the elements where `mask` is `True` will be considered. Defaults to `None`.
         eps (float, optional): A small constant used to avoid division by zero. Defaults to `1e-4`.
         angle (bool, optional): If `True`, the input tensors are treated as angles in radians and the difference is wrapped to the range `[-pi, pi]`. Defaults to `False`.
@@ -87,6 +87,8 @@ def equality(
     Returns:
         A tuple containing the loss value, the constraint violation vector, and the number of violated constraints.
     """
+    if multiplier is not None:
+        multiplier = multiplier[..., 0]
     if mask is not None:
         x = x[..., mask]
         y = y[..., mask]

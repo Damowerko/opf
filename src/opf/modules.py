@@ -4,12 +4,13 @@ import subprocess
 from collections import OrderedDict
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Dict
+from typing import Dict, Iterator
 
 import lightning.pytorch as pl
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim
 from torch.optim.optimizer import Optimizer
 from torch_geometric.data import HeteroData
@@ -35,6 +36,11 @@ class NullOptimizer(Optimizer):
 
 
 class DualModel(nn.Module, abc.ABC):
+    def __init__(self):
+        super().__init__()
+        self.enable_shared = False
+        self.enable_pointwise = False
+
     def forward(self, data: PowerflowData):
         return self.get_multipliers(data)
 
@@ -43,12 +49,94 @@ class DualModel(nn.Module, abc.ABC):
         pass
 
     @abc.abstractmethod
-    def parameters_shared(self) -> list[nn.Parameter]:
+    def parameters_shared(self) -> Iterator[nn.Parameter]:
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def parameters_pointwise(self) -> list[nn.Parameter]:
+    def parameters_pointwise(self) -> Iterator[nn.Parameter]:
         raise NotImplementedError()
+
+    @abc.abstractmethod
+    def project_shared(self):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def project_pointwise(self, index: torch.Tensor | None = None):
+        raise NotImplementedError()
+
+
+class DualModule(DualModel):
+    def __init__(self, model: OPFModel):
+        super().__init__()
+        self.enable_shared = True
+        self.enable_pointwise = False
+        self.model = model
+        self.bus_metadata = OrderedDict(
+            [
+                ("equality/bus_active_power", (0, 1)),
+                ("equality/bus_reactive_power", (1, 2)),
+                ("equality/bus_reference", (2, 3)),
+                ("inequality/voltage_magnitude", (3, 5)),
+            ]
+        )
+        self.gen_metadata = OrderedDict(
+            [
+                ("inequality/active_power", (0, 2)),
+                ("inequality/reactive_power", (2, 4)),
+            ]
+        )
+        self.branch_metadata = OrderedDict(
+            [
+                ("inequality/forward_rate", (0, 2)),
+                ("inequality/backward_rate", (2, 4)),
+                ("inequality/voltage_angle_difference", (4, 6)),
+            ]
+        )
+
+    @staticmethod
+    def out_channels():
+        """
+        Number of output channels that the model should produce for each node type.
+        """
+        return {
+            "bus": 5,
+            "gen": 4,
+            "branch": 6,
+        }
+
+    def get_multipliers(self, data: PowerflowData) -> dict[str, torch.Tensor]:
+        model_output = self.model(data.graph)
+        multiplier_dict = {}
+        for name, (start, end) in self.bus_metadata.items():
+            # sqeeuze dimension, since equality constraints expect a 1d tensor not 2d
+            multiplier_dict[name] = model_output["bus"][:, start:end]
+        for name, (start, end) in self.gen_metadata.items():
+            multiplier_dict[name] = model_output["gen"][:, start:end]
+        for name, (start, end) in self.branch_metadata.items():
+            multiplier_dict[name] = model_output["branch"][:, start:end]
+
+        # project inequality constraints to be positive, square instead of abs, to make smooth
+        for name in multiplier_dict:
+            if name.startswith("inequality"):
+                multiplier_dict[name] = F.smooth_l1_loss(
+                    multiplier_dict[name],
+                    torch.zeros_like(multiplier_dict[name]),
+                    reduction="none",
+                )
+
+        return multiplier_dict
+
+    def project_shared(self):
+        pass
+
+    def project_pointwise(self):
+        pass
+
+    def parameters_shared(self) -> Iterator[nn.Parameter]:
+        return self.model.parameters()
+
+    def parameters_pointwise(self) -> Iterator[nn.Parameter]:
+        return iter([])
 
 
 class DualTable(DualModel):
@@ -86,9 +174,9 @@ class DualTable(DualModel):
             # the size of each multiplier category
             self.multiplier_metadata = OrderedDict(
                 [
-                    ("equality/bus_active_power", torch.Size([n_bus])),
-                    ("equality/bus_reactive_power", torch.Size([n_bus])),
-                    ("equality/bus_reference", torch.Size([n_bus])),
+                    ("equality/bus_active_power", torch.Size([n_bus, 1])),
+                    ("equality/bus_reactive_power", torch.Size([n_bus, 1])),
+                    ("equality/bus_reference", torch.Size([n_bus, 1])),
                     ("inequality/voltage_magnitude", torch.Size([n_bus, 2])),
                     ("inequality/active_power", torch.Size([n_gen, 2])),
                     ("inequality/reactive_power", torch.Size([n_gen, 2])),
@@ -145,11 +233,11 @@ class DualTable(DualModel):
             )
         return multiplier_dict
 
-    def parameters_shared(self) -> list[nn.Parameter]:
-        return [self.multipliers_shared]
+    def parameters_shared(self) -> Iterator[nn.Parameter]:
+        yield self.multipliers_shared
 
-    def parameters_pointwise(self) -> list[nn.Parameter]:
-        return [self.multipliers_pointwise]
+    def parameters_pointwise(self) -> Iterator[nn.Parameter]:
+        yield self.multipliers_pointwise
 
     def project_shared(self):
         """
@@ -271,6 +359,7 @@ class OPFDual(pl.LightningModule):
     def __init__(
         self,
         model: OPFModel,
+        model_dual: OPFModel | None,
         n_nodes: tuple[int, int, int],
         n_train: int,
         dual_graph: bool,
@@ -300,6 +389,7 @@ class OPFDual(pl.LightningModule):
         """
         Args:
             model (torch.nn.Module): The model to be trained.
+            model_dual (torch.nn.Module): A module that computes the dual variables. Must output a dictionary with dimensions DualModule.out_channels().
             n_nodes (tuple[int, int, int]): A tuple containing the number of buses, branches, and generators.
             n_train (int): The number of training samples.
             dual_graph (bool): Whether the input graph will be a regular or dual graph.
@@ -323,7 +413,7 @@ class OPFDual(pl.LightningModule):
             equality_weight (float, optional): The weight of the equality loss. Defaults to 1.0.
             warmup (int, optional): Number of epochs before starting to update the multipliers. Defaults to 0.
             supervised_warmup (int, optional): Number of epochs during which supervised loss is used. Defaults to 0.
-            multiplier_type (str, optional): Default "shared". Can be "shared", "pointwise", or "hybrid".
+            multiplier_type (str, optional): Default "shared". Can be "shared", "pointwise", "hybrid" or "module". If "module", then model_dual must be provided.
         """
         super().__init__()
         self.save_hyperparameters(ignore=["model", "n_nodes", "n_train", "kwargs"])
@@ -352,7 +442,7 @@ class OPFDual(pl.LightningModule):
         self.supervised_warmup = supervised_warmup
         if multiplier_type in ["shared", "pointwise", "hybrid"]:
             n_bus, n_branch, n_gen = n_nodes
-            self.model_dual = DualTable(
+            self.model_dual: DualModel = DualTable(
                 n_bus,
                 n_gen,
                 n_branch,
@@ -360,6 +450,14 @@ class OPFDual(pl.LightningModule):
                 enable_shared=multiplier_type in ["shared", "hybrid"],
                 enable_pointwise=multiplier_type in ["pointwise", "hybrid"],
             )
+        elif multiplier_type == "module":
+            if model_dual is None:
+                raise ValueError(
+                    "model_dual must be provided if multiplier_type is 'module'."
+                )
+            self.model_dual: DualModel = DualModule(model_dual)
+        else:
+            raise ValueError(f"Unknown multiplier type: {multiplier_type}")
 
     def forward(
         self,
@@ -525,7 +623,8 @@ class OPFDual(pl.LightningModule):
         )
 
         primal_optimizer.zero_grad()
-        self.model_dual.zero_grad_pointwise()
+        if isinstance(self.model_dual, DualTable):
+            self.model_dual.zero_grad_pointwise()
         dual_shared_optimizer.zero_grad()
         self.manual_backward(loss)
 
@@ -538,30 +637,39 @@ class OPFDual(pl.LightningModule):
         primal_optimizer.step()
 
         is_warmed_up = self.current_epoch >= self.warmup
-        if is_warmed_up and self.model_dual.enable_pointwise:
+        if isinstance(self.model_dual, DualModule):
             if self.grad_clip_norm_dual > 0:
-                self.model_dual.grad_clip_norm_pointwise(
-                    value=self.grad_clip_norm_dual,
-                    p=self.grad_clip_p_dual,
-                    index=data.index,
-                )
-            # updating the pointwise multipliers is done manually
-            self.model_dual.step_pointwise(
-                idx=data.index,
-                lr=self.lr_dual_pointwise,
-                weight_decay=self.wd_dual_pointwise,
-                maximize=True,
-            )
-            self.model_dual.project_pointwise(data.index)
-        if is_warmed_up and self.model_dual.enable_shared:
-            # update the shared multipliers
-            if self.grad_clip_norm_dual > 0:
-                self.model_dual.grad_clip_norm_shared(
-                    value=self.grad_clip_norm_dual,
-                    p=self.grad_clip_p_dual,
+                torch.nn.utils.clip_grad_norm_(
+                    self.model_dual.parameters_shared(),
+                    max_norm=self.grad_clip_norm_dual,
+                    norm_type=self.grad_clip_p_dual,
                 )
             dual_shared_optimizer.step()
-            self.model_dual.project_shared()
+        elif isinstance(self.model_dual, DualTable):
+            if is_warmed_up and self.model_dual.enable_pointwise:
+                if self.grad_clip_norm_dual > 0:
+                    self.model_dual.grad_clip_norm_pointwise(
+                        value=self.grad_clip_norm_dual,
+                        p=self.grad_clip_p_dual,
+                        index=data.index,
+                    )
+                # updating the pointwise multipliers is done manually
+                self.model_dual.step_pointwise(
+                    idx=data.index,
+                    lr=self.lr_dual_pointwise,
+                    weight_decay=self.wd_dual_pointwise,
+                    maximize=True,
+                )
+                self.model_dual.project_pointwise(data.index)
+            if is_warmed_up and self.model_dual.enable_shared:
+                # update the shared multipliers
+                if self.grad_clip_norm_dual > 0:
+                    self.model_dual.grad_clip_norm_shared(
+                        value=self.grad_clip_norm_dual,
+                        p=self.grad_clip_p_dual,
+                    )
+                dual_shared_optimizer.step()
+                self.model_dual.project_shared()
 
         self.log(
             "train/loss",
@@ -857,15 +965,24 @@ class OPFDual(pl.LightningModule):
             weight_decay=self.weight_decay,
             fused=True,
         )
-        shared_params = self.model_dual.parameters_shared()
+        shared_params = list(self.model_dual.parameters_shared())
         if len(shared_params) > 0:
             logger.info("Creating optimizer for dual shared parameters.")
-            dual_shared_optimizer = torch.optim.Adamax(
-                shared_params,
-                lr=self.lr_dual_shared,
-                weight_decay=self.wd_dual_shared,
-                maximize=True,
-            )
+            if isinstance(self.model_dual, DualTable):
+                dual_shared_optimizer = torch.optim.Adamax(
+                    shared_params,
+                    lr=self.lr_dual_shared,
+                    weight_decay=self.wd_dual_shared,
+                    maximize=True,
+                )
+            elif isinstance(self.model_dual, DualModule):
+                dual_shared_optimizer = torch.optim.AdamW(
+                    shared_params,
+                    lr=self.lr_dual_shared,
+                    weight_decay=self.wd_dual_shared,
+                    maximize=True,
+                    fused=True,
+                )
         else:
             logger.info("Using NullOptimizer for dual shared parameters.")
             dual_shared_optimizer = NullOptimizer()
