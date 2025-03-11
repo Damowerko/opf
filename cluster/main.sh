@@ -7,9 +7,6 @@ DOCKER_USERNAME="damowerko"
 printf -v args "\"%s\"," "$@"
 args=${args%,}
 
-# build first
-$(dirname "$0")/build.sh
-
 # Get the image digest to ensure we're using the exact image we just built
 IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $DOCKER_USERNAME/$IMAGE_NAME:latest | cut -d'@' -f2)
 echo "Using image digest: $IMAGE_DIGEST"
