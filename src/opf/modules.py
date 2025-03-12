@@ -416,7 +416,9 @@ class OPFDual(pl.LightningModule):
             multiplier_type (str, optional): Default "shared". Can be "shared", "pointwise", "hybrid" or "module". If "module", then model_dual must be provided.
         """
         super().__init__()
-        self.save_hyperparameters(ignore=["model", "n_nodes", "n_train", "kwargs"])
+        self.save_hyperparameters(
+            ignore=["model", "model_dual", "n_nodes", "n_train", "kwargs"]
+        )
         self.model = model
         self.dual_graph = dual_graph
         self.lr = lr
@@ -968,21 +970,12 @@ class OPFDual(pl.LightningModule):
         shared_params = list(self.model_dual.parameters_shared())
         if len(shared_params) > 0:
             logger.info("Creating optimizer for dual shared parameters.")
-            if isinstance(self.model_dual, DualTable):
-                dual_shared_optimizer = torch.optim.Adamax(
-                    shared_params,
-                    lr=self.lr_dual_shared,
-                    weight_decay=self.wd_dual_shared,
-                    maximize=True,
-                )
-            elif isinstance(self.model_dual, DualModule):
-                dual_shared_optimizer = torch.optim.AdamW(
-                    shared_params,
-                    lr=self.lr_dual_shared,
-                    weight_decay=self.wd_dual_shared,
-                    maximize=True,
-                    fused=True,
-                )
+            dual_shared_optimizer = torch.optim.Adamax(
+                shared_params,
+                lr=self.lr_dual_shared,
+                weight_decay=self.wd_dual_shared,
+                maximize=True,
+            )
         else:
             logger.info("Using NullOptimizer for dual shared parameters.")
             dual_shared_optimizer = NullOptimizer()
