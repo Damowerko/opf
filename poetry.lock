@@ -3602,34 +3602,6 @@ files = [
 typing-extensions = ">=4.6.0,<4.7.0 || >4.7.0"
 
 [[package]]
-name = "pyg-lib"
-version = "0.4.0+pt25cu124"
-description = "Low-Level Graph Neural Network Operators for PyG"
-optional = false
-python-versions = ">=3.9"
-groups = ["main"]
-files = [
-    {file = "pyg_lib-0.4.0+pt25cu124-cp310-cp310-linux_x86_64.whl", hash = "sha256:b620ac6ae03b9933f6715f5fb8228d062da42c5b511f8512afe2d79029bbc43d"},
-    {file = "pyg_lib-0.4.0+pt25cu124-cp310-cp310-win_amd64.whl", hash = "sha256:3d9e90db2b85957fec1542526b358e09d106686e50a2946d17310f02ace54f97"},
-    {file = "pyg_lib-0.4.0+pt25cu124-cp311-cp311-linux_x86_64.whl", hash = "sha256:bbffe826ac47f0fa9ae4dad0aa03459443db270b9b84016421aa09b3dbd6fa3f"},
-    {file = "pyg_lib-0.4.0+pt25cu124-cp311-cp311-win_amd64.whl", hash = "sha256:209d9753ec8f58aa6e31e4296ece5ba77ed51199e50bdf3ab3df94772ab75259"},
-    {file = "pyg_lib-0.4.0+pt25cu124-cp312-cp312-linux_x86_64.whl", hash = "sha256:fe9a38da8b8b3c7e29533e5e4556efea78476a191341105821eb1bf24fa89d54"},
-    {file = "pyg_lib-0.4.0+pt25cu124-cp312-cp312-win_amd64.whl", hash = "sha256:cf2b16ed080b72645b1947449558adc78b1a0a75b0b69eaf1839dbcd69c4694b"},
-    {file = "pyg_lib-0.4.0+pt25cu124-cp39-cp39-linux_x86_64.whl", hash = "sha256:48212ec12a4b5c6d5bc89d119a5eef358b93deffb6d1fe470219a3c0cf6795e6"},
-    {file = "pyg_lib-0.4.0+pt25cu124-cp39-cp39-win_amd64.whl", hash = "sha256:353db0f9ed10da97fdead4740915bc9a265af85fe93d9af6d9d87b93c6acb5ba"},
-]
-
-[package.extras]
-dev = ["pre-commit"]
-test = ["pytest", "pytest-cov"]
-triton = ["triton"]
-
-[package.source]
-type = "legacy"
-url = "https://data.pyg.org/whl/torch-2.5.0+cu124.html"
-reference = "pyg"
-
-[[package]]
 name = "pygments"
 version = "2.19.1"
 description = "Pygments is a syntax highlighting package written in Python."
@@ -4896,35 +4868,6 @@ opt-einsum = ["opt-einsum (>=3.3)"]
 optree = ["optree (>=0.12.0)"]
 
 [[package]]
-name = "torch-cluster"
-version = "1.6.3+pt25cu124"
-description = "PyTorch Extension Library of Optimized Graph Cluster Algorithms"
-optional = false
-python-versions = ">=3.8"
-groups = ["main"]
-files = [
-    {file = "torch_cluster-1.6.3+pt25cu124-cp310-cp310-linux_x86_64.whl", hash = "sha256:12c2b7f800ea84545dfbb42aa5a1acefbb274b31aecb20d0cb18431a16270463"},
-    {file = "torch_cluster-1.6.3+pt25cu124-cp310-cp310-win_amd64.whl", hash = "sha256:905fd7e92d144c40e836a1ff37f91134e805ab01b922364baf9c9c00dd9453ed"},
-    {file = "torch_cluster-1.6.3+pt25cu124-cp311-cp311-linux_x86_64.whl", hash = "sha256:8bf22e37c4dba58eeb22c7a5d3e3b2f144715c98ebab2adf19c75ab0d6a081a1"},
-    {file = "torch_cluster-1.6.3+pt25cu124-cp311-cp311-win_amd64.whl", hash = "sha256:4bd23fa140c0eed056899f47c68a6f043237bdc76f97b8766d1e7cece2cf3bda"},
-    {file = "torch_cluster-1.6.3+pt25cu124-cp312-cp312-linux_x86_64.whl", hash = "sha256:70b4addff5129db8eb0600f085b98c046fd7d597470b805ff2e349b3b4954f0a"},
-    {file = "torch_cluster-1.6.3+pt25cu124-cp312-cp312-win_amd64.whl", hash = "sha256:c5613ae7ced57457094b2c2cc7cc23b9e5188b633f28fac26ec6a9a3d0c824d8"},
-    {file = "torch_cluster-1.6.3+pt25cu124-cp39-cp39-linux_x86_64.whl", hash = "sha256:95ee2fc6ed3fdbcda60e6e6afa705483eddef86ee86f4ae28ee7f8ab81c24ee4"},
-    {file = "torch_cluster-1.6.3+pt25cu124-cp39-cp39-win_amd64.whl", hash = "sha256:7e0e5c705c4f857ac88f064760139704f6304051b21c2883a020a0a35363f6b4"},
-]
-
-[package.dependencies]
-scipy = "*"
-
-[package.extras]
-test = ["pytest", "pytest-cov"]
-
-[package.source]
-type = "legacy"
-url = "https://data.pyg.org/whl/torch-2.5.0+cu124.html"
-reference = "pyg"
-
-[[package]]
 name = "torch-geometric"
 version = "2.6.1"
 description = "Graph Neural Network Library for PyTorch"
@@ -4955,87 +4898,6 @@ modelhub = ["huggingface_hub"]
 test = ["onnx", "onnxruntime", "pytest", "pytest-cov"]
 
 [[package]]
-name = "torch-scatter"
-version = "2.1.2+pt25cu124"
-description = "PyTorch Extension Library of Optimized Scatter Operations"
-optional = false
-python-versions = ">=3.8"
-groups = ["main"]
-files = [
-    {file = "torch_scatter-2.1.2+pt25cu124-cp310-cp310-linux_x86_64.whl", hash = "sha256:cb6514b05ae6f54eef4f517429c072e70be2d7a0e3b3adc4879e0e57612c6b2e"},
-    {file = "torch_scatter-2.1.2+pt25cu124-cp310-cp310-win_amd64.whl", hash = "sha256:57891676042e14d588ef7c08379c0dd76e3732217de3b99ce14871f8851c9595"},
-    {file = "torch_scatter-2.1.2+pt25cu124-cp311-cp311-linux_x86_64.whl", hash = "sha256:65440020adced309180a783a054dc0aa5f16a45d204ea04d3591a8f5eacbb314"},
-    {file = "torch_scatter-2.1.2+pt25cu124-cp311-cp311-win_amd64.whl", hash = "sha256:7fd897f3aecf7ed1f8d42504f464d707647b654256a69988073828d7253c359a"},
-    {file = "torch_scatter-2.1.2+pt25cu124-cp312-cp312-linux_x86_64.whl", hash = "sha256:47887eb05578ffefee4eac15fb1d16f53e2601f4300f9c459bca4a74b7c6d4d3"},
-    {file = "torch_scatter-2.1.2+pt25cu124-cp312-cp312-win_amd64.whl", hash = "sha256:f367d34f6c93e119b25781c3e87fd2a5a176f94943ed718c81a2e179f14f02d8"},
-    {file = "torch_scatter-2.1.2+pt25cu124-cp39-cp39-linux_x86_64.whl", hash = "sha256:701f92aadf09912db35dd898501ed0008c60165473d283441eb953a4b0319cf4"},
-    {file = "torch_scatter-2.1.2+pt25cu124-cp39-cp39-win_amd64.whl", hash = "sha256:1102d888cc5c90d7a7a43e0ca5e6c2ca102088b593d451be6cecafaf10c1efc9"},
-]
-
-[package.extras]
-test = ["pytest", "pytest-cov"]
-
-[package.source]
-type = "legacy"
-url = "https://data.pyg.org/whl/torch-2.5.0+cu124.html"
-reference = "pyg"
-
-[[package]]
-name = "torch-sparse"
-version = "0.6.18+pt25cu124"
-description = "PyTorch Extension Library of Optimized Autograd Sparse Matrix Operations"
-optional = false
-python-versions = ">=3.8"
-groups = ["main"]
-files = [
-    {file = "torch_sparse-0.6.18+pt25cu124-cp310-cp310-linux_x86_64.whl", hash = "sha256:c639c86a6904a3c3d15c7869c4296ac4d9a7a50d2193ff07da6cc8e165447d24"},
-    {file = "torch_sparse-0.6.18+pt25cu124-cp310-cp310-win_amd64.whl", hash = "sha256:92a1080479753e87b7159b1d01d1ab534bfc758f34e8b44f6717355872d79dbc"},
-    {file = "torch_sparse-0.6.18+pt25cu124-cp311-cp311-linux_x86_64.whl", hash = "sha256:63ba6ec8d8279397796b81ec625b4c8a0102643f6dc1505331aa00588e6be743"},
-    {file = "torch_sparse-0.6.18+pt25cu124-cp311-cp311-win_amd64.whl", hash = "sha256:28c017dddfec8e28cb6359de3ec38b4743c073a4d07e649307ec98424f5a7fca"},
-    {file = "torch_sparse-0.6.18+pt25cu124-cp312-cp312-linux_x86_64.whl", hash = "sha256:aa4583d802ba1fd1691b5eaabf0656d8d48e5446f3370be26118f9d391d9823f"},
-    {file = "torch_sparse-0.6.18+pt25cu124-cp312-cp312-win_amd64.whl", hash = "sha256:168282e8c5f42ad7dadbd12802ec503e80fc001b1ee51bcec46412425bcb2c16"},
-    {file = "torch_sparse-0.6.18+pt25cu124-cp39-cp39-linux_x86_64.whl", hash = "sha256:46c8bc4ff424c6477fdd84593422a7897d7ebe27d1679943fa70f243524a4e18"},
-    {file = "torch_sparse-0.6.18+pt25cu124-cp39-cp39-win_amd64.whl", hash = "sha256:90523d2716501eb61553f65ecca5ef8bd31d818051dbca3c7f49b4590f8664ca"},
-]
-
-[package.dependencies]
-scipy = "*"
-
-[package.extras]
-test = ["pytest", "pytest-cov"]
-
-[package.source]
-type = "legacy"
-url = "https://data.pyg.org/whl/torch-2.5.0+cu124.html"
-reference = "pyg"
-
-[[package]]
-name = "torch-spline-conv"
-version = "1.2.2+pt25cu124"
-description = "Implementation of the Spline-Based Convolution Operator of SplineCNN in PyTorch"
-optional = false
-python-versions = ">=3.8"
-groups = ["main"]
-files = [
-    {file = "torch_spline_conv-1.2.2+pt25cu124-cp310-cp310-linux_x86_64.whl", hash = "sha256:cd261706bc904f6d22f62ea86ddfd96601c80d87c33044b9770e9a2488316521"},
-    {file = "torch_spline_conv-1.2.2+pt25cu124-cp310-cp310-win_amd64.whl", hash = "sha256:d84ae6c2a39dff8ad498f46417fd9238a29c87890fb9c98e2feb20c5737a3c21"},
-    {file = "torch_spline_conv-1.2.2+pt25cu124-cp311-cp311-linux_x86_64.whl", hash = "sha256:04499012e1157a6ba6e9774bbaf6c1f863bc48f6858f895bd6c6cafacd9f1e49"},
-    {file = "torch_spline_conv-1.2.2+pt25cu124-cp311-cp311-win_amd64.whl", hash = "sha256:2839aa9be8330d39250c16e3cbd894b3a17e205f88bb41905c5e191766a2ea56"},
-    {file = "torch_spline_conv-1.2.2+pt25cu124-cp312-cp312-linux_x86_64.whl", hash = "sha256:556d821997c7d2c7e6e54b85ddd6844d6bc407dc0deccc0762d242c09e049fde"},
-    {file = "torch_spline_conv-1.2.2+pt25cu124-cp312-cp312-win_amd64.whl", hash = "sha256:b04d8bb284281f8f035b30743d8a2fecd8cfb8e041e82cf900627fb334f54d91"},
-    {file = "torch_spline_conv-1.2.2+pt25cu124-cp39-cp39-linux_x86_64.whl", hash = "sha256:3693c2fd497749bb575e4d0b53675292b199dd8e4fbd3a8e229cfc31cc14deaa"},
-    {file = "torch_spline_conv-1.2.2+pt25cu124-cp39-cp39-win_amd64.whl", hash = "sha256:0b94c2627afc889aba0502eee26d66c43902738d2783635da73404767e47d85d"},
-]
-
-[package.extras]
-test = ["pytest", "pytest-cov"]
-
-[package.source]
-type = "legacy"
-url = "https://data.pyg.org/whl/torch-2.5.0+cu124.html"
-reference = "pyg"
-
-[[package]]
 name = "torchcps"
 version = "0.1.0"
 description = "Tools for deep learning on cyber-physical systems."
@@ -5050,15 +4912,10 @@ cartopy = ">=0.23.0,<0.24.0"
 lightning = ">=2.5.0,<2.6.0"
 numpy = ">=1.25.1,<1.26.0"
 pandas = ">=2.0.0,<3.0.0"
-pyg-lib = ">=0.4.0+pt25cu124,<0.5.0"
 scikit-learn = ">=1.3.0,<1.4.0"
 scipy = ">=1.0.0,<2.0.0"
 torch = ">=2.5.0,<2.6.0"
-torch-cluster = ">=1.6.3+pt25cu124,<1.7.0"
 torch-geometric = ">=2.6.1,<2.7.0"
-torch-scatter = ">=2.1.2+pt25cu124,<2.2.0"
-torch-sparse = ">=0.6.18+pt25cu124,<0.7.0"
-torch-spline-conv = ">=1.2.2+pt25cu124,<1.3.0"
 tqdm = ">=4.0.0,<5.0.0"
 wandb = ">=0.19.7,<0.20.0"
 
@@ -5066,7 +4923,7 @@ wandb = ">=0.19.7,<0.20.0"
 type = "git"
 url = "https://github.com/Damowerko/torchcps"
 reference = "HEAD"
-resolved_reference = "4f457b3166f785007bfe32820e108b58d2811ccd"
+resolved_reference = "f8bc185dbad5b1bbbf2d88ff161f573fa29dc91e"
 
 [[package]]
 name = "torchmetrics"
