@@ -4,6 +4,8 @@ from torch import nn
 from torch_geometric.data import HeteroData
 
 from opf.models.base import ModelRegistry, OPFModel
+from torch.utils.checkpoint import checkpoint
+from functools import partial
 
 
 class MLP(nn.Module):
@@ -201,6 +203,8 @@ class SimpleGAT(MLPIO):
         dropout: float = 0.0,
         out_channels: dict[str, int] | int = 2,
         combine_branch: bool = True,
+        checkpoint_conv: bool = False,
+        checkpoint_mlp: bool = False,
         **_,
     ):
         super().__init__(
@@ -211,6 +215,8 @@ class SimpleGAT(MLPIO):
             out_channels=out_channels,
             combine_branch=combine_branch,
         )
+        self.checkpoint_conv = checkpoint_conv
+        self.checkpoint_mlp = checkpoint_mlp
         self.n_layers = n_layers
         self.enable_mlp = mlp_per_gnn_layers > 0
 
@@ -255,21 +261,47 @@ class SimpleGAT(MLPIO):
                 [gnn.BatchNorm(n_channels) for _ in range(n_layers)]
             )
 
+    def _layer_conv(
+        self, i: int, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor
+    ) -> torch.Tensor:
+        residual = x
+        x = self.conv[i](x, edge_index, edge_attr)
+        # since we are using multi-head attention, we need to project the output
+        x = self.head_proj[i](x)
+        x = self.conv_norm[i](x + residual)
+        return x
+
+    def _layer_mlp(self, i: int, x: torch.Tensor) -> torch.Tensor:
+        residual = x
+        x = self.mlp[i](x)
+        x = self.mlp_norm[i](x + residual)
+        return x
+
     def _backbone(
         self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor
     ) -> torch.Tensor:
         # graph transformer
         for i in range(self.n_layers):
-            residual = x
-            x = self.conv[i](x, edge_index, edge_attr)
-            # since we are using multi-head attention, we need to project the output
-            x = self.head_proj[i](x)
-            x = self.conv_norm[i](x + residual)
-            residual = x
+            if self.checkpoint_conv:
+                x = checkpoint(
+                    partial(self._layer_conv, i),
+                    x,
+                    edge_index,
+                    edge_attr,
+                    use_reentrant=False,
+                )  # type: ignore
+            else:
+                x = self._layer_conv(i, x, edge_index, edge_attr)
             # apply MLP
             if self.enable_mlp:
-                x = self.mlp[i](x)
-                x = self.mlp_norm[i](x + residual)
+                if self.checkpoint_mlp:
+                    x = checkpoint(
+                        partial(self._layer_mlp, i),
+                        x,
+                        use_reentrant=False,
+                    )  # type: ignore
+                else:
+                    x = self._layer_mlp(i, x)
         return x
 
 
