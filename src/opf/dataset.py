@@ -143,6 +143,7 @@ class OPFDataset(Dataset[PowerflowData]):
         graph: HeteroData,
         casefile: str,
         dual_graph: bool = False,
+        index_offset: int = 0,
     ):
         """
         Wraps a torch_geometric.data.Data object with a single graph
@@ -167,6 +168,7 @@ class OPFDataset(Dataset[PowerflowData]):
         self.graph = graph
         self.graph.casefile = casefile
         self.dual_graph = dual_graph
+        self.index_offset = index_offset
 
     def __len__(self) -> int:
         return len(self.load)
@@ -186,7 +188,7 @@ class OPFDataset(Dataset[PowerflowData]):
 
         return PowerflowData(
             data,
-            torch.tensor([index], dtype=torch.long),
+            torch.tensor([index + self.index_offset], dtype=torch.long),
         )
 
     @staticmethod
@@ -319,18 +321,23 @@ class CaseDataModule(pl.LightningDataModule):
             )
             # I am indexing from the end, so that I can change the size of the training dataset
             # without changing wich samples are used for testing and validation
+            val_offset = n_samples - n_val - n_test
+            test_offset = n_samples - n_test
+
             self.val_dataset = OPFDataset(
-                *(x[-n_val - n_test : -n_test] for x in variables),
+                *(x[val_offset:test_offset] for x in variables),
                 graph=self.graph,
                 casefile=self.powerflow_parameters.casefile,
                 dual_graph=self.dual_graph,
+                index_offset=val_offset,
             )
         if stage == "test" or stage is None:
             self.test_dataset = OPFDataset(
-                *(x[-n_test:] for x in variables),
+                *(x[test_offset:] for x in variables),
                 graph=self.graph,
                 casefile=self.powerflow_parameters.casefile,
                 dual_graph=self.dual_graph,
+                index_offset=test_offset,
             )
 
     def train_dataloader(self):
@@ -346,6 +353,7 @@ class CaseDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             collate_fn=self.train_dataset.collate_fn,
+            persistent_workers=self.num_workers > 0,
         )
 
     def val_dataloader(self):
@@ -361,6 +369,7 @@ class CaseDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             collate_fn=self.val_dataset.collate_fn,
+            persistent_workers=self.num_workers > 0,
         )
 
     def test_dataloader(self):
