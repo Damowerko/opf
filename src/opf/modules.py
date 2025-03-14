@@ -854,9 +854,13 @@ class OPFDual(pl.LightningModule):
         # generator cost cannot be negative
         cost = cost.relu()
         # compute the total cost for each sample in the batch
-        cost_per_batch = torch.zeros_like(graph.reference_cost).index_add(
-            0, graph["gen"].batch, cost
-        )
+        if hasattr(graph["gen"], "batch"):
+            cost_per_batch = torch.zeros_like(graph.reference_cost).index_add(
+                0, graph["gen"].batch, cost
+            )
+        else:
+            # there is only one batch element
+            cost_per_batch = cost.sum()
         # normalize the cost by the reference cost (IPOPT cost)
         cost_per_batch = cost_per_batch / graph.reference_cost
         return cost_per_batch.mean()
