@@ -99,6 +99,12 @@ def add_common_args(parser):
     group.add_argument("--gradient_clip_val", type=float, default=0)
     group.add_argument("--simple_progress", action="store_true", dest="simple_progress")
     group.add_argument("--tag", type=str, dest="tags", action="append")
+    group.add_argument(
+        "--val_interval",
+        type=int,
+        default=1,
+        help="Run validation every n training steps. Default is 1 (validate every step).",
+    )
 
     # lightning module arguments
     group = parser.add_argument_group("Lightning Module")
@@ -190,6 +196,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         fast_dev_run=params["fast_dev_run"],
         gradient_clip_val=params["gradient_clip_val"],
         log_every_n_steps=1,
+        check_val_every_n_epoch=params["val_interval"],
     )
     return trainer
 
