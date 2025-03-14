@@ -238,6 +238,10 @@ class CaseDataModule(pl.LightningDataModule):
     def case_path(self):
         return Path(self.data_dir / f"{self.case_name}.json")
 
+    @property
+    def dataset_path(self):
+        return self.data_dir / f"{self.case_name}.h5"
+
     def metadata(self) -> tuple[list[NodeType], list[EdgeType]]:
         if self.graph is None:
             raise ValueError("Graph is not initialized. Call `setup()` first.")
@@ -271,7 +275,7 @@ class CaseDataModule(pl.LightningDataModule):
             self.powerflow_parameters = pf.parameters_from_powermodels(
                 powermodels_dict, self.case_path.as_posix()
             )
-        with h5py.File(self.data_dir / f"{self.case_name}.h5", "r") as f:
+        with h5py.File(self.dataset_path, "r") as f:
             # load bus voltage in rectangular coordinates
             V = torch.from_numpy(f["bus"][:]).float()  # type: ignore
             V = torch.view_as_real(torch.polar(V[..., 0], V[..., 1]))
