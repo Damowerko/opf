@@ -114,11 +114,21 @@ def test_run(
                     variables.St.reshape(graph.num_graphs, -1)[i],
                 )
                 cost = opfdual.cost(_variables, _graph)
-                constraints = opfdual.constraints(_variables, _graph, None)
-                _metrics = {
-                    k: v.item()
-                    for k, v in opfdual.metrics(cost, constraints, "test", True).items()
-                }
+                _metrics = {}
+                # unnormalized metrics
+                constraints = opfdual.constraints(
+                    _variables, _graph, None, normalize=False
+                )
+                for k, v in opfdual.metrics(cost, constraints, "test", True).items():
+                    _metrics[k] = v.item()
+                # normalized metrics
+                constraints_normal = opfdual.constraints(
+                    _variables, _graph, None, normalize=True
+                )
+                for k, v in opfdual.metrics(
+                    cost, constraints_normal, "test_normal", True
+                ).items():
+                    _metrics[k] = v.item()
                 _metrics["acopf/cost"] = acopf_cost[i]
                 metrics.append(_metrics)
     df = pd.DataFrame(metrics)

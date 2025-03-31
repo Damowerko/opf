@@ -870,6 +870,7 @@ class OPFDual(pl.LightningModule):
         variables: pf.PowerflowVariables,
         graph: HeteroData,
         multipliers: Dict[str, torch.Tensor] | None,
+        normalize: bool = False,
     ) -> Dict[str, Dict[str, torch.Tensor]]:
         """
         Calculates the powerflow constraints.
@@ -899,6 +900,7 @@ class OPFDual(pl.LightningModule):
                     self.eps,
                     constraint.isAngle,
                     self.augmented_weight if constraint.augmented else 0.0,
+                    normalize=normalize,
                 )
         return values
 

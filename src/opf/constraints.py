@@ -119,6 +119,7 @@ def inequality(
     eps=1e-4,
     angle=False,
     augmented_weight=0.0,
+    normalize=False,
 ):
     """
     Computes the inequality constraint loss for a given tensor.
@@ -131,6 +132,7 @@ def inequality(
         eps (float, optional): The epsilon value. Defaults to 1e-4.
         angle (bool, optional): Whether to fix the angle. Defaults to False.
         augmented_weight (float, optional): The augmented weight. Defaults to 0.0.
+        normalize (bool, optional): Normalize the constraint range from [lb,ub] to [0,1].
     Returns:
         tuple: A tuple containing the loss and the metrics.
     """
@@ -160,6 +162,12 @@ def inequality(
     if angle:
         u_lower = wrap_angle(u_lower)
         u_upper = wrap_angle(u_upper)
+
+    if normalize:
+        range = upper_bound - lower_bound
+        range[range < eps] = range.mean()
+        u_lower = u_lower / range
+        u_upper = u_upper / range
 
     u_all = torch.cat((u_lower, u_upper), dim=-1)
 
