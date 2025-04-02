@@ -79,10 +79,13 @@ def test_run(
     project=False,
     clamp=False,
     batch_size: int | None = None,
+    output_root_path: str = "../data/out",
 ):
     project_suffix = "_project" if project else ""
     clamp_suffix = "_clamp" if clamp else ""
-    data_path = Path(f"/tmp/test{project_suffix}{clamp_suffix}_{run_id}.parquet")
+    data_path = Path(
+        f"{output_root_path}/test/{run_id}/test{project_suffix}{clamp_suffix}.parquet"
+    )
     if load_existing and data_path.exists():
         return pd.read_parquet(data_path)
 
