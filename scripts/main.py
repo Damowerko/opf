@@ -10,7 +10,7 @@ import optuna
 import torch
 import wandb
 from lightning.pytorch import Trainer
-from lightning.pytorch.callbacks import EarlyStopping, ProgressBar
+from lightning.pytorch.callbacks import EarlyStopping, ProgressBar, ModelCheckpoint
 from lightning.pytorch.loggers.wandb import WandbLogger
 from typing_extensions import override
 from wandb.wandb_run import Run
@@ -171,16 +171,17 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         )
 
         # logger specific callbacks
-        # callbacks += [
-        #     ModelCheckpoint(
-        #         monitor="val/invariant",
-        #         dirpath=Path(params["log_dir"]) / "checkpoints",
-        #         filename="best",
-        #         auto_insert_metric_name=False,
-        #         mode="min",
-        #         save_top_k=1,
-        #     ),
-        # ]
+        callbacks += [
+            ModelCheckpoint(
+                dirpath=Path(params["log_dir"]) / "checkpoints",
+                monitor="val/invariant",
+                mode="min",
+                filename="best",
+                auto_insert_metric_name=False,
+                save_top_k=1,
+                save_last=True,
+            ),
+        ]
     callbacks += [EarlyStopping(monitor="val/invariant", patience=params["patience"])]
     if params["simple_progress"]:
         callbacks += [ConsoleProgressBar(logger)]

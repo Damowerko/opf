@@ -22,7 +22,7 @@ def data_to_device(data: PowerflowData, device: str):
     return PowerflowData(*(x.to(device=device) for x in data))  # type: ignore
 
 
-def load_run(run_id: str, batch_size: int | None = None):
+def load_run(run_id: str, batch_size: int | None = None, data_dir: str = "../data"):
     run_uri = f"wandb://damowerko-academic/opf/{run_id}"
     base, path = run_uri.split("://")
     if base != "wandb":
@@ -33,7 +33,7 @@ def load_run(run_id: str, batch_size: int | None = None):
     config = run.config
 
     # override some config values
-    config.update(data_dir="../data")
+    config.update(data_dir=data_dir)
     config.update(num_workers=0)
     if batch_size is not None:
         config.update(batch_size=batch_size)
@@ -80,6 +80,7 @@ def test_run(
     clamp=False,
     batch_size: int | None = None,
     output_root_path: str = "../data/out",
+    data_dir: str = "../data",
 ):
     project_suffix = "_project" if project else ""
     clamp_suffix = "_clamp" if clamp else ""
@@ -90,7 +91,7 @@ def test_run(
         return pd.read_parquet(data_path)
 
     metrics = []
-    dm, opfdual = load_run(run_id, batch_size)
+    dm, opfdual = load_run(run_id, batch_size, data_dir=data_dir)
     with torch.no_grad(), h5py.File(Path(dm.dataset_path), "r") as f:
         for data in tqdm(dm.test_dataloader()):
             data = data_to_device(data, "cuda")

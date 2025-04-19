@@ -374,6 +374,155 @@ class SimpleGated(MLPIO):
         return x
 
 
+class SimpleGraphTransformer(MLPIO):
+    def __init__(
+        self,
+        n_layers: int,
+        embed_dim: int,
+        n_heads: int,
+        dropout: float = 0.0,
+        **_,
+    ):
+        """
+        Args:
+            n_layers: The number of transformer layers.
+            embed_dim: The dimensionality of the embedding. Must be divisible by n_heads.
+            n_heads: The number of attention heads. Each head will have dimension embed_dim // n_heads.
+            dropout: The dropout rate.
+        """
+
+        super().__init__()
+        self.n_layers = n_layers
+        self.n_heads = n_heads
+        self.dropout = float(dropout)
+        self.embed_dim = embed_dim
+        self.head_dim = embed_dim // n_heads
+        self.attention_window = attention_window
+
+        # will have n_layers for encoder and n_layers for decoder
+        self.Wq = nn.ModuleList(
+            [nn.Linear(self.embed_dim, self.embed_dim) for _ in range(n_layers)]
+        )
+        self.Wk = nn.ModuleList(
+            [nn.Linear(self.embed_dim, self.embed_dim) for _ in range(n_layers)]
+        )
+        self.Wv = nn.ModuleList(
+            [nn.Linear(self.embed_dim, self.embed_dim) for _ in range(n_layers)]
+        )
+        self.Wo = nn.ModuleList(
+            [nn.Linear(self.embed_dim, self.embed_dim) for _ in range(n_layers)]
+        )
+
+        self.norm1 = nn.ModuleList(
+            [nn.LayerNorm(self.embed_dim) for _ in range(n_layers)]
+        )
+        self.norm2 = nn.ModuleList(
+            [nn.LayerNorm(self.embed_dim) for _ in range(n_layers)]
+        )
+        self.linear1 = nn.ModuleList(
+            [nn.Linear(self.embed_dim, 2 * self.embed_dim) for _ in range(n_layers)]
+        )
+        self.linear2 = nn.ModuleList(
+            [nn.Linear(2 * self.embed_dim, self.embed_dim) for _ in range(n_layers)]
+        )
+
+    @staticmethod
+    def _window_mask(pos: torch.Tensor, attention_window: float) -> torch.Tensor:
+        """
+        Create a window mask for the transformer. The mask is a matrix of shape (B, N, N) where N is the number of
+        positions and B is the batch size.
+
+        Args:
+            pos: The positions of the input tensor with shape (B, N, n_dimensions).
+            attention_window: The window size.
+
+        Returns:
+            A tensor of shape (B, 1, N, N) with the window mask.
+        """
+        distance = torch.cdist(pos, pos)
+        # divide by 2 because we want to have the window size be the full width
+        mask = distance <= attention_window / 2
+        return mask.unsqueeze(1)
+
+    @staticmethod
+    def _connected_mask(components: torch.Tensor) -> torch.Tensor:
+        """
+        Compute a mask that is zero between positions that are not connected in the graph.
+
+        Args:
+            components: (B, N) tensor with integers representing the ID of connected components. If components[i] == components[j], then i and j are connected.
+
+        Returns:
+            A tensor of shape (B, 1, N, N) with the connected mask.
+        """
+        mask = components.unsqueeze(1) == components.unsqueeze(2)
+        return mask.unsqueeze(1)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        pos: torch.Tensor,
+        padding_mask: torch.Tensor | None = None,
+        components: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Args:
+            x: The input tensor with shape (B, N, embed_dim).
+            pos: The positions of the input tensor with shape (B, N, n_dimensions).
+            padding_mask: (Optional) The padding mask with shape (B, N). If None, no mask is applied.
+            components: (Optional) (B, N) tensor with IDs of connected components. If i and j are connected, then components[i] == components[j]. If provided, the attention matrix will be zero between different components.
+        """
+        B, N = x.shape[:2]
+        if isinstance(self.encoding, (AbsolutePositionalEncoding, gnn.MLP)):
+            x = x + self.encoding(pos.reshape(B * N, -1)).reshape(B, N, -1)
+
+        # We need an attention mask if there is padding, windowing or we are masking by connected components.
+        attn_mask = None
+        if padding_mask is not None:
+            attn_mask = padding_mask.unsqueeze(1).unsqueeze(1)
+        if components is not None:
+            connected_mask = self._connected_mask(components)
+            attn_mask = (
+                connected_mask if attn_mask is None else attn_mask & connected_mask
+            )
+        if self.attention_window > 0:
+            window_mask = self._window_mask(pos, self.attention_window)
+            attn_mask = window_mask if attn_mask is None else attn_mask & window_mask
+
+        for i in range(self.n_layers):
+            # using pre-norm transformer, so we apply layer norm before attention
+            x_norm = self.norm1[i](x.reshape(B * N, -1)).reshape(B, N, -1)
+            q = self.Wq[i](x_norm)
+            k = self.Wk[i](x_norm)
+            v = self.Wv[i](x_norm)
+            # rotary positional encoding needs to be applied to the query and keys
+            if i == 0 and isinstance(self.encoding, RotaryPositionalEncoding):
+                q = self.encoding(q, pos)
+                k = self.encoding(k, pos)
+            # need to reshape k,q,v to have shape (B, n_heads, N, head_dim)
+            # right now we have (B, N, n_heads * head_dim)
+            q = q.reshape(B, N, self.n_heads, self.head_dim).transpose(1, 2)
+            k = k.reshape(B, N, self.n_heads, self.head_dim).transpose(1, 2)
+            v = v.reshape(B, N, self.n_heads, self.head_dim).transpose(1, 2)
+
+            # compute attention and reshape to "concate" heads
+            x_attention = (
+                F.scaled_dot_product_attention(
+                    q, k, v, dropout_p=self.dropout, attn_mask=attn_mask
+                )
+                .transpose(1, 2)
+                .reshape(B, N, self.embed_dim)
+            )
+            x_attention = self.Wo[i](x_attention)
+            x = x + x_attention
+            # compute the feed forward layer and apply residual connection, as before
+            x_fc = self.norm1[i](x_attention.reshape(B * N, -1)).reshape(B, N, -1)
+            x_fc = self.linear1[i](x_fc).relu()
+            x_fc = self.linear2[i](x_fc)
+            x = x + x_fc
+        return x
+
+
 @ModelRegistry.register("mlp", True)
 class OPFMLP(OPFModel):
     def __init__(

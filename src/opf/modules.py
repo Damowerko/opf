@@ -941,10 +941,10 @@ class OPFDual(pl.LightningModule):
         reduce_fn = {
             "default": torch.sum,
             "error_mean": torch.mean,
-            "error_max": torch.mean,
+            "error_max": torch.max,
             "rate": torch.mean,
             "multiplier/mean": torch.mean,
-            "multiplier/max": torch.mean,
+            "multiplier/max": torch.max,
         }
 
         for constraint_name, constraint_values in constraints.items():
