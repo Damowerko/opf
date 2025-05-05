@@ -305,7 +305,7 @@ function main()
     max_load = args["max_load"]
     simple = args["simple"]
 
-    if max_load <= min_load
+    if max_load < min_load
         error("max_load must be greater than min_load")
     end
 
