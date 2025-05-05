@@ -75,10 +75,13 @@ Get the solution to the OPF problem defined by the PowerModels.jl `network_data`
 function label_network(network_data::Dict{String,Any}, load::Dict{String,Any})::Tuple{Dict{String,Any},Bool}
     network_data = deepcopy(network_data)
     network_data["load"] = load
+
+    ipopt_args = Dict("tol" => 1e-8, "print_level" => 1, "sb" => "yes")
     if use_hsl
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-8, "print_level" => 1, "linear_solver" => "ma27", "hsllib" => HSL_jll.libhsl_path, "sb" => "yes")
+        hsl_args = Dict("linear_solver" => "ma57", "hsllib" => HSL_jll.libhsl_path)
+        solver = optimizer_with_attributes(Ipopt.Optimizer, merge(ipopt_args, hsl_args)...)
     else
-        solver = optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-8, "print_level" => 1, "sb" => "yes")
+        solver = optimizer_with_attributes(Ipopt.Optimizer, ipopt_args...)
     end
     result = solve_ac_opf(network_data, solver)
     solved = result["termination_status"] == LOCALLY_SOLVED
