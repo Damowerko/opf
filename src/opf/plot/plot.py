@@ -154,7 +154,7 @@ def plot_tradeoff(df: pd.DataFrame, max: bool = True):
             y=so.Continuous().label(like=".2f"),
             color=so.Nominal(
                 ["tab:pink", "tab:blue", "tab:orange", "tab:red", "tab:green"],
-                order=["MSE", "MSE+Penalty", "Dual-S", "Dual-P", "Dual-H"],
+                order=["MSE", "MSE+Pen.", "Dual-S", "Dual-P", "Dual-H"],
             ),
         )
         .share(x=False, y=False)

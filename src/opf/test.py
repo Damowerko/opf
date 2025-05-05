@@ -22,7 +22,12 @@ def data_to_device(data: PowerflowData, device: str):
     return PowerflowData(*(x.to(device=device) for x in data))  # type: ignore
 
 
-def load_run(run_id: str, batch_size: int | None = None, data_dir: str = "../data"):
+def load_run(
+    run_id: str,
+    batch_size: int | None = None,
+    data_dir: str = "../data",
+    best: bool = True,
+):
     run_uri = f"wandb://damowerko-academic/opf/{run_id}"
     base, path = run_uri.split("://")
     if base != "wandb":
@@ -58,7 +63,8 @@ def load_run(run_id: str, batch_size: int | None = None, data_dir: str = "../dat
 
     # load checkpoint
     with TemporaryDirectory() as tmpdir:
-        artifact = api.artifact(f"damowerko-academic/opf/model-{run.id}:best")
+        tag = "best" if best else "latest"
+        artifact = api.artifact(f"damowerko-academic/opf/model-{run.id}:{tag}")
         checkpoint_path = artifact.download(root=tmpdir)
         checkpoint = torch.load(
             Path(checkpoint_path) / "model.ckpt", map_location="cpu", weights_only=True
@@ -81,17 +87,19 @@ def test_run(
     batch_size: int | None = None,
     output_root_path: str = "../data/out",
     data_dir: str = "../data",
+    best: bool = True,
 ):
     project_suffix = "_project" if project else ""
     clamp_suffix = "_clamp" if clamp else ""
+    best_suffix = "_best" if best else ""
     data_path = Path(
-        f"{output_root_path}/test/{run_id}/test{project_suffix}{clamp_suffix}.parquet"
+        f"{output_root_path}/test/{run_id}/test{project_suffix}{clamp_suffix}{best_suffix}.parquet"
     )
     if load_existing and data_path.exists():
         return pd.read_parquet(data_path)
 
     metrics = []
-    dm, opfdual = load_run(run_id, batch_size, data_dir=data_dir)
+    dm, opfdual = load_run(run_id, batch_size, data_dir=data_dir, best=best)
     with torch.no_grad(), h5py.File(Path(dm.dataset_path), "r") as f:
         for data in tqdm(dm.test_dataloader()):
             data = data_to_device(data, "cuda")

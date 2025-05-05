@@ -15,7 +15,7 @@ case_names = [
 ]
 model_names = [
     "MSE",
-    "MSE+Penalty",
+    "MSE+Pen.",
     "Dual-S",
     "Dual-S+",
     "Dual-P",
@@ -63,7 +63,7 @@ def load_run_metadata():
         if {"supervised"} == tags:
             model_name = "MSE"
         elif {"supervised", "augmented"} == tags:
-            model_name = "MSE+Penalty"
+            model_name = "MSE+Pen."
         elif {"pointwise"} == tags:
             model_name = "Dual-P"
         elif {"pointwise", "supervised-warmup"} == tags:
@@ -81,7 +81,7 @@ def load_run_metadata():
             # "IEEE 30",
             # "IEEE 57",
             # "IEEE 118",
-            "GOC 179",
+            # "GOC 179",
             # "IEEE 300",
         ]:
             continue
@@ -94,7 +94,9 @@ def load_run_metadata():
     return run_dict
 
 
-def test_or_load_runs(run_dict, output_root_path="../data/out", data_dir="../data/out"):
+def test_or_load_runs(
+    run_dict, output_root_path="../data/out", data_dir="../data", best: bool = True
+):
     torch.set_float32_matmul_precision("high")
     dfs = []
     for case_name in run_dict:
@@ -109,6 +111,7 @@ def test_or_load_runs(run_dict, output_root_path="../data/out", data_dir="../dat
                 clamp=False,
                 output_root_path=output_root_path,
                 data_dir=data_dir,
+                best=best,
             )
             df = df.assign(id=id, case_name=case_name, model_name=model_name)
             dfs.append(df)
@@ -138,7 +141,7 @@ def select_dual_models(df: pd.DataFrame, dual_model_names: list[str]) -> pd.Data
         df: pd.DataFrame
         dual_model_names: list of model names to remove
     """
-    model_names = ["MSE", "MSE+Penalty"] + dual_model_names
+    model_names = ["MSE", "MSE+Pen."] + dual_model_names
     return df[df["model_name"].isin(model_names)].assign(
         model_name=lambda df: df["model_name"].replace(
             {
