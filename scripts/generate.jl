@@ -83,7 +83,7 @@ function label_network(network_data::Dict{String,Any}, load::Dict{String,Any})::
     network_data = deepcopy(network_data)
     network_data["load"] = load
 
-    ipopt_args = Dict("tol" => 1e-8, "print_level" => 1, "sb" => "yes", "max_wall_time" => 60.0)
+    ipopt_args = Dict("tol" => 1e-6, "print_level" => 1, "sb" => "yes")
     if use_hsl
         hsl_args = Dict("linear_solver" => "ma57", "hsllib" => HSL_jll.libhsl_path)
         solver = optimizer_with_attributes(Ipopt.Optimizer, merge(ipopt_args, hsl_args)...)
