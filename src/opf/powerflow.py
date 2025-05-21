@@ -80,6 +80,8 @@ class PowerflowParameters(torch.nn.Module):
     # index from branch to bus
     fr_bus: torch.Tensor
     to_bus: torch.Tensor
+    # branch status
+    br_status: torch.Tensor
     # index from load to bus
     load_bus_ids: torch.Tensor
     # index from gen to bus
@@ -121,6 +123,7 @@ class PowerflowParameters(torch.nn.Module):
         self.cost_coeff = fn(self.cost_coeff)
         self.fr_bus = fn(self.fr_bus)
         self.to_bus = fn(self.to_bus)
+        self.br_status = fn(self.br_status)
         self.load_bus_ids = fn(self.load_bus_ids)
         self.gen_bus_ids = fn(self.gen_bus_ids)
         self.base_kv = fn(self.base_kv)
@@ -476,6 +479,7 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
     n_branch = len(pm["branch"])
     fr_bus = torch.zeros((n_branch,), dtype=torch.long)
     to_bus = torch.zeros((n_branch,), dtype=torch.long)
+    br_status = torch.ones((n_branch,))
     rate_a = torch.full((n_branch,), float("inf"), dtype=dtype)
     vad_max = torch.full((n_branch,), float("inf"), dtype=dtype)
     vad_min = torch.full((n_branch,), -float("inf"), dtype=dtype)
@@ -493,6 +497,7 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
         Yc_fr[index] = branch["g_fr"] + 1j * branch["b_fr"]
         Yc_to[index] = branch["g_to"] + 1j * branch["b_to"]
         ratio[index] = branch["tap"] * np.exp(1j * branch["shift"])
+        br_status[index] = branch["br_status"]
         rate_a[index] = branch["rate_a"]
         vad_max[index] = branch["angmax"]
         vad_min[index] = branch["angmin"]
@@ -515,6 +520,7 @@ def parameters_from_powermodels(pm, casefile: str, precision=32) -> PowerflowPar
         cost_coeff,
         fr_bus,
         to_bus,
+        br_status,
         load_bus_ids,
         gen_bus_ids,
         base_kv,
