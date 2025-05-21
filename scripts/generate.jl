@@ -215,20 +215,28 @@ function generate_samples_numpy(network_data, n_samples, min_load=0.9, max_load=
         "solve_time" => Array{Float64}(undef, n_samples),
         "objective" => Array{Float64}(undef, n_samples),
     )
+    br_removed_index = ""
     progress = Progress(n_samples, desc="Generating labeled samples:")
     Threads.@threads for i = 1:n_samples
         solved = false
         while !solved
             Threads.atomic_add!(count_atomic, 1)
-            load = sample_load(network_data, min_load, max_load)
+            
+            _network_data = deepcopy(network_data)
+            load = sample_load(_network_data, min_load, max_load)
             if remove_random_branch
-                branch_to_remove = rand(keys(network_data["branch"]))
-                network_data["branch"][branch_to_remove]["br_status"] = 0
+                branch_to_remove = rand(keys(_network_data["branch"]))
+                _network_data["branch"][branch_to_remove]["br_status"] = 0
+                # br_removed_index = parse(Int, branch_to_remove)
+                br_removed_index = branch_to_remove
+                println("testing removal of branch $br_removed_index for feasibility")
             end
-            result, solved = label_network(network_data, load)
+            result, solved = label_network(_network_data, load)
             if !solved
+                # no... this is in NOT solved... missing some logic here
                 continue
             end
+            println("branch $br_removed_index found to be feasibile")
             for j = 1:length(network_data["bus"])
                 data["bus"][1, j, i] = result["solution"]["bus"]["$(j)"]["vm"]
                 data["bus"][2, j, i] = result["solution"]["bus"]["$(j)"]["va"]
@@ -242,24 +250,35 @@ function generate_samples_numpy(network_data, n_samples, min_load=0.9, max_load=
                 data["gen"][2, j, i] = result["solution"]["gen"]["$(j)"]["qg"]
             end
             for j = 1:length(network_data["branch"])
-                data["branch"][1, j, i] = result["solution"]["branch"]["$(j)"]["pf"]
-                data["branch"][2, j, i] = result["solution"]["branch"]["$(j)"]["qf"]
-                data["branch"][3, j, i] = result["solution"]["branch"]["$(j)"]["pt"]
-                data["branch"][4, j, i] = result["solution"]["branch"]["$(j)"]["qt"]
+                if "$(j)" in keys(result["solution"]["branch"])
+                    data["branch"][1, j, i] = result["solution"]["branch"]["$(j)"]["pf"]
+                    data["branch"][2, j, i] = result["solution"]["branch"]["$(j)"]["qf"]
+                    data["branch"][3, j, i] = result["solution"]["branch"]["$(j)"]["pt"]
+                    data["branch"][4, j, i] = result["solution"]["branch"]["$(j)"]["qt"]
+                else
+                    data["branch"][1, j, i] = 0
+                    data["branch"][2, j, i] = 0
+                    data["branch"][3, j, i] = 0
+                    data["branch"][4, j, i] = 0
+                end
                 # branch status is stored in the network data, not in the result
-                data["branch_status"][j, i] = network_data["branch"]["$(j)"]["br_status"]
+                data["branch_status"][j, i] = _network_data["branch"]["$(j)"]["br_status"]
             end
             data["termination_status"][i] = string(result["termination_status"])
             data["primal_status"][i] = string(result["primal_status"])
             data["dual_status"][i] = string(result["dual_status"])
             data["solve_time"][i] = result["solve_time"]
             data["objective"][i] = result["objective"]
+
+            # # maybe need to move this 
+            # # or make a deep copt
+            # network_data["branch"][branch_to_remove]["br_status"] = 1
         end
         next!(progress)
     end
     count = count_atomic[]
     println("Generated $n_samples feasible samples using $count samples. Feasibility ratio: $(n_samples / count).")
-    return data
+    return data, br_removed_index
 end
 
 function check_assumptions!(network_data)
@@ -340,13 +359,20 @@ function main()
 
     check_assumptions!(network_data)
 
+    # data = generate_samples_numpy(network_data, n_samples, min_load, max_load, remove_random_branch)
+    # br_removed_index = -1 if remove_random_branch=false
+    data, br_removed_index = generate_samples_numpy(network_data, n_samples, min_load, max_load, remove_random_branch)
+    if br_removed_index != ""
+        println("removing branch $br_removed_index from json file")
+        network_data["branch"][br_removed_index]["br_status"] = 0
+    end
+
     casename_suffix = simple ? "_simple" : ""
     # save network data in JSON format
-    open(joinpath(out_dir, casename * casename_suffix * ".json"), "w") do f
+    open(joinpath(out_dir, casename * casename_suffix * suffix * ".json"), "w") do f
         JSON.print(f, network_data, 4)
     end
 
-    data = generate_samples_numpy(network_data, n_samples, min_load, max_load, remove_random_branch)
     # write to h5 file
     h5file = joinpath(out_dir, casename * casename_suffix * suffix * ".h5")
     h5open(h5file, "w") do file

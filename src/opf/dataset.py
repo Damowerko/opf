@@ -51,6 +51,16 @@ def build_graph(
     graph["bus"].params = bus_params.to_tensor()
     graph["gen"].params = gen_params.to_tensor()
     gen_index = torch.arange(params.n_gen)
+
+    # # fix "params"
+    # br_mask = params.br_status.bool()
+
+    # # Edges between buses with branch removed
+    # graph["bus", "branch", "bus"].edge_index = torch.stack(
+    #     [params.fr_bus[br_mask], params.to_bus[br_mask]], dim=0
+    # )
+    # graph["bus", "branch", "bus"].params = branch_params.to_tensor()[br_mask]
+
     # Edges betwen buses
     graph["bus", "branch", "bus"].edge_index = torch.stack(
         [params.fr_bus, params.to_bus], dim=0
@@ -140,6 +150,7 @@ class OPFDataset(Dataset[PowerflowData]):
         Sg: torch.Tensor,
         Sf: torch.Tensor,
         St: torch.Tensor,
+        br_status: torch.Tensor,
         graph: HeteroData,
         casefile: str,
         dual_graph: bool = False,
@@ -165,6 +176,7 @@ class OPFDataset(Dataset[PowerflowData]):
         self.V = V
         self.Sf = Sf
         self.St = St
+        self.br_status = br_status
         self.graph = graph
         self.graph.casefile = casefile
         self.dual_graph = dual_graph
@@ -183,8 +195,12 @@ class OPFDataset(Dataset[PowerflowData]):
             data["branch"].Sf = self.Sf[index]
             data["branch"].St = self.St[index]
         else:
-            data["bus", "branch", "bus"].Sf = self.Sf[index]
-            data["bus", "branch", "bus"].St = self.St[index]
+            # remove any branches with br_status=0 
+            br_mask = self.br_status[index].bool()
+            data["bus", "branch", "bus"].edge_index = data["bus", "branch", "bus"].edge_index[:, br_mask]
+            data["bus", "branch", "bus"].params = data["bus", "branch", "bus"].params[br_mask]
+            data["bus", "branch", "bus"].Sf = self.Sf[index, br_mask]
+            data["bus", "branch", "bus"].St = self.St[index, br_mask]
 
         return PowerflowData(
             data,
@@ -238,7 +254,11 @@ class CaseDataModule(pl.LightningDataModule):
 
     @property
     def case_path(self):
-        return Path(self.data_dir / f"{self.case_name}.json")
+        # TODO: eventually move this to front end
+        if self.case_name == "case118_ieee":
+            return Path(self.data_dir / f"{self.case_name}_removed_branch.json")
+        else:
+            return Path(self.data_dir / f"{self.case_name}.json")
 
     @property
     def dataset_path(self):
@@ -287,6 +307,7 @@ class CaseDataModule(pl.LightningDataModule):
             branch = torch.from_numpy(f["branch"][:]).float()  # type: ignore
             Sf = branch[..., :2]
             St = branch[..., 2:]
+            br_status = torch.from_numpy(f["br_status"][:]).float()
             self.powerflow_parameters.reference_cost = torch.from_numpy(f["objective"][:]).mean().float()  # type: ignore
 
         if self.graph is None:
@@ -300,6 +321,7 @@ class CaseDataModule(pl.LightningDataModule):
 
         Sd = torch.zeros((n_samples, n_bus, 2))
         Sd[:, self.powerflow_parameters.load_bus_ids, :] = load
+        # branch_status = self.powerflow_parameters ...??
 
         # figure out the number of samples for each set
         if data_splits_total := sum(self.data_splits) > 1:
@@ -309,9 +331,12 @@ class CaseDataModule(pl.LightningDataModule):
             self.data_splits = [x / data_splits_total for x in self.data_splits]
 
         n_train, n_val, n_test = [int(split * n_samples) for split in self.data_splits]
+        val_offset = n_samples - n_val - n_test
+        test_offset = n_samples - n_test
         # Create a tuple of variables, each row defining a sample in the dataset
         # Will programatically split them into train, val and test
-        variables = (Sd, V, Sg, Sf, St)
+        variables = (Sd, V, Sg, Sf, St, br_status)
+
         if stage == "fit" or stage is None:
             self.train_dataset = OPFDataset(
                 *(x[:n_train] for x in variables),
@@ -319,8 +344,8 @@ class CaseDataModule(pl.LightningDataModule):
                 casefile=self.powerflow_parameters.casefile,
                 dual_graph=self.dual_graph,
             )
-            # I am indexing from the end, so that I can change the size of the training dataset
-            # without changing wich samples are used for testing and validation
+            # # I am indexing from the end, so that I can change the size of the training dataset
+            # # without changing wich samples are used for testing and validation
             val_offset = n_samples - n_val - n_test
             test_offset = n_samples - n_test
 
