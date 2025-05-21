@@ -309,6 +309,10 @@ class CaseDataModule(pl.LightningDataModule):
             self.data_splits = [x / data_splits_total for x in self.data_splits]
 
         n_train, n_val, n_test = [int(split * n_samples) for split in self.data_splits]
+        # I am indexing from the end, so that I can change the size of the training dataset
+        # without changing wich samples are used for testing and validation
+        val_offset = n_samples - n_val - n_test
+        test_offset = n_samples - n_test
         # Create a tuple of variables, each row defining a sample in the dataset
         # Will programatically split them into train, val and test
         variables = (Sd, V, Sg, Sf, St)
@@ -319,11 +323,6 @@ class CaseDataModule(pl.LightningDataModule):
                 casefile=self.powerflow_parameters.casefile,
                 dual_graph=self.dual_graph,
             )
-            # I am indexing from the end, so that I can change the size of the training dataset
-            # without changing wich samples are used for testing and validation
-            val_offset = n_samples - n_val - n_test
-            test_offset = n_samples - n_test
-
             self.val_dataset = OPFDataset(
                 *(x[val_offset:test_offset] for x in variables),
                 graph=self.graph,
