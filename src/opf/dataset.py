@@ -52,15 +52,6 @@ def build_graph(
     graph["gen"].params = gen_params.to_tensor()
     gen_index = torch.arange(params.n_gen)
 
-    # # fix "params"
-    # br_mask = params.br_status.bool()
-
-    # # Edges between buses with branch removed
-    # graph["bus", "branch", "bus"].edge_index = torch.stack(
-    #     [params.fr_bus[br_mask], params.to_bus[br_mask]], dim=0
-    # )
-    # graph["bus", "branch", "bus"].params = branch_params.to_tensor()[br_mask]
-
     # Edges betwen buses
     graph["bus", "branch", "bus"].edge_index = torch.stack(
         [params.fr_bus, params.to_bus], dim=0
@@ -150,7 +141,7 @@ class OPFDataset(Dataset[PowerflowData]):
         Sg: torch.Tensor,
         Sf: torch.Tensor,
         St: torch.Tensor,
-        br_status: torch.Tensor,
+        branch_status: torch.Tensor,
         graph: HeteroData,
         casefile: str,
         dual_graph: bool = False,
@@ -176,7 +167,7 @@ class OPFDataset(Dataset[PowerflowData]):
         self.V = V
         self.Sf = Sf
         self.St = St
-        self.br_status = br_status
+        self.branch_status = branch_status
         self.graph = graph
         self.graph.casefile = casefile
         self.dual_graph = dual_graph
@@ -191,16 +182,15 @@ class OPFDataset(Dataset[PowerflowData]):
         data["bus"].load = self.load[index]
         data["bus"].V = self.V[index]
         data["gen"].Sg = self.Sg[index]
+        branch_mask = self.branch_status[index]
         if self.dual_graph:
-            data["branch"].Sf = self.Sf[index]
-            data["branch"].St = self.St[index]
+            data["bus", "branch", "bus"].Sf = self.Sf[index, branch_mask]
+            data["bus", "branch", "bus"].St = self.St[index, branch_mask]
         else:
-            # remove any branches with br_status=0 
-            br_mask = self.br_status[index].bool()
-            data["bus", "branch", "bus"].edge_index = data["bus", "branch", "bus"].edge_index[:, br_mask]
-            data["bus", "branch", "bus"].params = data["bus", "branch", "bus"].params[br_mask]
-            data["bus", "branch", "bus"].Sf = self.Sf[index, br_mask]
-            data["bus", "branch", "bus"].St = self.St[index, br_mask]
+            data["bus", "branch", "bus"].edge_index = data["bus", "branch", "bus"].edge_index[:, branch_mask[:, 0]]
+            data["bus", "branch", "bus"].params = data["bus", "branch", "bus"].params[branch_mask[:, 0]]
+            data["bus", "branch", "bus"].Sf = self.Sf[index, branch_mask]
+            data["bus", "branch", "bus"].St = self.St[index, branch_mask]
 
         return PowerflowData(
             data,
@@ -254,7 +244,7 @@ class CaseDataModule(pl.LightningDataModule):
 
     @property
     def case_path(self):
-        # TODO: eventually move this to front end
+        # TODO: replace this and add a removed_branch argument
         if self.case_name == "case118_ieee":
             return Path(self.data_dir / f"{self.case_name}_removed_branch.json")
         else:
@@ -307,7 +297,10 @@ class CaseDataModule(pl.LightningDataModule):
             branch = torch.from_numpy(f["branch"][:]).float()  # type: ignore
             Sf = branch[..., :2]
             St = branch[..., 2:]
-            br_status = torch.from_numpy(f["br_status"][:]).float()
+            if "branch_status" in f:
+                branch_status = torch.from_numpy(f["branch_status"][:]).bool()
+            else:
+                branch_status = torch.ones_like(Sf, dtype=torch.bool)
             self.powerflow_parameters.reference_cost = torch.from_numpy(f["objective"][:]).mean().float()  # type: ignore
 
         if self.graph is None:
@@ -337,7 +330,7 @@ class CaseDataModule(pl.LightningDataModule):
         test_offset = n_samples - n_test
         # Create a tuple of variables, each row defining a sample in the dataset
         # Will programatically split them into train, val and test
-        variables = (Sd, V, Sg, Sf, St, br_status)
+        variables = (Sd, V, Sg, Sf, St, branch_status)
 
         if stage == "fit" or stage is None:
             self.train_dataset = OPFDataset(
